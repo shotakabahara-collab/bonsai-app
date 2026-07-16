@@ -72,3 +72,5 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m '黒松表示を実写静止画へアップグレード'
           git push origin HEAD:main
+
+# retrigger 2026-07-17
