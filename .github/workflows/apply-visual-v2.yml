@@ -1,0 +1,62 @@
+name: Apply BONSAI visual v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tree-renderer.js'
+      - '.github/workflows/apply-visual-v2.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Connect high-density bonsai renderer
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+          path=Path('index.html')
+          text=path.read_text()
+          if 'src="tree-renderer.js"' not in text:
+              text=text.replace('<div id="root"></div><script>','<div id="root"></div><script src="tree-renderer.js"></script><script>',1)
+          pattern=r'function treeSvg\(\)\{.*?\}function home\(\)\{'
+          replacement='function treeSvg(){return window.BonsaiVisual.render(s,species,pots,season(),derived())}function home(){'
+          text,n=re.subn(pattern,replacement,text,count=1,flags=re.S)
+          if n!=1:
+              raise SystemExit('treeSvg replacement failed')
+          old='background:radial-gradient(circle at 50% 32%,#92aa951f,transparent 45%),linear-gradient(#ffffff03,#0003)'
+          new='background:radial-gradient(circle at 50% 24%,#b8cab322,transparent 42%),linear-gradient(180deg,#1b2b21,#0d1711 70%,#08100b)'
+          text=text.replace(old,new,1)
+          path.write_text(text)
+          sw=Path('sw.js')
+          s=sw.read_text().replace("bonsai-live-v1-20260716","bonsai-live-v2-20260716")
+          s=s.replace("'./icon.svg']","'./icon.svg','./tree-renderer.js']")
+          sw.write_text(s)
+          PY
+      - name: Validate patched application
+        run: |
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          const html=fs.readFileSync('index.html','utf8');
+          const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+          new vm.Script(scripts.at(-1)[1],{filename:'bonsai.js'});
+          new vm.Script(fs.readFileSync('tree-renderer.js','utf8'),{filename:'tree-renderer.js'});
+          if(!html.includes('window.BonsaiVisual.render'))throw Error('visual renderer not connected');
+          if(!fs.readFileSync('sw.js','utf8').includes('tree-renderer.js'))throw Error('renderer not cached');
+          console.log('BONSAI visual v2: PASS');
+          NODE
+      - name: Commit visual replacement
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add index.html sw.js
+          git diff --cached --quiet && exit 0
+          git commit -m '丸形の仮描画を高密度盆栽表現へ置換'
+          git push origin HEAD:main
