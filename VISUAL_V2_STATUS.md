@@ -1,3 +1,6 @@
-# BONSAI Visual v2
+# BONSAI Visual v2 audit
 
-旧来の円形樹冠を廃止し、枝骨格・樹皮・針葉・根張り・苔・土・鉢の陰影を持つ高密度レンダラーへ移行するための監査状態を記録します。
+- commit: `a6e37b40599555f557048330ecf8587be19a2d86`
+- renderer patch: failure
+- JavaScript / PWA validation: skipped
+- target: circle-based placeholder removed; tree-renderer.js connected
