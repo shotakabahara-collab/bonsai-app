@@ -50,12 +50,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Enable Pages through REST API
+        id: enable
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set +e
+          auth=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
+          get_code=$(curl -sS -o /tmp/pages-get.json -w '%{http_code}' "${auth[@]}" "https://api.github.com/repos/${REPOSITORY}/pages")
+          if [ "$get_code" = "200" ]; then
+            echo "detail=already-enabled" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          post_code=$(curl -sS -o /tmp/pages-post.json -w '%{http_code}' -X POST "${auth[@]}" "https://api.github.com/repos/${REPOSITORY}/pages" -d '{"build_type":"workflow"}')
+          message=$(node -e "const fs=require('fs');let x={};try{x=JSON.parse(fs.readFileSync('/tmp/pages-post.json','utf8'))}catch{};process.stdout.write(String(x.message||'').replace(/[\r\n|]/g,' ').slice(0,160))")
+          echo "detail=GET ${get_code}; POST ${post_code}; ${message}" >> "$GITHUB_OUTPUT"
+          if [ "$post_code" = "201" ] || [ "$post_code" = "204" ] || [ "$post_code" = "409" ]; then exit 0; fi
+          exit 1
       - name: Configure Pages
         id: configure
+        if: steps.enable.outcome == 'success'
         continue-on-error: true
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
       - name: Upload Pages artifact
         id: artifact
         if: always()
@@ -65,7 +83,7 @@ jobs:
           path: .
       - name: Deploy Pages
         id: deployment
-        if: steps.artifact.outcome == 'success'
+        if: steps.enable.outcome == 'success' && steps.configure.outcome == 'success' && steps.artifact.outcome == 'success'
         continue-on-error: true
         uses: actions/deploy-pages@v4
       - name: Verify published app
@@ -83,6 +101,8 @@ jobs:
         if: always()
         uses: actions/github-script@v7
         env:
+          ENABLE: ${{ steps.enable.outcome }}
+          ENABLE_DETAIL: ${{ steps.enable.outputs.detail }}
           CONFIGURE: ${{ steps.configure.outcome }}
           ARTIFACT: ${{ steps.artifact.outcome }}
           DEPLOY: ${{ steps.deployment.outcome }}
@@ -91,6 +111,7 @@ jobs:
         with:
           script: |
             const outcomes = {
+              enable: process.env.ENABLE || 'not-run',
               configure: process.env.CONFIGURE || 'not-run',
               artifact: process.env.ARTIFACT || 'not-run',
               deploy: process.env.DEPLOY || 'not-run',
@@ -104,6 +125,8 @@ jobs:
               `- 記録日時: ${new Date().toISOString()}`,
               `- main SHA: \`${context.sha}\``,
               '- verify: success',
+              `- enable Pages: ${outcomes.enable}`,
+              `- enable detail: ${process.env.ENABLE_DETAIL || 'none'}`,
               `- configure Pages: ${outcomes.configure}`,
               `- upload artifact: ${outcomes.artifact}`,
               `- deploy Pages: ${outcomes.deploy}`,
@@ -124,7 +147,7 @@ jobs:
               ...(passed ? {state_reason: 'completed'} : {})
             });
       - name: Fail deployment job when an audited step failed
-        if: always() && (steps.configure.outcome != 'success' || steps.artifact.outcome != 'success' || steps.deployment.outcome != 'success' || steps.smoke.outcome != 'success')
+        if: always() && (steps.enable.outcome != 'success' || steps.configure.outcome != 'success' || steps.artifact.outcome != 'success' || steps.deployment.outcome != 'success' || steps.smoke.outcome != 'success')
         run: exit 1
   record-verify-failure:
     if: always() && needs.verify.result != 'success'
