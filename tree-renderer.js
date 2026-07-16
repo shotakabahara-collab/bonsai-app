@@ -2,7 +2,7 @@
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const rand=n=>{const x=Math.sin(n*12.9898+78.233)*43758.5453;return x-Math.floor(x)};
 function render(s,species,pots,season,d){
-  const sp=species[s.sp],pot=pots.find(x=>x[0]===s.pot)||pots[0];
+  const raw=species[s.sp],sp=Array.isArray(raw)?{n:raw[0],leaf:raw[2]}:raw,pot=pots.find(x=>x[0]===s.pot)||pots[0];
   const autumn=season===2&&s.sp==='maple';
   const leaf=autumn?'#b85b37':sp.leaf;
   const flower=s.sp==='azalea'&&season===0;

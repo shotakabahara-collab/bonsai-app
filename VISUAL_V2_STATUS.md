@@ -1,6 +1,6 @@
 # BONSAI Visual v2 audit
 
-- commit: `a6e37b40599555f557048330ecf8587be19a2d86`
-- renderer patch: failure
-- JavaScript / PWA validation: skipped
+- commit: `9bd77a5448a4b3edf3195b2f450a43b1d71e5903`
+- renderer patch: success
+- JavaScript / PWA validation: success
 - target: circle-based placeholder removed; tree-renderer.js connected
