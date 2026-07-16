@@ -25,16 +25,20 @@ jobs:
           python3 <<'PY'
           from pathlib import Path
           import re
+          renderer=Path('tree-renderer.js')
+          rt=renderer.read_text()
+          rt=rt.replace("const sp=species[s.sp],pot=pots.find(x=>x[0]===s.pot)||pots[0];","const raw=species[s.sp],sp=Array.isArray(raw)?{n:raw[0],leaf:raw[2]}:raw,pot=pots.find(x=>x[0]===s.pot)||pots[0];",1)
+          renderer.write_text(rt)
           path=Path('index.html')
           text=path.read_text()
           if 'src="tree-renderer.js"' not in text:
               text=text.replace('<div id="root"></div><script>','<div id="root"></div><script src="tree-renderer.js"></script><script>',1)
-          pattern=r'function treeSvg\(\)\{.*?\}function home\(\)\{'
-          replacement='function treeSvg(){return window.BonsaiVisual.render(s,species,pots,season(),derived())}function home(){'
+          pattern=r'function svg\(\)\{.*?\}function home\(\)\{'
+          replacement='function svg(){return window.BonsaiVisual.render(s,SP,POTS,season(),d())}function home(){'
           text,n=re.subn(pattern,replacement,text,count=1,flags=re.S)
           if n!=1:
-              raise SystemExit(f'treeSvg replacement failed: {n}')
-          old='background:radial-gradient(circle at 50% 32%,#92aa951f,transparent 45%),linear-gradient(#ffffff03,#0003)'
+              raise SystemExit(f'svg replacement failed: {n}')
+          old='background:radial-gradient(circle,#81998725,transparent 60%)'
           new='background:radial-gradient(circle at 50% 24%,#b8cab322,transparent 42%),linear-gradient(180deg,#1b2b21,#0d1711 70%,#08100b)'
           text=text.replace(old,new,1)
           path.write_text(text)
@@ -55,8 +59,9 @@ jobs:
           const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
           new vm.Script(scripts.at(-1)[1],{filename:'bonsai.js'});
           new vm.Script(fs.readFileSync('tree-renderer.js','utf8'),{filename:'tree-renderer.js'});
-          if(!html.includes('window.BonsaiVisual.render'))throw Error('visual renderer not connected');
+          if(!html.includes('window.BonsaiVisual.render(s,SP,POTS'))throw Error('visual renderer not connected');
           if(!html.includes('src="tree-renderer.js"'))throw Error('renderer script tag missing');
+          if(/function svg\(\)\{let x=d\(\),col=/.test(html))throw Error('circle placeholder remains active');
           if(!fs.readFileSync('sw.js','utf8').includes('tree-renderer.js'))throw Error('renderer not cached');
           console.log('BONSAI visual v2: PASS');
           NODE
@@ -79,7 +84,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add index.html sw.js VISUAL_V2_STATUS.md
+          git add index.html sw.js tree-renderer.js VISUAL_V2_STATUS.md
           git diff --cached --quiet && exit 0
           git commit -m '丸形の仮描画を高密度盆栽表現へ置換'
           git push origin HEAD:main
