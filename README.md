@@ -17,3 +17,5 @@ iPhoneのホーム画面から遊べる、独立型の盆栽育成PWAです。
 - 鑑賞モード、端末保存、オフライン起動
 
 公開URL: https://shotakabahara-collab.github.io/bonsai-app/
+
+GitHub Pagesの公開元はGitHub Actionsに設定済みです。
