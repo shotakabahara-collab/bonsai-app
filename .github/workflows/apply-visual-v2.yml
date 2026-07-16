@@ -6,6 +6,7 @@ on:
     paths:
       - 'tree-renderer.js'
       - '.github/workflows/apply-visual-v2.yml'
+  workflow_dispatch:
 
 permissions:
   contents: write
