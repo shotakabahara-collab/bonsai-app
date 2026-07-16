@@ -7,6 +7,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  issues: write
 concurrency:
   group: pages
   cancel-in-progress: true
@@ -41,6 +42,8 @@ jobs:
           curl -fsS http://127.0.0.1:4173/sw.js | grep -Fq 'bonsai-live-v1'
   deploy:
     needs: verify
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -64,3 +67,39 @@ jobs:
           curl --fail --silent --show-error --retry 10 --retry-all-errors "$base" -o /tmp/live.html
           grep -Fq '<title>BONSAI</title>' /tmp/live.html
           curl --fail --silent --show-error --retry 10 --retry-all-errors "${base}manifest.webmanifest" | grep -Fq 'BONSAI'
+  record:
+    if: always()
+    needs: [verify, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+        with:
+          script: |
+            const passed = process.env.VERIFY_RESULT === 'success' && process.env.DEPLOY_RESULT === 'success';
+            const pageUrl = process.env.PAGE_URL || 'https://shotakabahara-collab.github.io/bonsai-app/';
+            const body = [
+              '# BONSAI release audit',
+              '',
+              `- 記録日時: ${new Date().toISOString()}`,
+              `- main SHA: \`${context.sha}\``,
+              `- verify: ${process.env.VERIFY_RESULT || 'unknown'}`,
+              `- deploy + post-deploy smoke: ${process.env.DEPLOY_RESULT || 'unknown'}`,
+              `- Pages URL: ${pageUrl}`,
+              '',
+              passed
+                ? '公開検査はPASSです。iPhoneのSafariでPages URLを開き、ホーム画面に追加できます。'
+                : '検査または公開に失敗しています。Actionsログを確認してください。'
+            ].join('\n');
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1,
+              title: `BONSAI release audit: ${passed ? 'PASS' : 'FAIL'}`,
+              body,
+              state: passed ? 'closed' : 'open',
+              ...(passed ? {state_reason: 'completed'} : {})
+            });
