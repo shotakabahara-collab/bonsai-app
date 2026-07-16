@@ -19,6 +19,8 @@ jobs:
         with:
           ref: main
       - name: Connect high-density bonsai renderer
+        id: patch
+        continue-on-error: true
         run: |
           python3 <<'PY'
           from pathlib import Path
@@ -31,17 +33,21 @@ jobs:
           replacement='function treeSvg(){return window.BonsaiVisual.render(s,species,pots,season(),derived())}function home(){'
           text,n=re.subn(pattern,replacement,text,count=1,flags=re.S)
           if n!=1:
-              raise SystemExit('treeSvg replacement failed')
+              raise SystemExit(f'treeSvg replacement failed: {n}')
           old='background:radial-gradient(circle at 50% 32%,#92aa951f,transparent 45%),linear-gradient(#ffffff03,#0003)'
           new='background:radial-gradient(circle at 50% 24%,#b8cab322,transparent 42%),linear-gradient(180deg,#1b2b21,#0d1711 70%,#08100b)'
           text=text.replace(old,new,1)
           path.write_text(text)
           sw=Path('sw.js')
           s=sw.read_text().replace("bonsai-live-v1-20260716","bonsai-live-v2-20260716")
-          s=s.replace("'./icon.svg']","'./icon.svg','./tree-renderer.js']")
+          if 'tree-renderer.js' not in s:
+              s=s.replace("'./icon.svg']","'./icon.svg','./tree-renderer.js']")
           sw.write_text(s)
           PY
       - name: Validate patched application
+        id: validate
+        if: steps.patch.outcome == 'success'
+        continue-on-error: true
         run: |
           node <<'NODE'
           const fs=require('fs'),vm=require('vm');
@@ -50,14 +56,33 @@ jobs:
           new vm.Script(scripts.at(-1)[1],{filename:'bonsai.js'});
           new vm.Script(fs.readFileSync('tree-renderer.js','utf8'),{filename:'tree-renderer.js'});
           if(!html.includes('window.BonsaiVisual.render'))throw Error('visual renderer not connected');
+          if(!html.includes('src="tree-renderer.js"'))throw Error('renderer script tag missing');
           if(!fs.readFileSync('sw.js','utf8').includes('tree-renderer.js'))throw Error('renderer not cached');
           console.log('BONSAI visual v2: PASS');
           NODE
-      - name: Commit visual replacement
+      - name: Record visual audit
+        if: always()
+        env:
+          PATCH: ${{ steps.patch.outcome }}
+          VALIDATE: ${{ steps.validate.outcome }}
+        run: |
+          cat > VISUAL_V2_STATUS.md <<EOF
+          # BONSAI Visual v2 audit
+
+          - commit: \`${GITHUB_SHA}\`
+          - renderer patch: ${PATCH}
+          - JavaScript / PWA validation: ${VALIDATE}
+          - target: circle-based placeholder removed; tree-renderer.js connected
+          EOF
+      - name: Commit visual replacement and audit
+        if: always()
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add index.html sw.js
+          git add index.html sw.js VISUAL_V2_STATUS.md
           git diff --cached --quiet && exit 0
           git commit -m '丸形の仮描画を高密度盆栽表現へ置換'
           git push origin HEAD:main
+      - name: Fail when visual audit failed
+        if: steps.patch.outcome != 'success' || steps.validate.outcome != 'success'
+        run: exit 1
