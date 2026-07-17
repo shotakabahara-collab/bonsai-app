@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install image build dependencies
-        run: python -m pip install --disable-pip-version-check numpy opencv-python-headless
+        run: python -m pip install --disable-pip-version-check numpy opencv-python-headless pillow
       - name: Generate state images and connect the game
         run: python scripts/build_kuromatsu_states.py
       - name: Validate generated assets and application syntax
