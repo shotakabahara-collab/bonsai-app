@@ -27,11 +27,20 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install image build dependencies
-        run: python -m pip install --disable-pip-version-check numpy opencv-python-headless pillow
+        id: dependencies
+        continue-on-error: true
+        run: python -m pip install --disable-pip-version-check numpy opencv-python-headless pillow > /tmp/dependencies.log 2>&1
       - name: Generate state images and connect the game
-        run: python scripts/build_kuromatsu_states.py
+        id: generate
+        if: steps.dependencies.outcome == 'success'
+        continue-on-error: true
+        run: python scripts/build_kuromatsu_states.py > /tmp/generate.log 2>&1
       - name: Validate generated assets and application syntax
+        id: validate
+        if: steps.generate.outcome == 'success'
+        continue-on-error: true
         run: |
+          {
           python <<'PY'
           from pathlib import Path
           from PIL import Image
@@ -66,11 +75,49 @@ jobs:
           new vm.Script(fs.readFileSync('state-images.js','utf8'),{filename:'state-images.js'});
           console.log('state image JavaScript: PASS');
           NODE
-      - name: Commit generated state assets
+          } > /tmp/validate.log 2>&1
+      - name: Write build audit
+        if: always()
+        env:
+          DEPENDENCIES: ${{ steps.dependencies.outcome }}
+          GENERATE: ${{ steps.generate.outcome }}
+          VALIDATE: ${{ steps.validate.outcome }}
+        run: |
+          {
+            echo '# Kuromatsu state image build audit'
+            echo
+            echo "- commit: \`${GITHUB_SHA}\`"
+            echo "- dependencies: ${DEPENDENCIES:-not-run}"
+            echo "- generation: ${GENERATE:-not-run}"
+            echo "- validation: ${VALIDATE:-not-run}"
+            echo
+            echo '## Dependency log'
+            echo '```text'
+            tail -n 30 /tmp/dependencies.log 2>/dev/null || true
+            echo '```'
+            echo
+            echo '## Generation log'
+            echo '```text'
+            tail -n 40 /tmp/generate.log 2>/dev/null || true
+            echo '```'
+            echo
+            echo '## Validation log'
+            echo '```text'
+            tail -n 40 /tmp/validate.log 2>/dev/null || true
+            echo '```'
+          } > STATE_IMAGE_BUILD_STATUS.md
+      - name: Commit generated state assets and audit
+        if: always()
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add assets state-images.js index.html sw.js
+          git add STATE_IMAGE_BUILD_STATUS.md
+          if [ "${{ steps.generate.outcome }}" = "success" ] && [ "${{ steps.validate.outcome }}" = "success" ]; then
+            git add assets state-images.js index.html sw.js
+          fi
           git diff --cached --quiet && exit 0
-          git commit -m '黒松の状態画像5種と自動選択ロジックを生成'
+          git commit -m '黒松状態画像生成の結果を記録'
           git push origin HEAD:main
+      - name: Fail when build did not pass
+        if: always() && (steps.dependencies.outcome != 'success' || steps.generate.outcome != 'success' || steps.validate.outcome != 'success')
+        run: exit 1
