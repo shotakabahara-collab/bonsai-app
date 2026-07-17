@@ -1,0 +1,76 @@
+name: Build kuromatsu state images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/build_kuromatsu_states.py'
+      - 'photo-assets.js'
+      - '.github/workflows/build-kuromatsu-states.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kuromatsu-state-images
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install image build dependencies
+        run: python -m pip install --disable-pip-version-check numpy opencv-python-headless
+      - name: Generate state images and connect the game
+        run: python scripts/build_kuromatsu_states.py
+      - name: Validate generated assets and application syntax
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          expected = [
+              'assets/kuromatsu_B02_P00_V02_W02_G00_FA_M01_POT02_main.jpg',
+              'assets/kuromatsu_B02_P01_V02_W02_G00_FA_M01_POT02_main.jpg',
+              'assets/kuromatsu_B02_P02_V02_W02_G00_FA_M01_POT02_main.jpg',
+              'assets/kuromatsu_B02_P01_V01_W01_G00_FA_M01_POT02_main.jpg',
+              'assets/kuromatsu_B03_P02_V03_W03_G00_FA_M02_POT05_award.jpg',
+          ]
+          for name in expected:
+              path = Path(name)
+              if not path.exists() or path.stat().st_size < 150_000:
+                  raise SystemExit(f'invalid state asset: {name}')
+              with Image.open(path) as image:
+                  if image.width < 800 or image.height < 1200:
+                      raise SystemExit(f'insufficient resolution: {name} {image.size}')
+          html = Path('index.html').read_text()
+          sw = Path('sw.js').read_text()
+          if 'BonsaiStateImages' not in html or 'state-images.js' not in html:
+              raise SystemExit('state image resolver is not connected')
+          if 'bonsai-state-images-v1' not in sw:
+              raise SystemExit('state image cache version is missing')
+          print('state asset validation: PASS')
+          PY
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          const html=fs.readFileSync('index.html','utf8');
+          const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+          new vm.Script(scripts.at(-1)[1],{filename:'bonsai.js'});
+          new vm.Script(fs.readFileSync('state-images.js','utf8'),{filename:'state-images.js'});
+          console.log('state image JavaScript: PASS');
+          NODE
+      - name: Commit generated state assets
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add assets state-images.js index.html sw.js
+          git diff --cached --quiet && exit 0
+          git commit -m '黒松の状態画像5種と自動選択ロジックを生成'
+          git push origin HEAD:main
