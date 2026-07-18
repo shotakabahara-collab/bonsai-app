@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'state-image-runtime.js'
+      - 'judging-engine.js'
       - '.github/workflows/apply-state-image-runtime.yml'
   workflow_dispatch:
 
@@ -25,54 +26,93 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Connect state image runtime
+
+      - name: Connect state image and judging modules
         run: |
           python3 <<'PY'
           from pathlib import Path
 
-          path = Path('index.html')
-          text = path.read_text(encoding='utf-8')
-          tag = '<script src="state-image-runtime.js"></script>'
-          if tag not in text:
-              if '<script src="advanced-care-bridge.js"></script>' in text:
-                  text = text.replace('<script src="advanced-care-bridge.js"></script>', '<script src="advanced-care-bridge.js"></script>' + tag, 1)
-              elif '</body>' in text:
-                  text = text.replace('</body>', tag + '</body>', 1)
-              elif '</html>' in text:
-                  text = text.replace('</html>', tag + '</html>', 1)
+          index = Path('index.html')
+          html = index.read_text(encoding='utf-8')
+          ordered = [
+              '<script src="judging-engine.js"></script>',
+              '<script src="state-image-runtime.js"></script>',
+          ]
+          anchor = '<script src="completion-core.js"></script>'
+          bridge = '<script src="advanced-care-bridge.js"></script>'
+          for tag in ordered:
+              if tag in html:
+                  continue
+              if anchor in html:
+                  html = html.replace(anchor, anchor + tag, 1)
+                  anchor = tag
+              elif bridge in html:
+                  html = html.replace(bridge, bridge + tag, 1)
+                  bridge = tag
+              elif '</body>' in html:
+                  html = html.replace('</body>', tag + '</body>', 1)
+              elif '</html>' in html:
+                  html = html.replace('</html>', tag + '</html>', 1)
               else:
-                  text += tag
-          path.write_text(text, encoding='utf-8')
+                  html += tag
+          index.write_text(html, encoding='utf-8')
+
+          sw_path = Path('sw.js')
+          sw = sw_path.read_text(encoding='utf-8')
+          sw = sw.replace("const CACHE='bonsai-photo-v3-completion-20260718';", "const CACHE='bonsai-photo-v4-state-runtime-20260718';")
+          for asset in ['./judging-engine.js', './state-image-runtime.js']:
+              if asset not in sw:
+                  sw = sw.replace("'./completion-core.js'", "'./completion-core.js','%s'" % asset, 1)
+          sw_path.write_text(sw, encoding='utf-8')
           PY
-      - name: Validate runtime contract
+
+      - name: Validate module contracts and irreversible state
         run: |
           node --check state-image-runtime.js
+          node --check judging-engine.js
           node <<'NODE'
           const fs=require('fs'),vm=require('vm');
           const html=fs.readFileSync('index.html','utf8');
-          if(!html.includes('<script src="state-image-runtime.js"></script>')) throw Error('state runtime is not connected');
-          const required=['BonsaiStateRuntime','IndexedDB','作品状態記録','bonsai-state-canvas','visualSignature','deadwood','shari'];
-          const source=fs.readFileSync('state-image-runtime.js','utf8');
-          for(const token of required) if(!source.includes(token)) throw Error(`missing runtime contract: ${token}`);
+          for(const tag of ['<script src="judging-engine.js"></script>','<script src="state-image-runtime.js"></script>']) {
+            if(!html.includes(tag)) throw Error(`module is not connected: ${tag}`);
+          }
           const inline=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
             .map(match=>match[1]).filter(code=>code.trim());
           inline.forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
-          console.log('state image runtime syntax: PASS');
+
+          const runtime=fs.readFileSync('state-image-runtime.js','utf8');
+          for(const token of ['BonsaiStateRuntime','indexedDB','作品状態記録','bonsai-state-canvas','visualSignature','deadwood','shari']) {
+            if(!runtime.includes(token)) throw Error(`missing runtime contract: ${token}`);
+          }
+          const judging=fs.readFileSync('judging-engine.js','utf8');
+          for(const token of ['BonsaiJudging','病害虫','針金と傷跡','神舎利','averageHealth','activeWire']) {
+            if(!judging.includes(token)) throw Error(`missing judging contract: ${token}`);
+          }
+          const sw=fs.readFileSync('sw.js','utf8');
+          for(const asset of ['judging-engine.js','state-image-runtime.js']) {
+            if(!sw.includes(asset)) throw Error(`offline cache missing: ${asset}`);
+          }
+          console.log('state image and judging contracts: PASS');
           NODE
+
       - name: Static HTTP smoke
         run: |
           python3 -m http.server 4173 >/tmp/state-runtime-http.log 2>&1 &
           server=$!
           trap 'kill $server' EXIT
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4173/ >/tmp/index.html && break; sleep .2; done
-          grep -Fq 'state-image-runtime.js' /tmp/index.html
-          curl -fsS http://127.0.0.1:4173/state-image-runtime.js | grep -Fq 'BonsaiStateRuntime'
-          curl -fsS http://127.0.0.1:4173/sw.js | grep -Fq 'state-image-runtime.js'
+          for asset in judging-engine.js state-image-runtime.js; do
+            grep -Fq "$asset" /tmp/index.html
+            curl -fsS "http://127.0.0.1:4173/$asset" >/tmp/asset
+            test -s /tmp/asset
+            grep -Fq "$asset" sw.js
+          done
+
       - name: Commit integrated application
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add index.html
+          git add index.html sw.js
           git diff --cached --quiet && exit 0
-          git commit -m '作品状態画像ランタイムをゲーム画面へ接続'
+          git commit -m '状態画像と部位審査をゲーム・オフラインへ正式接続'
           git push origin HEAD:main
