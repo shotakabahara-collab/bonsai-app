@@ -1,0 +1,55 @@
+name: Validate BONSAI React rebuild
+
+on:
+  push:
+    branches: [rebuild/react-v1]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bonsai-react-rebuild-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-webkit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+      - name: Install dependencies
+        working-directory: next
+        run: npm ci
+      - name: Typecheck and build
+        working-directory: next
+        run: npm run build
+      - name: Install WebKit
+        working-directory: next
+        run: npx playwright install --with-deps webkit
+      - name: Run iPhone-sized WebKit smoke test
+        run: |
+          cd next
+          npm run preview >/tmp/bonsai-preview.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break; sleep .25; done
+          npm run test:smoke
+      - name: Upload visual and migration audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-react-rebuild-audit
+          path: next/test-artifacts
+          if-no-files-found: warn
+      - name: Upload production bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-react-dist
+          path: next/dist
