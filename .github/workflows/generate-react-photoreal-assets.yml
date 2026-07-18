@@ -41,7 +41,7 @@ jobs:
         run: |
           python <<'PY'
           from pathlib import Path
-          from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, ImageStat
+          from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps, ImageStat
           import hashlib, json
 
           root = Path('next/public')
@@ -50,7 +50,6 @@ jobs:
           source_path = Path('/tmp/kuromatsu-source.jpg')
           with Image.open(source_path) as opened:
               source = opened.convert('RGB')
-              source.verify if False else None
           if source.width < 900 or source.height < 600:
               raise SystemExit(f'source resolution is too low: {source.size}')
 
