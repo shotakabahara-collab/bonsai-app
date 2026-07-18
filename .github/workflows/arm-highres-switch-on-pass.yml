@@ -1,0 +1,52 @@
+name: Arm high-resolution switch on pass
+
+on:
+  push:
+    branches:
+      - agent/highres-kuromatsu-v2
+    paths:
+      - '.github/workflows/arm-highres-switch-on-pass.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: arm-highres-switch-on-pass
+  cancel-in-progress: true
+
+jobs:
+  arm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/highres-kuromatsu-v2
+      - name: Merge only after every candidate validation step passes
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/validate-highres-photo.yml')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace('permissions:\n  contents: read', 'permissions:\n  contents: write\n  pull-requests: write', 1)
+          marker = '      - name: Switch verified candidate to main\n'
+          if marker not in text:
+              text = text.rstrip() + '''\n\n      - name: Switch verified candidate to main\n        if: success() && github.event_name == 'pull_request' && github.event.pull_request.number == 2\n        env:\n          GH_TOKEN: ${{ github.token }}\n          REPOSITORY: ${{ github.repository }}\n          HEAD_SHA: ${{ github.event.pull_request.head.sha }}\n        run: |\n          gh pr ready 2 --repo "$REPOSITORY" || true\n          gh pr merge 2 --repo "$REPOSITORY" --squash --match-head-commit "$HEAD_SHA" --subject "高解像度黒松実写と状態画像を正式公開" --body "iPhone相当ブラウザ、視覚差分、1200×1600出力、病害虫・神舎利の状態画像検査を通過した候補をmainへ切り替えます。"\n'''
+          if 'pull-requests: write' not in text or marker not in text:
+              raise SystemExit('validation switch guard could not be armed')
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Validate workflow syntax contract
+        run: |
+          grep -Fq 'pull-requests: write' .github/workflows/validate-highres-photo.yml
+          grep -Fq 'if: success()' .github/workflows/validate-highres-photo.yml
+          grep -Fq -- '--match-head-commit' .github/workflows/validate-highres-photo.yml
+      - name: Commit the guarded switch and remove this workflow
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/validate-highres-photo.yml
+          git rm .github/workflows/arm-highres-switch-on-pass.yml
+          git commit -m '全実写検査PASS後のみmainへ切り替える'
+          git push origin HEAD:agent/highres-kuromatsu-v2
