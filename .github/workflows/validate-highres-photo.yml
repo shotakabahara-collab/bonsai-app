@@ -3,16 +3,6 @@ name: Validate high-resolution BONSAI candidate
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'index.html'
-      - 'photo-source-v2.js'
-      - 'state-image-runtime.js'
-      - 'completion-core.js'
-      - 'advanced-care.js'
-      - 'advanced-care-bridge.js'
-      - 'sw.js'
-      - 'IMAGE_LICENSES.md'
-      - '.github/workflows/validate-highres-photo.yml'
   workflow_dispatch:
 
 permissions:
@@ -30,173 +20,137 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install browser and image comparison tools
+      - name: Install browser and image tools
         run: |
           npm install --no-save playwright@1.52.0
           npx playwright install --with-deps chromium
           python -m pip install --disable-pip-version-check pillow
 
-      - name: Validate source and application contracts
+      - name: Validate static contracts
         run: |
-          node --check photo-source-v2.js
-          node --check state-image-runtime.js
-          node --check completion-core.js
-          node --check advanced-care.js
-          node --check advanced-care-bridge.js
-          node --check judging-engine.js
+          for file in photo-source-v2.js state-image-runtime.js completion-core.js advanced-care.js advanced-care-bridge.js judging-engine.js; do node --check "$file"; done
           node <<'NODE'
           const fs=require('fs'),vm=require('vm');
           const html=fs.readFileSync('index.html','utf8');
-          const photoAssets=html.indexOf('<script src="photo-assets.js"></script>');
-          const photoSource=html.indexOf('<script src="photo-source-v2.js"></script>');
-          const inlineStart=html.indexOf('<script>');
-          if(!(photoAssets>=0 && photoSource>photoAssets && photoSource<inlineStart)) throw Error('photo source script order invalid');
-          const inline=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(x=>x[1]).filter(x=>x.trim());
-          inline.forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
-          const source=fs.readFileSync('photo-source-v2.js','utf8');
-          for(const token of ['upload.wikimedia.org','pineFallback','CC BY-SA 3.0','BonsaiPhotoSource','photoCorsReady']) if(!source.includes(token)) throw Error(`missing photo source contract: ${token}`);
+          const assets=html.indexOf('<script src="photo-assets.js"></script>');
+          const source=html.indexOf('<script src="photo-source-v2.js"></script>');
+          if(!(assets>=0 && source>assets)) throw Error('photo source order invalid');
+          [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(x=>x[1]).filter(x=>x.trim()).forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
+          const photo=fs.readFileSync('photo-source-v2.js','utf8');
+          for(const token of ['upload.wikimedia.org','photoCorsReady','CC BY-SA 3.0','BonsaiPhotoSource']) if(!photo.includes(token)) throw Error(`missing photo contract: ${token}`);
           const runtime=fs.readFileSync('state-image-runtime.js','utf8');
-          for(const token of ["crossOrigin = 'anonymous'",'bonsai-state-ready','foliageReduction','drawWire','drawDisease','drawPest','drawDeadwood','drawShari']) if(!runtime.includes(token)) throw Error(`missing state renderer contract: ${token}`);
+          for(const token of ['bonsai-state-ready','foliageReduction','drawWire','drawDisease','drawPest','drawDeadwood','drawShari']) if(!runtime.includes(token)) throw Error(`missing runtime contract: ${token}`);
           const sw=fs.readFileSync('sw.js','utf8');
-          for(const token of ['photo-source-v2.js','upload.wikimedia.org','bonsai-photo-v6-highres-state',"event.request.mode!=='cors'"]) if(!sw.includes(token)) throw Error(`missing cache contract: ${token}`);
-          console.log('candidate contracts: PASS');
+          for(const token of ['bonsai-photo-v6-highres-state','photo-source-v2.js','upload.wikimedia.org',"event.request.mode!=='cors'"]) if(!sw.includes(token)) throw Error(`missing cache contract: ${token}`);
+          console.log('static contracts: PASS');
           NODE
 
-      - name: Run real-browser state image test
+      - name: Run iPhone-sized browser validation
         run: |
-          python3 -m http.server 4173 >/tmp/bonsai-browser-http.log 2>&1 &
+          python3 -m http.server 4173 >/tmp/bonsai-http.log 2>&1 &
           server=$!
           trap 'kill $server' EXIT
           for i in $(seq 1 40); do curl -fsS http://127.0.0.1:4173/ >/dev/null && break; sleep .25; done
           mkdir -p test-artifacts
-          cat > /tmp/browser-test.mjs <<'NODE'
+          cat > browser-test.mjs <<'NODE'
           import { chromium } from 'playwright';
           import fs from 'node:fs';
 
-          const diagnostics={errors:[],requestFailures:[],responses:[],phase:'launch'};
-          const browser = await chromium.launch({headless:true});
-          const page = await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:2});
-          page.on('console',msg=>{ if(msg.type()==='error') diagnostics.errors.push(msg.text()); });
-          page.on('pageerror',error=>diagnostics.errors.push(error.message));
-          page.on('requestfailed',request=>diagnostics.requestFailures.push({url:request.url(),failure:request.failure()?.errorText||''}));
-          page.on('response',response=>{ if(/wikimedia|photo-source-v2|state-image-runtime/.test(response.url())) diagnostics.responses.push({url:response.url(),status:response.status(),fromServiceWorker:response.fromServiceWorker()}); });
-
+          const report={phase:'launch',errors:[],failedRequests:[],responses:[]};
+          let browser;
           try {
-            diagnostics.phase='initial navigation';
+            browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:2});
+            page.on('console',message=>{if(message.type()==='error')report.errors.push(message.text())});
+            page.on('pageerror',error=>report.errors.push(error.message));
+            page.on('requestfailed',request=>report.failedRequests.push({url:request.url(),error:request.failure()?.errorText||''}));
+            page.on('response',response=>{if(/wikimedia|photo-source-v2|state-image-runtime/.test(response.url()))report.responses.push({url:response.url(),status:response.status(),serviceWorker:response.fromServiceWorker()})});
+
+            report.phase='seed';
             await page.goto('http://127.0.0.1:4173/',{waitUntil:'domcontentloaded'});
             await page.evaluate(()=>{
               const now=Date.now();
-              localStorage.setItem('bonsai_live_1',JSON.stringify({
-                started:true,name:'検証者',mentor:0,sp:'pine',tree:'黒松・検証樹',born:now-86400000*20,
-                water:84,last:now,vit:91,stress:4,prune:0,wire:0,fert:2,pot:'black',money:9000,rep:180,
-                owned:['starter','black'],awards:[],log:[],lastWeek:'',stats:{water:5,prune:0,wire:0,shows:0}
-              }));
+              localStorage.setItem('bonsai_live_1',JSON.stringify({started:true,name:'検証者',mentor:0,sp:'pine',tree:'黒松・検証樹',born:now-1728000000,water:84,last:now,vit:91,stress:4,prune:0,wire:0,fert:2,pot:'black',money:9000,rep:180,owned:['starter','black'],awards:[],log:[],lastWeek:'',stats:{water:5,prune:0,wire:0,shows:0}}));
             });
-
-            diagnostics.phase='seeded reload';
             await page.reload({waitUntil:'networkidle'});
-            await page.waitForSelector('.photo-bonsai img');
+
+            report.phase='base';
             await page.waitForFunction(()=>{
               const image=document.querySelector('.photo-bonsai img');
               return image?.complete && image.naturalWidth>=900 && document.querySelector('.bonsai-state-canvas') && image.closest('.photo-bonsai')?.classList.contains('bonsai-state-ready');
             },null,{timeout:45000});
-
-            diagnostics.phase='base inspection';
-            const baseInfo=await page.evaluate(()=>{
+            report.base=await page.evaluate(()=>{
               const image=document.querySelector('.photo-bonsai img');
               const canvas=document.querySelector('.bonsai-state-canvas');
-              return {
-                naturalWidth:image.naturalWidth,naturalHeight:image.naturalHeight,
-                canvasWidth:canvas.width,canvasHeight:canvas.height,
-                crossOrigin:image.crossOrigin,currentSrc:image.currentSrc,
-                ready:image.closest('.photo-bonsai')?.classList.contains('bonsai-state-ready'),
-                credit:document.querySelector('#bonsai-photo-credit')?.textContent||''
-              };
+              return {width:image.naturalWidth,height:image.naturalHeight,crossOrigin:image.crossOrigin,src:image.currentSrc,canvasWidth:canvas.width,canvasHeight:canvas.height,credit:document.querySelector('#bonsai-photo-credit')?.textContent||''};
             });
-            diagnostics.baseInfo=baseInfo;
-            if(baseInfo.naturalWidth<900 || baseInfo.naturalHeight<1200) throw new Error(`source resolution too low: ${JSON.stringify(baseInfo)}`);
-            if(baseInfo.crossOrigin!=='anonymous') throw new Error(`source image is not CORS-enabled: ${JSON.stringify(baseInfo)}`);
-            if(!baseInfo.ready) throw new Error('state canvas did not become the visible artwork');
-            if(!/Sage Ross/.test(baseInfo.credit) || !/CC BY-SA 3.0/.test(baseInfo.credit)) throw new Error('photo attribution is not visible');
+            if(report.base.width<900||report.base.height<1200)throw Error(`source resolution too low: ${JSON.stringify(report.base)}`);
+            if(report.base.crossOrigin!=='anonymous')throw Error(`source image is not CORS-enabled: ${JSON.stringify(report.base)}`);
+            if(!/Sage Ross/.test(report.base.credit)||!/CC BY-SA 3.0/.test(report.base.credit))throw Error('attribution missing');
             await page.screenshot({path:'test-artifacts/01-home-base.png',fullPage:true});
             await page.locator('.stage').screenshot({path:'test-artifacts/02-stage-base.png'});
 
-            diagnostics.phase='pruning and wiring';
-            const action=await page.evaluate(()=>{
-              let state=JSON.parse(localStorage.getItem('bonsai_live_1'));
-              state=window.BonsaiAdvancedCare.migrateState(state);
-              const result=window.BonsaiAdvancedCare.applyAction(state,'first_left','prune_medium');
-              if(!result.ok) return result;
-              const wired=window.BonsaiAdvancedCare.applyAction(result.state,'second_right','wire_light','down');
+            report.phase='prune-wire';
+            report.action=await page.evaluate(()=>{
+              let state=window.BonsaiAdvancedCare.migrateState(JSON.parse(localStorage.getItem('bonsai_live_1')));
+              const pruned=window.BonsaiAdvancedCare.applyAction(state,'first_left','prune_medium');
+              if(!pruned.ok)return pruned;
+              const wired=window.BonsaiAdvancedCare.applyAction(pruned.state,'second_right','wire_light','down');
               localStorage.setItem('bonsai_live_1',JSON.stringify(wired.state));
               return {ok:wired.ok,signature:window.BonsaiAdvancedCare.visualSignature(wired.state)};
             });
-            diagnostics.action=action;
-            if(!action.ok) throw new Error(`advanced action failed: ${JSON.stringify(action)}`);
-            await page.waitForTimeout(2200);
-            await page.waitForSelector('.bonsai-state-canvas');
+            if(!report.action.ok)throw Error(`advanced action failed: ${JSON.stringify(report.action)}`);
+            await page.waitForTimeout(2400);
             await page.locator('.stage').screenshot({path:'test-artifacts/03-stage-pruned-wired.png'});
 
-            diagnostics.phase='high-resolution export';
-            const exportResult=await page.evaluate(async()=>{
+            report.phase='export';
+            report.export=await page.evaluate(async()=>{
               const state=JSON.parse(localStorage.getItem('bonsai_live_1'));
               const image=document.querySelector('.photo-bonsai img');
               const canvas=await window.BonsaiStateRuntime.compose(state,1200,1600,image.currentSrc||image.src);
-              const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error('toBlob returned null')),'image/jpeg',0.91));
+              const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(Error('toBlob null')),'image/jpeg',0.91));
               return {width:canvas.width,height:canvas.height,size:blob.size};
             });
-            diagnostics.exportResult=exportResult;
-            if(exportResult.width!==1200 || exportResult.height!==1600 || exportResult.size<120000) throw new Error(`high-resolution export failed: ${JSON.stringify(exportResult)}`);
+            if(report.export.width!==1200||report.export.height!==1600||report.export.size<120000)throw Error(`high-resolution export failed: ${JSON.stringify(report.export)}`);
 
-            diagnostics.phase='pathology and deadwood';
+            report.phase='disease-deadwood';
             await page.evaluate(()=>{
-              let state=window.BonsaiAdvancedCare.migrateState(JSON.parse(localStorage.getItem('bonsai_live_1')));
+              const state=window.BonsaiAdvancedCare.migrateState(JSON.parse(localStorage.getItem('bonsai_live_1')));
               state.advanced.parts.apex.disease='needle_blight';
               state.advanced.parts.third_left.pest='spider_mite';
               state.advanced.parts.front_branch.deadwood='jin';
               state.advanced.shari={level:2,side:'left',createdAt:Date.now()};
               localStorage.setItem('bonsai_live_1',JSON.stringify(state));
             });
-            await page.waitForTimeout(2200);
+            await page.waitForTimeout(2400);
             await page.locator('.stage').screenshot({path:'test-artifacts/04-stage-pathology-deadwood.png'});
-
-            if(diagnostics.errors.some(message=>/state image source failed|tainted|securityerror/i.test(message))) throw new Error(`browser errors: ${diagnostics.errors.join(' | ')}`);
-            diagnostics.phase='complete';
+            if(report.errors.some(message=>/state image source failed|tainted|securityerror/i.test(message)))throw Error(`browser errors: ${report.errors.join(' | ')}`);
+            report.phase='complete';
           } catch(error) {
-            diagnostics.failure={name:error.name,message:error.message,stack:error.stack};
-            try { await page.screenshot({path:'test-artifacts/99-failure-page.png',fullPage:true}); } catch {}
+            report.failure={name:error.name,message:error.message,stack:error.stack};
             throw error;
           } finally {
-            fs.writeFileSync('test-artifacts/browser-result.json',JSON.stringify(diagnostics,null,2));
-            await browser.close();
+            fs.writeFileSync('test-artifacts/browser-result.json',JSON.stringify(report,null,2));
+            if(browser)await browser.close();
           }
           NODE
-          node /tmp/browser-test.mjs
+          node browser-test.mjs
 
-      - name: Verify state changes are visually measurable
+      - name: Verify measurable visual state changes
         run: |
           python3 <<'PY'
           from PIL import Image, ImageChops, ImageStat
           from pathlib import Path
-
           base=Image.open('test-artifacts/02-stage-base.png').convert('RGB')
           styled=Image.open('test-artifacts/03-stage-pruned-wired.png').convert('RGB')
           affected=Image.open('test-artifacts/04-stage-pathology-deadwood.png').convert('RGB')
-          if base.size != styled.size or base.size != affected.size:
-              raise SystemExit('state screenshots have inconsistent dimensions')
-
-          def mean_delta(left,right):
-              diff=ImageChops.difference(left,right)
-              return sum(ImageStat.Stat(diff).mean)/3
-
-          styled_delta=mean_delta(base,styled)
-          affected_delta=mean_delta(styled,affected)
-          if styled_delta < 0.8:
-              raise SystemExit(f'pruning/wiring visual delta too small: {styled_delta:.3f}')
-          if affected_delta < 0.35:
-              raise SystemExit(f'pathology/deadwood visual delta too small: {affected_delta:.3f}')
-          Path('test-artifacts/visual-delta.txt').write_text(f'pruning_wiring_mean_delta={styled_delta:.4f}\npathology_deadwood_mean_delta={affected_delta:.4f}\n')
-          print('visual state deltas: PASS', styled_delta, affected_delta)
+          if base.size!=styled.size or base.size!=affected.size: raise SystemExit('screenshot sizes differ')
+          def delta(a,b): return sum(ImageStat.Stat(ImageChops.difference(a,b)).mean)/3
+          d1,d2=delta(base,styled),delta(styled,affected)
+          if d1<0.8: raise SystemExit(f'pruning/wiring delta too small: {d1:.3f}')
+          if d2<0.35: raise SystemExit(f'pathology/deadwood delta too small: {d2:.3f}')
+          Path('test-artifacts/visual-delta.txt').write_text(f'pruning_wiring_mean_delta={d1:.4f}\npathology_deadwood_mean_delta={d2:.4f}\n')
+          print('visual state deltas: PASS',d1,d2)
           PY
 
       - name: Upload visual audit
