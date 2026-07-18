@@ -2,8 +2,12 @@ import { webkit } from 'playwright';
 import fs from 'node:fs';
 
 fs.mkdirSync('test-artifacts', { recursive: true });
+const baseURL = process.env.BONSAI_BASE_URL || 'http://127.0.0.1:4173/bonsai-app/';
+const publicMode = process.env.BONSAI_PUBLIC === '1';
 const report = {
   phase: 'launch',
+  baseURL,
+  publicMode,
   pageErrors: [],
   consoleErrors: [],
   migrated: null,
@@ -104,10 +108,10 @@ function assertVisibleArtwork(visual, label) {
 try {
   const legacy = {
     started: true,
-    name: '復旧検証者',
+    name: publicMode ? '公開検証者' : '復旧検証者',
     mentor: 99,
     sp: 'kuromatsu',
-    tree: '黒松・継承樹',
+    tree: publicMode ? '黒松・公開検証樹' : '黒松・継承樹',
     born: Date.now() - 86400000 * 60,
     water: '77',
     last: Date.now(),
@@ -138,13 +142,14 @@ try {
   }, legacy);
 
   report.phase = 'launch and migration';
-  await page.goto('http://127.0.0.1:4173/bonsai-app/', { waitUntil: 'domcontentloaded', timeout: 45000 });
-  await page.waitForSelector('[data-testid="app-shell"]', { timeout: 30000 });
-  await page.waitForSelector('.bonsai-stage img', { timeout: 15000 });
+  const target = new URL(`index.html?audit=${publicMode ? 'public' : 'local'}-${Date.now()}`, baseURL).href;
+  await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.waitForSelector('[data-testid="app-shell"]', { timeout: 45000 });
+  await page.waitForSelector('.bonsai-stage img', { timeout: 20000 });
   await page.waitForFunction(() => {
     const image = document.querySelector('.bonsai-stage img');
     return image instanceof HTMLImageElement && image.complete && image.naturalWidth >= 800;
-  }, { timeout: 20000 });
+  }, { timeout: 30000 });
 
   const migrated = await page.evaluate(() => JSON.parse(localStorage.getItem('bonsai:v2')));
   report.migrated = migrated;
@@ -184,8 +189,9 @@ try {
   await page.waitForFunction(() => {
     const image = document.querySelector('.show-card .bonsai-stage img');
     return image instanceof HTMLImageElement && image.complete && image.naturalWidth >= 800;
-  }, { timeout: 15000 });
-  await page.waitForTimeout(450);
+  }, { timeout: 20000 });
+  await page.waitForFunction(() => !document.querySelector('.toast'), { timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(200);
 
   report.showVisual = await inspectVisibleArtwork('.show-card');
   assertVisibleArtwork(report.showVisual, 'show page');
@@ -208,4 +214,4 @@ try {
   await browser.close();
 }
 
-console.log('BONSAI React rebuild smoke: PASS');
+console.log(`BONSAI React rebuild smoke: PASS (${publicMode ? 'public' : 'local'})`);
