@@ -1,3 +1,4 @@
+// Stable finalizer retry after disabling the legacy Pages deployment.
 import { webkit } from 'playwright';
 import fs from 'node:fs';
 
