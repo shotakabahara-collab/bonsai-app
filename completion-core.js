@@ -334,6 +334,10 @@
     return new Promise((resolve, reject) => {
       if (!source || typeof Image === 'undefined') return reject(new Error('image unavailable'));
       const image = new Image();
+      try {
+        const resolved = new URL(source, location.href);
+        if (resolved.origin !== location.origin && !String(source).startsWith('data:')) image.crossOrigin = 'anonymous';
+      } catch { /* data/blob URL or non-browser validation */ }
       image.decoding = 'async';
       image.onload = () => resolve(image);
       image.onerror = () => reject(new Error('image load failed'));

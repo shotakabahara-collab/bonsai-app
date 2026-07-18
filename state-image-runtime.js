@@ -212,6 +212,10 @@
   function loadImage(source) {
     return new Promise((resolve, reject) => {
       const image = new Image();
+      try {
+        const resolved = new URL(source, location.href);
+        if (resolved.origin !== location.origin && !String(source).startsWith('data:')) image.crossOrigin = 'anonymous';
+      } catch { /* data/blob URL or non-browser validation */ }
       image.decoding = 'async';
       image.onload = () => resolve(image);
       image.onerror = () => reject(new Error('state image source failed'));
@@ -509,7 +513,9 @@
       const previous = frame.querySelector(':scope > .bonsai-state-canvas');
       if (previous) previous.replaceWith(canvas);
       else frame.appendChild(canvas);
+      frame.classList.add('bonsai-state-ready');
     } catch (error) {
+      frame.classList.remove('bonsai-state-ready');
       console.warn('[BONSAI state image]', error);
     } finally {
       runtime.rendering = false;
@@ -607,7 +613,7 @@
     style.id = 'bonsai-state-runtime-style';
     style.textContent = `
       .photo-bonsai>.bonsai-state-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:cover;pointer-events:none;z-index:1}
-      .photo-bonsai>img{visibility:hidden}
+      .photo-bonsai>img{visibility:visible}.photo-bonsai.bonsai-state-ready>img{visibility:hidden}
       .bonsai-state-memory-button{position:fixed;right:14px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:18;border:1px solid rgba(217,183,123,.45);background:rgba(10,20,14,.94);color:#eed8aa;border-radius:999px;padding:10px 14px;box-shadow:0 12px 32px rgba(0,0,0,.35);font:600 11px -apple-system,sans-serif;backdrop-filter:blur(14px)}
       .bonsai-state-gallery{position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.76);display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(8px)}
       .bonsai-state-gallery__panel{width:min(720px,100%);max-height:92vh;overflow:auto;background:linear-gradient(180deg,#18261c,#0b140e);border-radius:26px 26px 0 0;border:1px solid rgba(218,193,146,.2);padding:20px 16px calc(24px + env(safe-area-inset-bottom));color:#eee8da}
