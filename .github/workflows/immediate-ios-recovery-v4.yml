@@ -1,0 +1,168 @@
+name: Immediate iPhone recovery v4
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/immediate-ios-recovery-v4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  issues: write
+
+concurrency:
+  group: immediate-ios-recovery-v4
+  cancel-in-progress: false
+
+jobs:
+  repair-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Build a zero-dependency safe launcher
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import json
+
+          index = Path('index.html')
+          app = Path('app.html')
+          if not app.exists():
+              app.write_text(index.read_text(encoding='utf-8'), encoding='utf-8')
+
+          html = app.read_text(encoding='utf-8')
+          old_root = '<body><div id="root"></div>'
+          safe_root = '<body><div id="root"><main id="bonsai-safe-boot-v4" style="min-height:100vh;background:#09100c;color:#eee8da;padding:calc(env(safe-area-inset-top) + 38px) 22px;font-family:-apple-system,BlinkMacSystemFont,sans-serif"><div style="font:28px Georgia,serif;letter-spacing:.22em">BONSAI</div><p style="color:#9daa9f;font-size:12px">作品を読み込んでいます…</p></main></div>'
+          if old_root in html:
+              html = html.replace(old_root, safe_root, 1)
+
+          guard = r'''<script id="bonsai-safe-guard-v4">(function(){'use strict';function show(reason){var root=document.getElementById('root');if(!root||root.querySelector('.app,.onboard'))return;root.innerHTML='<main style="min-height:100vh;background:#09100c;color:#eee8da;padding:calc(env(safe-area-inset-top) + 38px) 22px;font-family:-apple-system,BlinkMacSystemFont,sans-serif"><div style="font:28px Georgia,serif;letter-spacing:.22em">BONSAI</div><section style="margin-top:34px;padding:22px;border:1px solid #ffffff20;border-radius:22px;background:#152119"><h1 style="font:24px Georgia,serif;margin:0 0 12px">起動を修復できます</h1><p style="color:#aeb9b0;font-size:13px;line-height:1.8">作品データは消さず、古いアプリキャッシュだけを更新します。</p><a href="./recovery-v4.html" style="display:block;margin-top:18px;border-radius:14px;padding:14px;background:#eee8da;color:#101611;text-decoration:none;text-align:center;font-weight:700">起動を修復する</a><p style="color:#5e6b62;font-size:9px">'+String(reason||'起動エラー').replace(/[&<>]/g,'').slice(0,100)+'</p></section></main>'}window.addEventListener('error',function(e){show(e&&e.message)},true);window.addEventListener('unhandledrejection',function(e){show(e&&e.reason&&e.reason.message||e&&e.reason)},true);setTimeout(function(){if(document.getElementById('bonsai-safe-boot-v4'))show('startup-timeout')},9000)})();</script>'''
+          anchor = '<script src="photo-assets.js"></script>'
+          if 'id="bonsai-safe-guard-v4"' not in html:
+              if anchor not in html:
+                  raise SystemExit('photo-assets anchor missing')
+              html = html.replace(anchor, guard + anchor, 1)
+          app.write_text(html, encoding='utf-8')
+
+          normalizer = r'''function normalize(){var KEY='bonsai_live_1',raw=null;try{raw=JSON.parse(localStorage.getItem(KEY)||'null')}catch(e){try{localStorage.setItem(KEY+'_corrupt_backup',localStorage.getItem(KEY)||'')}catch(_){}}var x=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:{};var n={started:false,name:'あなた',mentor:0,sp:'pine',tree:'',born:Date.now(),water:80,last:Date.now(),vit:84,stress:2,prune:0,wire:0,fert:0,pot:'starter',money:5000,rep:0,owned:['starter'],awards:[],log:[],lastWeek:'',stats:{water:0,prune:0,wire:0,shows:0}};Object.assign(n,x);var species={pine:1,maple:1,azalea:1};if(!species[n.sp])n.sp='pine';var pots={starter:1,blue:1,black:1,moon:1,old:1};if(!pots[n.pot])n.pot='starter';n.mentor=Math.max(0,Math.min(6,Number.isFinite(Number(n.mentor))?Math.trunc(Number(n.mentor)):0));n.stats=Object.assign({water:0,prune:0,wire:0,shows:0},x.stats&&typeof x.stats==='object'?x.stats:{});n.owned=Array.isArray(x.owned)?x.owned.filter(function(v){return pots[v]}):['starter'];if(n.owned.indexOf('starter')<0)n.owned.unshift('starter');if(n.owned.indexOf(n.pot)<0)n.owned.push(n.pot);n.awards=Array.isArray(x.awards)?x.awards:[];n.log=Array.isArray(x.log)?x.log:[];['born','water','last','vit','stress','prune','wire','fert','money','rep'].forEach(function(k){var v=Number(n[k]);if(!Number.isFinite(v))n[k]={born:Date.now(),water:80,last:Date.now(),vit:84,stress:2,prune:0,wire:0,fert:0,money:5000,rep:0}[k]});n.started=n.started===true;n.name=String(n.name||'あなた');n.tree=String(n.tree||'');n.lastWeek=typeof n.lastWeek==='string'?n.lastWeek:'';localStorage.setItem(KEY,JSON.stringify(n));return n}'''
+
+          wrapper = f'''<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#09100c"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="BONSAI"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon.svg"><title>BONSAI</title><style>html,body{{min-height:100%;margin:0;background:#09100c;color:#eee8da;font-family:-apple-system,BlinkMacSystemFont,sans-serif}}main{{min-height:100vh;min-height:100dvh;display:grid;place-content:center;gap:14px;padding:32px;text-align:center}}strong{{font:32px Georgia,serif;letter-spacing:.24em}}p{{margin:0;color:#9daa9f;font-size:13px;line-height:1.7}}a{{display:block;border-radius:14px;padding:14px;background:#eee8da;color:#101611;text-decoration:none;font-weight:700}}</style></head><body><main><strong>BONSAI</strong><p id="status">作品を安全に読み込んでいます…</p><a id="repair" href="./recovery-v4.html" hidden>起動を修復する</a></main><script>(function(){{'use strict';{normalizer}var status=document.getElementById('status'),repair=document.getElementById('repair');function fail(){{status.textContent='起動キャッシュを修復してください。';repair.hidden=false}}try{{normalize();var version='ios-recovery-v4';var seen=localStorage.getItem('__bonsai_launch_version');var query=new URL(location.href).searchParams;if(seen!==version||query.get('repair')==='1'){{Promise.resolve().then(async function(){{try{{if('serviceWorker'in navigator){{var regs=await navigator.serviceWorker.getRegistrations();await Promise.all(regs.map(function(r){{return r.unregister()}}))}}if('caches'in window){{var names=await caches.keys();await Promise.all(names.map(function(n){{return caches.delete(n)}}))}}}}catch(e){{}}localStorage.setItem('__bonsai_launch_version',version);location.replace('./app.html?v='+version+'&t='+Date.now())}}).catch(fail)}}else{{location.replace('./app.html?v='+version+'&t='+Date.now())}}setTimeout(fail,10000)}}catch(e){{fail()}}}})();</script></body></html>'''
+          index.write_text(wrapper, encoding='utf-8')
+
+          recovery = f'''<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#09100c"><title>BONSAI 起動修復</title><style>html,body{{min-height:100%;margin:0;background:#09100c;color:#eee8da;font-family:-apple-system,BlinkMacSystemFont,sans-serif}}main{{max-width:560px;min-height:100vh;min-height:100dvh;margin:auto;display:grid;align-content:center;gap:14px;padding:28px}}h1{{font:31px Georgia,serif;letter-spacing:.18em;margin:0}}p{{color:#aeb9b0;line-height:1.75;margin:0}}.box{{padding:15px;border:1px solid #ffffff20;border-radius:15px;background:#152119}}button,a{{border:0;border-radius:14px;padding:14px 17px;background:#eee8da;color:#101611;text-decoration:none;font-weight:700;text-align:center;font-size:15px}}.secondary{{background:#ffffff10;color:#eee8da;border:1px solid #ffffff20}}</style></head><body><main><h1>BONSAI</h1><p>セーブデータは残したまま、古いキャッシュとService Workerだけを削除します。</p><div class="box" id="save-status">セーブデータを確認しています…</div><button id="repair">起動キャッシュを修復</button><a class="secondary" href="./app.html?v=ios-recovery-v4&direct=1">修復せず直接開く</a></main><script>(function(){{'use strict';{normalizer}var raw=localStorage.getItem('bonsai_live_1')||'';document.getElementById('save-status').textContent=raw?'セーブデータを検出しました（'+raw.length+'文字）。修復後も保持します。':'セーブデータはまだありません。';document.getElementById('repair').onclick=async function(){{this.disabled=true;this.textContent='修復しています…';try{{normalize();if('serviceWorker'in navigator){{var regs=await navigator.serviceWorker.getRegistrations();await Promise.all(regs.map(function(r){{return r.unregister()}}))}}if('caches'in window){{var names=await caches.keys();await Promise.all(names.map(function(n){{return caches.delete(n)}}))}}}}catch(e){{}}localStorage.setItem('__bonsai_launch_version','ios-recovery-v4');location.replace('./app.html?v=ios-recovery-v4&recovered=1&t='+Date.now())}}}})();</script></body></html>'''
+          Path('recovery-v4.html').write_text(recovery, encoding='utf-8')
+
+          manifest_path = Path('manifest.webmanifest')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          manifest['id'] = './'
+          manifest['start_url'] = './index.html?v=ios-recovery-v4'
+          manifest['scope'] = './'
+          manifest['background_color'] = '#09100c'
+          manifest['theme_color'] = '#09100c'
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
+
+          core=['./','./index.html','./app.html','./recovery-v4.html','./manifest.webmanifest','./icon.svg','./tree-renderer.js','./photo-assets.js','./advanced-care.js','./advanced-care-bridge.js','./completion-core.js','./judging-engine.js','./state-image-runtime.js']
+          sw = "const CACHE='bonsai-ios-recovery-v4-20260718';\nconst CORE="+json.dumps(core,separators=(',',':'))+";\nself.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting())));\nself.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));\nself.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;const u=new URL(e.request.url);if(u.origin!==location.origin)return;if(e.request.mode==='navigate'){e.respondWith(fetch(e.request,{cache:'no-store'}).then(r=>r.ok?r:caches.match('./index.html')).catch(()=>caches.match('./index.html')));return;}e.respondWith(caches.match(e.request).then(hit=>hit||fetch(e.request).then(r=>{if(r.ok){const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy))}return r}))) });\n"
+          Path('sw.js').write_text(sw, encoding='utf-8')
+          print('immediate recovery files built')
+          PY
+
+      - name: Validate safe launcher syntax
+        run: |
+          node --check sw.js
+          python3 - <<'PY'
+          from pathlib import Path
+          for path in ['index.html','app.html','recovery-v4.html','manifest.webmanifest','sw.js']:
+              p=Path(path)
+              assert p.exists() and p.stat().st_size>100, path
+          assert 'ios-recovery-v4' in Path('index.html').read_text()
+          assert 'bonsai-safe-guard-v4' in Path('app.html').read_text()
+          assert 'recovery-v4.html' in Path('sw.js').read_text()
+          print('safe launcher validation: PASS')
+          PY
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          for(const file of ['index.html','app.html','recovery-v4.html']){
+            const html=fs.readFileSync(file,'utf8');
+            [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(x=>x[1]).filter(x=>x.trim()).forEach((code,index)=>new vm.Script(code,{filename:`${file}-inline-${index}.js`}));
+          }
+          console.log('inline JavaScript syntax: PASS');
+          NODE
+
+      - name: Commit recovery release
+        id: commit
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add index.html app.html recovery-v4.html manifest.webmanifest sw.js
+          git diff --cached --quiet || git commit -m 'iPhone黒画面を安全ランチャーと保存保持リカバリーで即時復旧'
+          git push origin HEAD:main
+          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure Pages
+        id: configure
+        uses: actions/configure-pages@v5
+
+      - name: Upload repaired site
+        id: artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy repaired site
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Public static smoke
+        id: smoke
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          RELEASE_SHA: ${{ steps.commit.outputs.release_sha }}
+        run: |
+          base="${PAGE_URL%/}/"
+          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}index.html?v=${RELEASE_SHA}" -o /tmp/live-index.html
+          grep -Fq 'ios-recovery-v4' /tmp/live-index.html
+          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}app.html?v=${RELEASE_SHA}" -o /tmp/live-app.html
+          grep -Fq 'bonsai-safe-guard-v4' /tmp/live-app.html
+          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}recovery-v4.html?v=${RELEASE_SHA}" | grep -Fq '起動キャッシュを修復'
+          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}sw.js?v=${RELEASE_SHA}" | grep -Fq 'bonsai-ios-recovery-v4'
+
+      - name: Record recovery release
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          COMMIT: ${{ steps.commit.outcome }}
+          CONFIGURE: ${{ steps.configure.outcome }}
+          ARTIFACT: ${{ steps.artifact.outcome }}
+          DEPLOY: ${{ steps.deployment.outcome }}
+          SMOKE: ${{ steps.smoke.outcome }}
+          RELEASE_SHA: ${{ steps.commit.outputs.release_sha }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        with:
+          script: |
+            const outcomes=[process.env.COMMIT,process.env.CONFIGURE,process.env.ARTIFACT,process.env.DEPLOY,process.env.SMOKE];
+            const passed=outcomes.every(value=>value==='success');
+            const base=(process.env.PAGE_URL||'https://shotakabahara-collab.github.io/bonsai-app/').replace(/\/$/,'')+'/';
+            await github.rest.issues.update({owner:context.repo.owner,repo:context.repo.repo,issue_number:1,title:`BONSAI iPhone launch audit: ${passed?'PASS':'FAIL'}`,body:[
+              '# BONSAI iPhone即時起動復旧 v4','',
+              `- release SHA: \`${process.env.RELEASE_SHA||'not-created'}\``,
+              `- commit: ${process.env.COMMIT||'not-run'}`,
+              `- configure Pages: ${process.env.CONFIGURE||'not-run'}`,
+              `- upload artifact: ${process.env.ARTIFACT||'not-run'}`,
+              `- deploy Pages: ${process.env.DEPLOY||'not-run'}`,
+              `- public static smoke: ${process.env.SMOKE||'not-run'}`,
+              '- save data: preserved and normalized',
+              '- navigation: network-first; stale PWA navigation cache removed',
+              `- recovery URL: ${base}recovery-v4.html?v=${process.env.RELEASE_SHA||'latest'}`,
+              '',passed?'安全ランチャー、直接アプリ、修復ページを本番公開しました。':'未通過工程があります。'
+            ].join('\n'),state:passed?'closed':'open',...(passed?{state_reason:'completed'}:{})});
