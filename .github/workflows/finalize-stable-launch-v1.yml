@@ -40,7 +40,9 @@ jobs:
           python-version: '3.12'
 
       - name: Build direct-launch stable package
-        run: python scripts/finalize_stable_launch.py
+        run: |
+          python scripts/finalize_stable_launch.py
+          git checkout -- .github/workflows/pages.yml
 
       - name: Validate syntax and launch contracts
         run: |
@@ -91,7 +93,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add index.html app.html offline-app.html repair.html recovery-v4.html manifest.webmanifest sw.js release.json .github/workflows/pages.yml
+          git add index.html app.html offline-app.html repair.html recovery-v4.html manifest.webmanifest sw.js release.json
           git diff --cached --quiet || git commit -m 'BONSAIを単一画面・保存保持・network-first起動へ最終統合'
           git push origin HEAD:main
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
