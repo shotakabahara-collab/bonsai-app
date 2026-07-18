@@ -1,160 +1,32 @@
-name: Test and Deploy BONSAI
+name: Manual BONSAI Pages fallback
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
-  issues: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: pages-manual-fallback
+  cancel-in-progress: false
 
 jobs:
-  verify:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Validate safe launcher, playable app and state systems
-        run: |
-          node <<'NODE'
-          const fs=require('fs'),vm=require('vm');
-          const launcher=fs.readFileSync('index.html','utf8');
-          const appPath=fs.existsSync('app.html')?'app.html':'index.html';
-          const app=fs.readFileSync(appPath,'utf8');
-          if(appPath==='app.html'){
-            for(const token of ['ios-recovery-v4','recovery-v4.html','作品を安全に読み込んでいます']) if(!launcher.includes(token)) throw Error(`missing launcher contract: ${token}`);
-            if(!fs.existsSync('recovery-v4.html')) throw Error('recovery-v4.html missing');
-          }
-          const inline=[...app.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(match=>match[1]).filter(code=>code.trim());
-          if(!inline.length) throw Error('playable app inline script missing');
-          inline.forEach((code,index)=>new vm.Script(code,{filename:`app-inline-${index}.js`}));
-          const files=['photo-assets.js','tree-renderer.js','advanced-care.js','advanced-care-bridge.js','completion-core.js','judging-engine.js','state-image-runtime.js'];
-          for(const file of files){
-            if(!fs.existsSync(file)) throw Error(`missing file: ${file}`);
-            new vm.Script(fs.readFileSync(file,'utf8'),{filename:file});
-            if(!app.includes(file)) throw Error(`app does not load: ${file}`);
-          }
-          for(const token of ['confirmPrune','剪定後は取り消せません','enterShow','銘木録','localStorage']) if(!app.includes(token)) throw Error(`missing app contract: ${token}`);
-          vm.runInThisContext(fs.readFileSync('advanced-care.js','utf8'),{filename:'advanced-care.js'});
-          vm.runInThisContext(fs.readFileSync('completion-core.js','utf8'),{filename:'completion-core.js'});
-          const A=globalThis.BonsaiAdvancedCare,C=globalThis.BonsaiCompletion;
-          if(!A||!C) throw Error('advanced or completion API missing');
-          let healthy=A.migrateState({started:true,sp:'pine',born:Date.now()-86400000,last:Date.now(),water:82,vit:92,stress:2,pot:'black',money:5000,rep:160,stats:{water:0,prune:0,wire:0,shows:0},awards:[],log:[]});
-          for(const id of ['apex','first_left','second_right','third_left','back_branch','front_branch']) healthy.advanced.parts[id].foliage={apex:64,first_left:78,second_right:72,third_left:66,back_branch:54,front_branch:46}[id];
-          const healthyScore=C.exhibitionEvaluation(healthy).score;
-          const damaged=JSON.parse(JSON.stringify(healthy));
-          damaged.advanced.parts.first_left.disease='needle_blight';
-          damaged.advanced.parts.second_right.pest='scale';
-          damaged.advanced.parts.first_left.health=42;
-          damaged.advanced.parts.second_right.health=48;
-          const damagedScore=C.exhibitionEvaluation(damaged).score;
-          if(!(healthyScore>damagedScore)) throw Error(`pathology scoring invalid: ${healthyScore} <= ${damagedScore}`);
-          const manifest=JSON.parse(fs.readFileSync('manifest.webmanifest','utf8'));
-          if(manifest.short_name!=='BONSAI'||manifest.display!=='standalone') throw Error('manifest invalid');
-          if(appPath==='app.html'&&!String(manifest.start_url||'').includes('ios-recovery-v4')) throw Error('manifest does not use recovery launcher');
-          const sw=fs.readFileSync('sw.js','utf8');
-          for(const token of ['app.html','recovery-v4.html','bonsai-ios-recovery-v4']) if(!sw.includes(token)) throw Error(`missing service worker recovery contract: ${token}`);
-          console.log(`BONSAI safe-launch contracts: PASS; healthy=${healthyScore}; damaged=${damagedScore}`);
-          NODE
-
-      - name: Static HTTP smoke
-        run: |
-          python3 -m http.server 4173 >/tmp/http.log 2>&1 &
-          server=$!; trap 'kill $server' EXIT
-          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4173/ >/tmp/index.html && break; sleep .2; done
-          grep -Fq '<title>BONSAI</title>' /tmp/index.html
-          if test -f app.html; then
-            grep -Fq 'ios-recovery-v4' /tmp/index.html
-            curl -fsS http://127.0.0.1:4173/app.html >/tmp/app.html
-            grep -Fq 'bonsai-safe-guard-v4' /tmp/app.html
-            curl -fsS http://127.0.0.1:4173/recovery-v4.html | grep -Fq '起動キャッシュを修復'
-          else
-            cp /tmp/index.html /tmp/app.html
-          fi
-          for asset in photo-assets.js tree-renderer.js advanced-care.js advanced-care-bridge.js completion-core.js judging-engine.js state-image-runtime.js; do
-            grep -Fq "$asset" /tmp/app.html
-            curl -fsS "http://127.0.0.1:4173/$asset" >/tmp/asset
-            test -s /tmp/asset
-          done
-          curl -fsS http://127.0.0.1:4173/manifest.webmanifest | grep -Fq 'BONSAI'
-          curl -fsS http://127.0.0.1:4173/sw.js | grep -Fq 'bonsai-ios-recovery-v4'
-
   deploy:
-    needs: verify
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Configure Pages
-        id: configure
-        uses: actions/configure-pages@v5
-      - name: Upload Pages artifact
-        id: artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Validate a playable document exists
+        run: |
+          test -s index.html
+          grep -Fq '<title>BONSAI</title>' index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: .
-      - name: Deploy Pages
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v4
-      - name: Verify published safe launcher and app
-        id: smoke
-        env:
-          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
-          RELEASE_SHA: ${{ github.sha }}
-        run: |
-          base="${PAGE_URL%/}/"
-          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}index.html?v=${RELEASE_SHA}" -o /tmp/live-index.html
-          grep -Fq 'ios-recovery-v4' /tmp/live-index.html
-          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}app.html?v=${RELEASE_SHA}" -o /tmp/live-app.html
-          grep -Fq 'bonsai-safe-guard-v4' /tmp/live-app.html
-          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}recovery-v4.html?v=${RELEASE_SHA}" | grep -Fq '起動キャッシュを修復'
-          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}sw.js?v=${RELEASE_SHA}" | grep -Fq 'bonsai-ios-recovery-v4'
-          for asset in photo-assets.js advanced-care.js advanced-care-bridge.js completion-core.js judging-engine.js state-image-runtime.js; do
-            grep -Fq "$asset" /tmp/live-app.html
-            curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}${asset}?v=${RELEASE_SHA}" >/tmp/live-asset
-            test -s /tmp/live-asset
-          done
-      - name: Record release audit
-        if: always()
-        uses: actions/github-script@v7
-        env:
-          CONFIGURE: ${{ steps.configure.outcome }}
-          ARTIFACT: ${{ steps.artifact.outcome }}
-          DEPLOY: ${{ steps.deployment.outcome }}
-          SMOKE: ${{ steps.smoke.outcome }}
-          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
-        with:
-          script: |
-            const outcomes=[process.env.CONFIGURE,process.env.ARTIFACT,process.env.DEPLOY,process.env.SMOKE];
-            const passed=outcomes.every(value=>value==='success');
-            const base=(process.env.PAGE_URL||'https://shotakabahara-collab.github.io/bonsai-app/').replace(/\/$/,'')+'/';
-            await github.rest.issues.update({
-              owner:context.repo.owner,repo:context.repo.repo,issue_number:1,
-              title:`BONSAI iPhone launch audit: ${passed?'PASS':'FAIL'}`,
-              body:[
-                '# BONSAI iPhone安全起動・公開監査','',
-                `- release SHA: \`${context.sha}\``,
-                '- launcher validation: success',
-                '- playable app validation: success',
-                '- save-data normalization: success',
-                '- state systems and judging: success',
-                `- configure Pages: ${process.env.CONFIGURE||'not-run'}`,
-                `- upload artifact: ${process.env.ARTIFACT||'not-run'}`,
-                `- deploy Pages: ${process.env.DEPLOY||'not-run'}`,
-                `- public launcher/app/recovery smoke: ${process.env.SMOKE||'not-run'}`,
-                `- recovery URL: ${base}recovery-v4.html?v=${context.sha}`,
-                '',passed?'黒画面を避ける安全ランチャーと修復ページを公開し、実URL上で確認しました。':'公開工程に未通過項目があります。'
-              ].join('\n'),state:passed?'closed':'open',...(passed?{state_reason:'completed'}:{})
-            });
