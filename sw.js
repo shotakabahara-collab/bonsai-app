@@ -1,4 +1,4 @@
-const CACHE='bonsai-photo-v5-highres-state-20260718';
+const CACHE='bonsai-photo-v6-highres-state-20260718';
 const ASSETS=['./','./index.html','./manifest.webmanifest','./icon.svg','./tree-renderer.js','./photo-assets.js','./photo-source-v2.js','./advanced-care.js','./advanced-care-bridge.js','./completion-core.js','./state-image-runtime.js','./judging-engine.js','./IMAGE_LICENSES.md'];
 const REMOTE=['https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/Japanese_Black_Pine_bonsai_135%2C_October_10%2C_2008.jpg/960px-Japanese_Black_Pine_bonsai_135%2C_October_10%2C_2008.jpg'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
@@ -9,8 +9,9 @@ self.addEventListener('fetch',event=>{
   const local=url.origin===location.origin;
   const remote=REMOTE.includes(event.request.url);
   if(!local&&!remote)return;
+  if(remote&&event.request.mode!=='cors')return;
   event.respondWith(caches.match(event.request).then(hit=>hit||fetch(event.request).then(response=>{
-    if(response.ok||response.type==='opaque'){const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));}
+    if(response.ok){const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));}
     return response;
   }).catch(()=>local&&event.request.mode==='navigate'?caches.match('./index.html'):hit)));
 });
