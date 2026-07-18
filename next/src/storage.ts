@@ -2,6 +2,7 @@ import { advanceTime, createGame, migrateLegacy, normalizeGame, type GameState }
 
 const STORAGE_KEY = 'bonsai:v2';
 const LEGACY_KEY = 'bonsai_live_1';
+export const GAME_UPDATED_EVENT = 'bonsai:game-updated';
 
 export function loadGame(): GameState {
   try {
@@ -30,6 +31,7 @@ export function persistGame(game: GameState): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
     mirrorLegacy(normalized);
+    window.dispatchEvent(new CustomEvent<GameState>(GAME_UPDATED_EVENT, { detail: normalized }));
   } catch (error) {
     console.error('[BONSAI save]', error);
   }
