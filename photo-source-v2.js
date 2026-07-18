@@ -7,6 +7,8 @@
   const FILE_PAGE = 'https://commons.wikimedia.org/wiki/File:Japanese_Black_Pine_bonsai_135,_October_10,_2008.jpg';
   const LICENSE = 'https://creativecommons.org/licenses/by-sa/3.0/';
   const fallback = ROOT.BonsaiPhotos?.pine || '';
+  let started = false;
+  let observer = null;
 
   ROOT.BonsaiPhotos = ROOT.BonsaiPhotos || {};
   ROOT.BonsaiPhotos.pineFallback = fallback;
@@ -29,20 +31,36 @@
     image.src = fallback;
   }
 
+  function requestStateRender(image) {
+    const render = () => ROOT.BonsaiStateRuntime?.render?.();
+    image?.addEventListener('load', render, { once: true });
+    setTimeout(render, 0);
+    setTimeout(render, 300);
+    setTimeout(render, 1000);
+  }
+
   function prepareImage() {
     if (!DOC) return;
     const image = DOC.querySelector('.photo-bonsai img');
-    if (!image || image.dataset.photoFallback === 'true' || image.dataset.photoCorsReady === 'true') return;
-    const source = image.getAttribute('src') || image.src || '';
-    if (!source || (!source.includes('upload.wikimedia.org') && source !== REMOTE)) return;
-    image.dataset.photoCorsReady = 'true';
-    image.crossOrigin = 'anonymous';
-    image.referrerPolicy = 'no-referrer';
-    image.src = REMOTE;
+    if (!image) return;
+    if (image.dataset.photoFallback === 'true') {
+      requestStateRender(image);
+      return;
+    }
+    if (image.dataset.photoCorsReady !== 'true') {
+      const source = image.getAttribute('src') || image.src || '';
+      if (!source || (!source.includes('upload.wikimedia.org') && source !== REMOTE)) return;
+      image.dataset.photoCorsReady = 'true';
+      image.crossOrigin = 'anonymous';
+      image.referrerPolicy = 'no-referrer';
+      image.src = REMOTE;
+    }
+    requestStateRender(image);
   }
 
   function installFallback() {
-    if (!DOC) return;
+    if (!DOC || DOC.documentElement.dataset.bonsaiPhotoFallbackInstalled === 'true') return;
+    DOC.documentElement.dataset.bonsaiPhotoFallbackInstalled = 'true';
     DOC.addEventListener('error', event => {
       const image = event.target;
       if (!(image instanceof HTMLImageElement)) return;
@@ -80,15 +98,18 @@
   }
 
   function start() {
+    if (!DOC) return;
     installFallback();
     installStyles();
     ensureCredit();
-    const observer = new MutationObserver(ensureCredit);
+    if (started) return;
+    started = true;
+    observer = new MutationObserver(ensureCredit);
     observer.observe(DOC.documentElement, { childList: true, subtree: true });
   }
 
   ROOT.BonsaiPhotoSource = {
-    version: '2.1.0',
+    version: '2.2.0',
     remote: REMOTE,
     fallback,
     credit: ROOT.BonsaiPhotos.pineCredit,
@@ -97,7 +118,7 @@
   };
 
   if (DOC) {
+    start();
     if (DOC.readyState === 'loading') DOC.addEventListener('DOMContentLoaded', start, { once: true });
-    else start();
   }
 })();
