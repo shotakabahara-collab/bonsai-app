@@ -1,0 +1,112 @@
+name: Diagnose BONSAI stable launch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-stable-launch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build candidate
+        id: build
+        continue-on-error: true
+        run: python scripts/finalize_stable_launch.py > /tmp/build.log 2>&1
+
+      - name: Static validation
+        id: static
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        run: |
+          {
+            python -m py_compile scripts/finalize_stable_launch.py
+            node --check tests/stable_launch_webkit.mjs
+            node --check sw.js
+            for file in photo-assets.js tree-renderer.js advanced-care.js advanced-care-bridge.js completion-core.js judging-engine.js state-image-runtime.js; do node --check "$file"; done
+            grep -Fq 'stable-launch-v1-20260718' index.html
+            grep -Fq 'normalizeSavedState' index.html
+            grep -Fq 'bonsai-stable-worker' index.html
+          } > /tmp/static.log 2>&1
+
+      - name: Install WebKit
+        id: install
+        if: steps.static.outcome == 'success'
+        continue-on-error: true
+        run: |
+          {
+            npm install --no-save playwright@1.52.0
+            npx playwright install --with-deps webkit
+            python -m pip install --disable-pip-version-check pillow
+          } > /tmp/install.log 2>&1
+
+      - name: Browser validation
+        id: browser
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          {
+            python3 -m http.server 4173 >/tmp/server.log 2>&1 &
+            server=$!
+            trap 'kill $server' EXIT
+            BONSAI_BASE_URL=http://127.0.0.1:4173/ node tests/stable_launch_webkit.mjs
+          } > /tmp/browser.log 2>&1
+
+      - name: Write diagnostic
+        if: always()
+        env:
+          BUILD: ${{ steps.build.outcome }}
+          STATIC: ${{ steps.static.outcome }}
+          INSTALL: ${{ steps.install.outcome }}
+          BROWSER: ${{ steps.browser.outcome }}
+        run: |
+          {
+            echo '# BONSAI stable launch diagnostic'
+            echo
+            echo "- source SHA: \`${GITHUB_SHA}\`"
+            echo "- build: ${BUILD:-not-run}"
+            echo "- static: ${STATIC:-not-run}"
+            echo "- install: ${INSTALL:-not-run}"
+            echo "- browser: ${BROWSER:-not-run}"
+            for section in build static install browser; do
+              echo
+              echo "## ${section} log"
+              echo '```text'
+              tail -n 100 "/tmp/${section}.log" 2>/dev/null || true
+              echo '```'
+            done
+          } > STABLE_LAUNCH_DIAGNOSTIC.md
+
+      - name: Commit diagnostic only
+        if: always()
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git reset --hard HEAD
+          git clean -fd
+          # Restore the diagnostic after cleaning generated files.
+          git show HEAD:STABLE_LAUNCH_DIAGNOSTIC.md >/tmp/old-diagnostic 2>/dev/null || true
+          {
+            echo '# BONSAI stable launch diagnostic'
+            echo
+            echo '- Diagnostic workflow completed; see the Actions run if this placeholder remains.'
+          } > STABLE_LAUNCH_DIAGNOSTIC.md
+          git add STABLE_LAUNCH_DIAGNOSTIC.md
+          git diff --cached --quiet || git commit -m '安定起動最終統合の診断結果を記録'
+          git push origin HEAD:main
