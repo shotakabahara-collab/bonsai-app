@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App, { RecoveryPanel } from './App';
 import { registerServiceWorker } from './storage';
 import './styles.css';
+import './stability.css';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error?: Error }> {
   state: { error?: Error } = {};
