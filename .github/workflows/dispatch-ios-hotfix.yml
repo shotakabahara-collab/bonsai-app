@@ -19,4 +19,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-        run: gh workflow run hotfix-ios-white-screen.yml --repo "$REPOSITORY" --ref main
+        run: |
+          echo 'Dispatching iPhone recovery build v1'
+          gh workflow run hotfix-ios-white-screen.yml --repo "$REPOSITORY" --ref main
