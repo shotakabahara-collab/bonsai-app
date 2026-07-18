@@ -1,0 +1,103 @@
+      onOpenCare={mode => { setCareMode(mode); setSelectedPart(mode === 'deadwood' ? 'trunk' : 'apex'); }}
+            onWall={() => setWallMode(true)}
+            onAddTree={() => setNewTreeSpecies('pine')}
+          />
+        )}
+        {tab === 'pots' && (
+          <PotsPage game={game} activePot={bonsai.potId} onSelect={potId => {
+            const owned = game.ownedPots.includes(potId);
+            if (!owned && game.money < POTS[potId].price) {
+              setToast('資金が不足しています');
+              window.setTimeout(() => setToast(''), 1800);
+              return;
+            }
+            commit(current => buyOrSelectPot(current, potId), owned ? '鉢を合わせました' : '鉢を購入して合わせました');
+          }} />
+        )}
+        {tab === 'show' && (
+          <ShowPage
+            game={game}
+            bonsai={bonsai}
+            onEnter={() => {
+              const result = enterWeeklyShow(game);
+              if (!result.award) {
+                setToast(result.notes[0] ?? '今週は出展済みです');
+                window.setTimeout(() => setToast(''), 1800);
+                return;
+              }
+              persistGame(result.game);
+              setGame(result.game);
+              setShowResult({ award: result.award, notes: result.notes });
+            }}
+          />
+        )}
+        {tab === 'people' && <PeoplePage mentorId={game.mentorId} />}
+        {tab === 'memorial' && (
+          <MemorialPage
+            bonsai={bonsai}
+            onRecord={() => commit(current => addMemorial(current, '現在の姿'), '現在の作品状態を銘木録へ記録しました')}
+          />
+        )}
+      </main>
+
+      <nav className="bottom-nav" aria-label="メインナビゲーション">
+        {NAV.map(item => (
+          <button key={item.id} type="button" className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}>
+            <span>{item.icon}</span>{item.label}
+          </button>
+        ))}
+      </nav>
+
+      {careMode && (
+        <CareSheet
+          mode={careMode}
+          bonsai={bonsai}
+          selectedPart={selectedPart}
+          onSelectPart={setSelectedPart}
+          onClose={() => setCareMode(null)}
+          onPrune={level => {
+            if (['trunk', 'roots'].includes(selectedPart)) return;
+            if (!window.confirm(`${PARTS.find(item => item.id === selectedPart)?.name}を剪定します。切った枝葉は元に戻せません。`)) return;
+            commit(current => prunePart(current, selectedPart, level), '不可逆の剪定を確定しました');
+            setCareMode(null);
+          }}
+          onWire={(intensity, direction) => {
+            commit(current => wirePart(current, selectedPart, intensity, direction), '部位と方向を指定して針金をかけました');
+            setCareMode(null);
+          }}
+          onRemoveWire={() => {
+            commit(current => removeWire(current, selectedPart), '針金を外しました');
+            setCareMode(null);
+          }}
+          onTreat={() => {
+            if (!activePart?.disease && !activePart?.pest) return;
+            commit(current => treatPart(current, selectedPart), '病害虫へ対処しました');
+            setCareMode(null);
+          }}
+          onJin={() => {
+            if (!window.confirm('この枝を神にします。生きた枝には戻せません。')) return;
+            commit(current => createJin(current, selectedPart), '神を作成しました');
+            setCareMode(null);
+          }}
+          onShari={side => {
+            if (!window.confirm('主幹へ舎利を入れます。元の樹皮には戻せません。')) return;
+            commit(current => createShari(current, side), '舎利を作成しました');
+            setCareMode(null);
+          }}
+        />
+      )}
+
+      {wallMode && (
+        <div className="wall-mode" role="dialog" aria-label="鑑賞モード">
+          <BonsaiStage bonsai={bonsai} className="wall-stage" />
+          <div className="wall-caption"><b>{bonsai.name}</b><span>{SPECIES[bonsai.species].name}・{POTS[bonsai.potId].name}</span></div>
+          <button type="button" onClick={() => setWallMode(false)}>鑑賞を終了</button>
+        </div>
+      )}
+
+      {showResult && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <section className="result-card">
+            <div className="result-medal">{showResult.award?.rank === 1 ? '🥇' : showResult.award && showResult.award.rank <= 3 ? '🏅' : '🎖️'}</div>
+            <div className="eyebrow">今週の展覧会</div>
+     

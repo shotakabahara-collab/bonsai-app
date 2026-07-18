@@ -1,0 +1,84 @@
+ id: uuid(), at: Date.now(), text: `${PARTS.find(item => item.id === partId)?.name}を神にした。生きた枝には戻らない。` });
+  });
+}
+
+export function createShari(game: GameState, side: 'left' | 'right'): GameState {
+  return updateActiveBonsai(game, bonsai => {
+    if (bonsai.vitality < 70) return;
+    const next = Math.min(3, (bonsai.shari?.level ?? 0) + 1) as 1 | 2 | 3;
+    bonsai.shari = { side, level: next, createdAt: bonsai.shari?.createdAt ?? Date.now() };
+    bonsai.stress = clamp(bonsai.stress + 14, 0, 1000);
+    bonsai.logs.unshift({ id: uuid(), at: Date.now(), text: `主幹の${side === 'left' ? '左' : '右'}側へ舎利を入れた。` });
+  });
+}
+
+export function buyOrSelectPot(game: GameState, potId: PotId): GameState {
+  const copy = structuredClone(game);
+  const pot = POTS[potId];
+  if (!copy.ownedPots.includes(potId)) {
+    if (copy.money < pot.price) return copy;
+    copy.money -= pot.price;
+    copy.ownedPots.push(potId);
+  }
+  const bonsai = activeBonsai(copy);
+  if (!bonsai) return copy;
+  bonsai.potId = potId;
+  bonsai.stress = clamp(bonsai.stress + 5, 0, 1000);
+  bonsai.logs.unshift({ id: uuid(), at: Date.now(), text: `${pot.name}へ鉢替えした。` });
+  return copy;
+}
+
+export function enterWeeklyShow(game: GameState): { game: GameState; award?: AwardRecord; notes: string[] } {
+  if (game.lastShowWeek === weekKey()) return { game, notes: ['今週はすでに出展済みです。'] };
+  const copy = structuredClone(game);
+  const bonsai = activeBonsai(copy);
+  if (!bonsai) return { game: copy, notes: ['出展できる盆栽がありません。'] };
+  const evaluation = exhibitionScore(bonsai);
+  const seed = hash(`${weekKey()}:${copy.playerName}`);
+  const rivals = [
+    63 + seed % 22,
+    68 + (seed * 3) % 21,
+    61 + (seed * 7) % 27,
+    66 + (seed * 11) % 22,
+    58 + (seed * 13) % 30,
+    65 + (seed * 17) % 22
+  ];
+  const rank = rivals.filter(score => score > evaluation.score).length + 1;
+  const title = rank === 1 ? '金賞' : rank <= 3 ? '優秀賞' : evaluation.score >= 74 ? '入選' : '選外';
+  const award: AwardRecord = {
+    id: uuid(), at: Date.now(), title, score: evaluation.score, rank, fieldSize: rivals.length + 1,
+    potId: bonsai.potId, visualSignature: visualSignature(bonsai)
+  };
+  bonsai.awards.unshift(award);
+  bonsai.logs.unshift({ id: uuid(), at: Date.now(), text: `${title}。${award.fieldSize}作品中${rank}位、${evaluation.score}点。` });
+  copy.lastShowWeek = weekKey();
+  copy.money += rank === 1 ? 5000 : rank <= 3 ? 2500 : evaluation.score >= 74 ? 900 : 250;
+  copy.reputation += rank === 1 ? 45 : rank <= 3 ? 25 : evaluation.score >= 74 ? 10 : 3;
+  return { game: copy, award, notes: evaluation.notes };
+}
+
+export function addMemorial(game: GameState, reason: string): GameState {
+  return updateActiveBonsai(game, bonsai => {
+    bonsai.memorials.unshift({
+      id: uuid(), at: Date.now(), reason, title: `${bonsai.name} — ${reason}`, visualSignature: visualSignature(bonsai)
+    });
+    bonsai.memorials = bonsai.memorials.slice(0, 80);
+  });
+}
+
+export function addBonsai(game: GameState, species: SpeciesId): GameState {
+  const copy = structuredClone(game);
+  if (copy.bonsai.length >= unlockedSlots(copy.reputation) || copy.money < 1800) return copy;
+  copy.money -= 1800;
+  const bonsai = createBonsai(species);
+  copy.bonsai.push(bonsai);
+  copy.activeBonsaiId = bonsai.id;
+  return copy;
+}
+
+export function diseaseName(id: DiseaseId): string {
+  return ({ needleBlight: '葉枯れ症状', sootyMold: 'すす病', rootRot: '根腐れ兆候' } as Record<DiseaseId, string>)[id];
+}
+export function pestName(id: PestId): string {
+  return ({ aphid: 'アブラムシ', spiderMite: 'ハダニ', scale: 'カイガラムシ' } as Record<PestId, string>)[id];
+}

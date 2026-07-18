@@ -1,0 +1,82 @@
+?? '-'}:${part.pest ?? '-'}:${part.deadwood ? 'jin' : '-'}`;
+  }).join('|');
+  return `${bonsai.species}:${bonsai.potId}:${bonsai.water.toFixed(0)}:${bonsai.vitality.toFixed(0)}:${bonsai.shari?.side ?? '-'}:${bonsai.shari?.level ?? 0}|${parts}`;
+}
+
+export function weekKey(date = new Date()): string {
+  const first = new Date(date.getFullYear(), 0, 1);
+  const day = Math.floor((date.getTime() - first.getTime()) / 86_400_000);
+  return `${date.getFullYear()}-${Math.ceil((day + first.getDay() + 1) / 7)}`;
+}
+
+export function exhibitionScore(bonsai: BonsaiState): { score: number; notes: string[] } {
+  const m = metrics(bonsai);
+  const pot = POTS[bonsai.potId];
+  const season = SPECIES[bonsai.species].seasonAffinity[seasonIndex(bonsai)];
+  const parts = PARTS.map(part => bonsai.parts[part.id]);
+  const diseaseCount = parts.filter(part => part.disease).length;
+  const pestCount = parts.filter(part => part.pest).length;
+  const visibleWire = parts.filter(part => part.wire).length;
+  const scarring = parts.reduce((sum, part) => sum + part.scar, 0) / parts.length;
+  const deadwood = parts.filter(part => part.deadwood).length + (bonsai.shari ? 1 : 0);
+  const foliageValues = PARTS.filter(part => !['trunk', 'roots'].includes(part.id)).map(part => bonsai.parts[part.id].foliage);
+  const balance = 100 - (Math.max(...foliageValues) - Math.min(...foliageValues));
+  const raw = m.vitality * .19 + m.health * .15 + m.artistry * .25 + pot.prestige * .17 + season * .12 + balance * .12
+    - diseaseCount * 8 - pestCount * 6 - visibleWire * 2.5 - scarring * .04 + Math.min(deadwood, 2) * 2;
+  const score = Math.round(clamp(raw, 20, 99));
+  const notes = [
+    diseaseCount || pestCount ? '病害虫が作品の清潔感を下げた。' : '葉色と清潔感は良好。',
+    visibleWire ? '展示時に針金が残り、完成度を損ねた。' : '整姿の痕跡を見せずにまとめた。',
+    pot.prestige >= 95 ? '鉢との格調が作品を押し上げた。' : '鉢合わせには伸びしろがある。',
+    balance >= 80 ? '左右の葉量と余白が安定している。' : '葉棚の重心に偏りがある。'
+  ];
+  return { score, notes };
+}
+
+export function advanceTime(game: GameState, now = Date.now()): GameState {
+  const copy = structuredClone(game);
+  for (const bonsai of copy.bonsai) {
+    const elapsedHours = Math.max(0, (now - bonsai.lastUpdatedAt) / 3_600_000);
+    if (elapsedHours <= 0) continue;
+    bonsai.water = clamp(bonsai.water - elapsedHours * SPECIES[bonsai.species].waterDecayPerHour);
+    const dryPenalty = bonsai.water < 35 ? (35 - bonsai.water) * .035 * elapsedHours : 0;
+    const stressPenalty = Math.max(0, bonsai.stress - 20) * .005 * elapsedHours;
+    bonsai.vitality = clamp(bonsai.vitality - dryPenalty - stressPenalty + Math.min(2, bonsai.fertilizer * .006 * elapsedHours));
+    bonsai.stress = Math.max(0, bonsai.stress - elapsedHours * .14);
+    bonsai.lastUpdatedAt = now;
+    maybeTriggerEvent(bonsai, now);
+  }
+  return copy;
+}
+
+function maybeTriggerEvent(bonsai: BonsaiState, now: number): void {
+  const slot = Math.floor(now / 43_200_000);
+  if (slot <= bonsai.lastEventSlot) return;
+  bonsai.lastEventSlot = slot;
+  const crowded = PARTS.filter(part => !['trunk', 'roots'].includes(part.id)).filter(part => bonsai.parts[part.id].foliage > 82);
+  const seed = hash(`${bonsai.id}:${slot}`);
+  const target = PARTS.filter(part => !['trunk'].includes(part.id))[seed % 7].id;
+  const part = bonsai.parts[target];
+  const risk = (bonsai.water > 94 ? 22 : 0) + (bonsai.water < 24 ? 18 : 0) + crowded.length * 5 + (bonsai.vitality < 55 ? 25 : 0);
+  if (seed % 100 < Math.min(58, risk)) {
+    if (target === 'roots' || bonsai.water > 94) part.disease = 'rootRot';
+    else if (seed % 2) part.disease = 'needleBlight';
+    else part.pest = seed % 3 === 0 ? 'scale' : 'spiderMite';
+    part.health = clamp(part.health - 8);
+    bonsai.logs.unshift({ id: uuid(), at: now, text: `${PARTS.find(item => item.id === target)?.name}に異変が見つかった。` });
+  }
+}
+
+function hash(value: string): number {
+  let result = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    result ^= value.charCodeAt(index);
+    result = Math.imul(result, 16777619);
+  }
+  return result >>> 0;
+}
+
+export function updateActiveBonsai(game: GameState, updater: (bonsai: BonsaiState) => void): GameState {
+  const copy = structuredClone(game);
+  const bonsai = activeBonsai(copy);
+  if

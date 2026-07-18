@@ -1,0 +1,89 @@
+       <h2>{showResult.award?.title}</h2>
+            <div className="result-score">{showResult.award?.score}<small>点</small></div>
+            <p>{showResult.award?.fieldSize}作品中 {showResult.award?.rank}位</p>
+            <ul>{showResult.notes.map(note => <li key={note}>{note}</li>)}</ul>
+            <button className="primary-button" type="button" onClick={() => setShowResult(null)}>銘木録へ進む</button>
+          </section>
+        </div>
+      )}
+
+      {newTreeSpecies && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <section className="result-card">
+            <div className="eyebrow">新しい素材</div>
+            <h2>育てる樹種を選ぶ</h2>
+            <div className="species-mini-grid">
+              {(Object.keys(SPECIES) as SpeciesId[]).map(species => (
+                <button key={species} className={newTreeSpecies === species ? 'selected' : ''} type="button" onClick={() => setNewTreeSpecies(species)}>
+                  <span>{SPECIES[species].emoji}</span>{SPECIES[species].name}
+                </button>
+              ))}
+            </div>
+            <p>素材代 ¥1,800。名声に応じて最大3鉢まで同時育成できます。</p>
+            <button className="primary-button" type="button" onClick={() => {
+              const before = game.bonsai.length;
+              const next = addBonsai(game, newTreeSpecies);
+              if (next.bonsai.length === before) {
+                setToast('育成枠または資金が不足しています');
+                window.setTimeout(() => setToast(''), 1800);
+              } else {
+                commit(next, `${SPECIES[newTreeSpecies].name}の素材を迎えました`);
+              }
+              setNewTreeSpecies(null);
+            }}>この素材を迎える</button>
+            <button className="ghost-button" type="button" onClick={() => setNewTreeSpecies(null)}>キャンセル</button>
+          </section>
+        </div>
+      )}
+
+      {toast && <div className="toast" role="status">{toast}</div>}
+    </div>
+  );
+}
+
+function Onboarding({ onStart }: { onStart: (player: string, mentor: string, species: SpeciesId, tree: string) => void }) {
+  const [step, setStep] = useState(0);
+  const [player, setPlayer] = useState('');
+  const [tree, setTree] = useState('');
+  const [species, setSpecies] = useState<SpeciesId>('pine');
+  const [mentor, setMentor] = useState('gensai');
+  return (
+    <main className="onboarding" data-testid="onboarding">
+      <div className="onboard-brand">BONSAI</div>
+      <div className="eyebrow">育てた時間が、作品になる。</div>
+      {step === 0 && (
+        <section className="onboard-panel">
+          <h1>最初の一本を選ぶ</h1>
+          <p>実時間の10倍で季節と樹齢が進みます。剪定は取り消せません。</p>
+          <div className="species-grid">
+            {(Object.keys(SPECIES) as SpeciesId[]).map(id => (
+              <button key={id} type="button" className={species === id ? 'selected' : ''} onClick={() => setSpecies(id)}>
+                <span>{SPECIES[id].emoji}</span>
+                <b>{SPECIES[id].name}</b>
+                <small>{SPECIES[id].subtitle}</small>
+              </button>
+            ))}
+          </div>
+          <button className="primary-button" type="button" onClick={() => setStep(1)}>師匠を選ぶ</button>
+        </section>
+      )}
+      {step === 1 && (
+        <section className="onboard-panel">
+          <h1>師匠を選ぶ</h1>
+          <p>師匠はチュートリアルと作品づくりの助言を担当します。</p>
+          <div className="mentor-list">
+            {PEOPLE.slice(0, 3).map(person => (
+              <button key={person.id} type="button" className={mentor === person.id ? 'selected' : ''} onClick={() => setMentor(person.id)}>
+                <span>{person.emoji}</span><div><b>{person.name}</b><small>{person.role}</small><em>「{person.quote}」</em></div>
+              </button>
+            ))}
+          </div>
+          <button className="primary-button" type="button" onClick={() => setStep(2)}>名前を決める</button>
+          <button className="ghost-button" type="button" onClick={() => setStep(0)}>戻る</button>
+        </section>
+      )}
+      {step === 2 && (
+        <section className="onboard-panel">
+          <h1>盆栽師として始める</h1>
+          <label>盆栽師名<input value={player} onChange={event => setPlayer(event.target.value)} placeholder="あなた" maxLength={30} /></label>
+          <label>作品の銘<input value={tree} onChang

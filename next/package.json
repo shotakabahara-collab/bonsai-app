@@ -1,0 +1,25 @@
+{
+  "name": "bonsai-app-rebuild",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit --pretty false",
+    "build": "tsc --noEmit --pretty false && vite build && node scripts/copy-legacy-assets.mjs",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "test:smoke": "node tests/smoke.mjs"
+  },
+  "dependencies": {
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "playwright": "1.61.1",
+    "typescript": "7.0.2",
+    "vite": "8.1.5"
+  }
+}

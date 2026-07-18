@@ -1,0 +1,65 @@
+e={event => setTree(event.target.value)} placeholder={`${SPECIES[species].name}・若樹`} maxLength={40} /></label>
+          <button className="primary-button" data-testid="start-game" type="button" onClick={() => onStart(player, mentor, species, tree)}>育成を始める</button>
+          <button className="ghost-button" type="button" onClick={() => setStep(1)}>戻る</button>
+        </section>
+      )}
+    </main>
+  );
+}
+
+function GrowPage({ game, bonsai, alerts, mentorName, mentorTip, onSelectBonsai, onWater, onFertilize, onOpenCare, onWall, onAddTree }: {
+  game: GameState;
+  bonsai: NonNullable<ReturnType<typeof activeBonsai>>;
+  alerts: string[];
+  mentorName: string;
+  mentorTip: string;
+  onSelectBonsai: (id: string) => void;
+  onWater: () => void;
+  onFertilize: () => void;
+  onOpenCare: (mode: CareMode) => void;
+  onWall: () => void;
+  onAddTree: () => void;
+}) {
+  const m = metrics(bonsai);
+  const slots = unlockedSlots(game.reputation);
+  return (
+    <section className="page grow-page">
+      <div className="tree-tabs">
+        {game.bonsai.map(item => <button key={item.id} type="button" className={item.id === bonsai.id ? 'active' : ''} onClick={() => onSelectBonsai(item.id)}>{SPECIES[item.species].emoji} {item.name}</button>)}
+        {game.bonsai.length < slots && <button className="add-tree" type="button" onClick={onAddTree}>＋ 新しい素材</button>}
+      </div>
+      <article className="artwork-card">
+        <div className="artwork-head">
+          <div><span className="badge">{titleForReputation(game.reputation)}</span><h1>{bonsai.name}</h1><p>{SPECIES[bonsai.species].name}・樹齢 {inGameAgeYears(bonsai).toFixed(1)}年・{POTS[bonsai.potId].name}</p></div>
+          <button className="icon-button" type="button" aria-label="鑑賞モード" onClick={onWall}>⛶</button>
+        </div>
+        <BonsaiStage bonsai={bonsai} />
+        <div className="metric-grid">
+          <Metric label="水分" value={m.water} />
+          <Metric label="樹勢" value={m.vitality} />
+          <Metric label="作品性" value={m.artistry} />
+        </div>
+        <div className="action-grid">
+          <ActionButton icon="💧" label="水やり" onClick={onWater} />
+          <ActionButton icon="✂️" label="部位剪定" onClick={() => onOpenCare('prune')} />
+          <ActionButton icon="🪢" label="部位針金" onClick={() => onOpenCare('wire')} />
+          <ActionButton icon="🌿" label="施肥" onClick={onFertilize} />
+        </div>
+      </article>
+      {alerts.length > 0 && <div className="alert-card"><b>作品に異変があります</b>{alerts.map(alert => <span key={alert}>{alert}</span>)}<button type="button" onClick={() => onOpenCare('health')}>診断と処置</button></div>}
+      <div className="mentor-card"><div className="mentor-avatar">👴</div><div><b>師匠 {mentorName}</b><p>「{mentorTip}」</p></div></div>
+      <div className="secondary-actions"><button type="button" onClick={() => onOpenCare('health')}>🩺 病害虫・健康</button><button type="button" onClick={() => onOpenCare('deadwood')}>🪵 神・舎利</button></div>
+      <div className="stats-row"><div><small>名声</small><b>{game.reputation}</b></div><div><small>育成枠</small><b>{game.bonsai.length}/{slots}</b></div><div><small>受賞</small><b>{bonsai.awards.length}</b></div></div>
+    </section>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return <div className="metric"><b>{Math.round(value)}%</b><span>{label}</span><i style={{ width: `${Math.max(3, value)}%` }} /></div>;
+}
+function ActionButton({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
+  return <button type="button" onClick={onClick}><span>{icon}</span>{label}</button>;
+}
+
+function PotsPage({ game, activePot, onSelect }: { game: GameState; activePot: PotId; onSelect: (id: PotId) => void }) {
+  return <section className="page"><div className="page-heading"><div className="eyebrow">作品の半分は鉢で決まる</div><h1>鉢蔵</h1><p>購入した鉢は所有品として残り、いつでも合わせ直せます。</p></div><div className="pot-list">{(Object.keys(POTS) as PotId[]).map(id => { const pot = POTS[id]; const owned = game.ownedPots.includes(id); return <article key={id} className={`pot-card ${activePot === id ? 'active' : ''}`}><div className="pot-preview" style={{ '--pot': pot.tone } as React.CSSProperties}><span /></div><div className="po

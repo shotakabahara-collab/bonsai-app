@@ -1,0 +1,39 @@
+t-copy"><b>{pot.name}</b><small>格 {pot.prestige}</small><p>{pot.description}</p></div><button type="button" onClick={() => onSelect(id)}>{activePot === id ? '使用中' : owned ? 'この鉢を使う' : pot.price === 0 ? '入手済み' : `¥${pot.price.toLocaleString('ja-JP')}`}</button></article>; })}</div></section>;
+}
+
+function ShowPage({ game, bonsai, onEnter }: { game: GameState; bonsai: NonNullable<ReturnType<typeof activeBonsai>>; onEnter: () => void }) {
+  const evaluation = exhibitionScore(bonsai);
+  const latest = bonsai.awards[0];
+  return <section className="page"><div className="page-heading"><div className="eyebrow">週に一度の非同期大会</div><h1>全国樹藝評論会</h1><p>同時ログインしていないプレイヤー作品も、同じ会場の出展作として登場します。</p></div><article className="show-card"><BonsaiStage bonsai={bonsai} /><div className="show-score"><small>現在の予想評価</small><b>{evaluation.score}<span>点</span></b></div><ul>{evaluation.notes.map(note => <li key={note}>{note}</li>)}</ul><button className="primary-button" type="button" onClick={onEnter}>今週の展覧会へ出展</button></article>{latest && <article className="latest-award"><span>{latest.rank === 1 ? '🥇' : latest.rank <= 3 ? '🏅' : '🎖️'}</span><div><small>直近の成績</small><b>{latest.title}・{latest.score}点</b><p>{new Date(latest.at).toLocaleString('ja-JP')}／{latest.fieldSize}作品中{latest.rank}位</p></div></article>}</section>;
+}
+
+function PeoplePage({ mentorId }: { mentorId: string }) {
+  return <section className="page"><div className="page-heading"><div className="eyebrow">師匠・ライバル・審査員・評論家</div><h1>人物</h1><p>作品への評価やオファーは、人物ごとの美意識で変わります。</p></div><div className="people-list">{PEOPLE.map((person, index) => <article key={person.id} className={person.id === mentorId ? 'mentor-active' : ''}><div className="person-face">{person.emoji}</div><div><small>{person.role}</small><h2>{person.name}{person.id === mentorId && <em>師匠</em>}</h2><p>「{person.quote}」</p>{index === 3 && <span className="relationship rival">ライバル</span>}{index === 4 && <span className="relationship judge">審査員</span>}{index === 5 && <span className="relationship critic">評論家</span>}{index === 6 && <span className="relationship wealthy">富豪</span>}</div></article>)}</div></section>;
+}
+
+function MemorialPage({ bonsai, onRecord }: { bonsai: NonNullable<ReturnType<typeof activeBonsai>>; onRecord: () => void }) {
+  const entries = [
+    ...bonsai.awards.map(item => ({ id: item.id, at: item.at, title: `${item.title}・${item.score}点`, note: `${item.fieldSize}作品中${item.rank}位`, kind: 'award' })),
+    ...bonsai.memorials.map(item => ({ id: item.id, at: item.at, title: item.title, note: item.reason, kind: 'memory' })),
+    ...bonsai.logs.slice(0, 30).map(item => ({ id: item.id, at: item.at, title: item.text, note: '育成記録', kind: 'log' }))
+  ].sort((a, b) => b.at - a.at);
+  return <section className="page"><div className="page-heading"><div className="eyebrow">一本の木の生涯を残す</div><h1>銘木録</h1><p>剪定・鉢替え・受賞・古木技法の節目を作品の物語として保存します。</p></div><button className="primary-button memorial-button" type="button" onClick={onRecord}>📷 今の姿を記録</button><div className="memorial-hero"><BonsaiStage bonsai={bonsai} /><div><b>{bonsai.name}</b><span>{visualSignature(bonsai).slice(0, 76)}…</span></div></div><div className="timeline">{entries.length === 0 ? <p className="empty">まだ記録がありません。</p> : entries.map(entry => <article key={`${entry.kind}-${entry.id}`}><i className={`timeline-dot ${entry.kind}`} /><time>{new Date(entry.at).toLocaleString('ja-JP')}</time><b>{entry.title}</b><p>{entry.note}</p></article>)}</div></section>;
+}
+
+function CareSheet({ mode, bonsai, selectedPart, onSelectPart, onClose, onPrune, onWire, onRemoveWire, onTreat, onJin, onShari }: {
+  mode: CareMode;
+  bonsai: NonNullable<ReturnType<typeof activeBonsai>>;
+  selectedPart: PartId;
+  onSelectPart: (part: PartId) => void;
+  onClose: () => void;
+  onPrune: (level: 1 | 2 | 3) => void;
+  onWire: (intensity: 'light' | 'strong', direction: WireDirection) => void;
+  onRemoveWire: () => void;
+  onTreat: () => void;
+  onJin: () => void;
+  onShari: (side: 'left' | 'right') => void;
+}) {
+  const part = bonsai.parts[selectedPart];
+  const [wireIntensity, setWireIntensity] = useState<'light' | 'strong'>('light');
+  const [direction, setDirection] = useState<WireDirection>('down');
+  const t
