@@ -13,7 +13,11 @@ const report = {
   migrated: null,
   afterPrune: null,
   growVisual: null,
-  showVisual: null
+  showVisual: null,
+  asyncFieldCount: 0,
+  rentalPayment: 0,
+  archiveCount: 0,
+  purchaseReplacement: null
 };
 const browser = await webkit.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 });
@@ -139,6 +143,8 @@ try {
   await page.addInitScript(value => {
     localStorage.setItem('bonsai_live_1', JSON.stringify(value));
     localStorage.removeItem('bonsai:v2');
+    localStorage.removeItem('bonsai:offers:v1');
+    localStorage.removeItem('bonsai:visual-archive:v1');
   }, legacy);
 
   report.phase = 'launch and migration';
@@ -198,6 +204,75 @@ try {
   if (!report.showVisual.text.includes('現在の予想評価')) throw new Error(`show card content is missing: ${report.showVisual.text}`);
   await page.screenshot({ path: 'test-artifacts/03-show-visible.png', fullPage: false });
   await page.locator('.show-card').screenshot({ path: 'test-artifacts/04-show-artwork.png' });
+
+  report.phase = 'asynchronous field';
+  await page.getByRole('button', { name: /出展作品/ }).click();
+  await page.waitForSelector('.field-list');
+  report.asyncFieldCount = await page.locator('.field-list article').count();
+  if (report.asyncFieldCount < 7) throw new Error(`asynchronous field is incomplete: ${report.asyncFieldCount}`);
+  const fieldText = await page.locator('.field-list').innerText();
+  if (!fieldText.includes(legacy.name) || !fieldText.includes('非同期出展')) throw new Error(`asynchronous player work is missing: ${fieldText}`);
+  await page.screenshot({ path: 'test-artifacts/05-asynchronous-field.png', fullPage: false });
+  await page.getByRole('button', { name: '閉じる' }).click();
+
+  report.phase = 'weekly show and rental offer';
+  const moneyBeforeRental = (await page.evaluate(() => JSON.parse(localStorage.getItem('bonsai:v2')))).money;
+  await page.getByRole('button', { name: /今週の展覧会へ出展/ }).click();
+  await page.waitForSelector('.result-card');
+  await page.getByRole('button', { name: '銘木録へ進む' }).click();
+  await page.waitForSelector('.completion-dock .offer-button', { timeout: 6000 });
+  await page.getByRole('button', { name: /オファー/ }).click();
+  await page.waitForSelector('.offer-card');
+  const offerText = await page.locator('.offer-card').first().innerText();
+  if (!offerText.includes('提示額') || !offerText.includes('貸出')) throw new Error(`rental offer is incomplete: ${offerText}`);
+  await page.screenshot({ path: 'test-artifacts/06-rental-offer.png', fullPage: false });
+  await page.getByRole('button', { name: '貸出を受ける' }).first().click();
+  await page.waitForFunction(previous => JSON.parse(localStorage.getItem('bonsai:v2')).money > previous, moneyBeforeRental, { timeout: 5000 });
+  const moneyAfterRental = (await page.evaluate(() => JSON.parse(localStorage.getItem('bonsai:v2')))).money;
+  report.rentalPayment = moneyAfterRental - moneyBeforeRental;
+  if (report.rentalPayment <= 0) throw new Error('rental payment was not credited');
+  await page.getByRole('button', { name: '閉じる' }).click();
+
+  report.phase = 'visual archive';
+  await page.getByRole('button', { name: /銘木録/ }).click();
+  await page.waitForSelector('.memorial-hero');
+  await page.waitForSelector('.completion-dock button', { timeout: 5000 });
+  await page.getByRole('button', { name: /作品写真/ }).click();
+  await page.waitForSelector('.archive-card');
+  report.archiveCount = await page.locator('.archive-card').count();
+  if (report.archiveCount < 2) throw new Error(`visual archive did not preserve state changes: ${report.archiveCount}`);
+  await page.waitForFunction(() => [...document.querySelectorAll('.archive-card img')].every(image => image.complete && image.naturalWidth >= 800), { timeout: 20000 });
+  await page.screenshot({ path: 'test-artifacts/07-visual-archive.png', fullPage: false });
+  await page.getByRole('button', { name: '閉じる' }).click();
+
+  report.phase = 'wealthy purchase and replacement';
+  const purchaseSeed = await page.evaluate(() => {
+    const game = JSON.parse(localStorage.getItem('bonsai:v2'));
+    const tree = game.bonsai.find(item => item.id === game.activeBonsaiId);
+    const offer = {
+      id: 'audit-purchase-offer', awardId: 'audit-award', bonsaiId: tree.id, kind: 'purchase',
+      issuer: '東雲 崇', title: '名木・購入希望', amount: 22000, score: 91,
+      createdAt: Date.now(), expiresAt: Date.now() + 86400000
+    };
+    localStorage.setItem('bonsai:offers:v1', JSON.stringify([offer]));
+    window.dispatchEvent(new CustomEvent('bonsai:game-updated', { detail: game }));
+    return { oldBonsaiId: tree.id, money: game.money };
+  });
+  await page.waitForSelector('.completion-dock .offer-button', { timeout: 5000 });
+  await page.getByRole('button', { name: /オファー/ }).click();
+  await page.waitForSelector('.offer-purchase');
+  await page.screenshot({ path: 'test-artifacts/08-purchase-offer.png', fullPage: false });
+  await page.getByRole('button', { name: /売却して山もみじへ買替/ }).click();
+  await page.waitForFunction(({ oldBonsaiId, money }) => {
+    const game = JSON.parse(localStorage.getItem('bonsai:v2'));
+    const active = game.bonsai.find(item => item.id === game.activeBonsaiId);
+    return active && active.id !== oldBonsaiId && active.species === 'maple' && game.money >= money + 20200;
+  }, purchaseSeed, { timeout: 5000 });
+  report.purchaseReplacement = await page.evaluate(() => {
+    const game = JSON.parse(localStorage.getItem('bonsai:v2'));
+    const active = game.bonsai.find(item => item.id === game.activeBonsaiId);
+    return { species: active.species, name: active.name, money: game.money };
+  });
 
   const fatalConsole = report.consoleErrors.filter(message => /uncaught|typeerror|referenceerror|syntaxerror|failed to load module script|\[BONSAI fatal\]/i.test(message));
   if (report.pageErrors.length || fatalConsole.length) {
