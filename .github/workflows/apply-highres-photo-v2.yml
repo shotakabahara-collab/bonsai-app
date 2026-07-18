@@ -1,0 +1,163 @@
+name: Integrate high-resolution pine photograph
+
+on:
+  push:
+    branches:
+      - agent/highres-kuromatsu-v2
+    paths:
+      - photo-source-v2.js
+      - IMAGE_LICENSES.md
+      - .github/workflows/apply-highres-photo-v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: integrate-highres-pine-v2
+  cancel-in-progress: true
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/highres-kuromatsu-v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Connect source, canvas export and offline fallback
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          remote = 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/Japanese_Black_Pine_bonsai_135%2C_October_10%2C_2008.jpg/960px-Japanese_Black_Pine_bonsai_135%2C_October_10%2C_2008.jpg'
+
+          index = Path('index.html')
+          html = index.read_text(encoding='utf-8')
+          source_tag = '<script src="photo-source-v2.js"></script>'
+          anchor = '<script src="photo-assets.js"></script>'
+          if source_tag not in html:
+              if anchor not in html:
+                  raise SystemExit('photo-assets script anchor missing')
+              html = html.replace(anchor, anchor + source_tag, 1)
+          index.write_text(html, encoding='utf-8')
+
+          def add_cross_origin(path_name):
+              path = Path(path_name)
+              text = path.read_text(encoding='utf-8')
+              marker = "      const image = new Image();\n      image.decoding = 'async';"
+              replacement = "      const image = new Image();\n      try {\n        const resolved = new URL(source, location.href);\n        if (resolved.origin !== location.origin && !String(source).startsWith('data:')) image.crossOrigin = 'anonymous';\n      } catch { /* data/blob URL or non-browser validation */ }\n      image.decoding = 'async';"
+              if replacement not in text:
+                  if marker not in text:
+                      raise SystemExit(f'loadImage marker missing: {path_name}')
+                  text = text.replace(marker, replacement, 1)
+              path.write_text(text, encoding='utf-8')
+
+          add_cross_origin('state-image-runtime.js')
+          add_cross_origin('completion-core.js')
+
+          runtime = Path('state-image-runtime.js')
+          text = runtime.read_text(encoding='utf-8')
+          old_css = '.photo-bonsai>img{visibility:hidden}'
+          new_css = '.photo-bonsai>img{visibility:visible}.photo-bonsai.bonsai-state-ready>img{visibility:hidden}'
+          if old_css in text:
+              text = text.replace(old_css, new_css, 1)
+          elif new_css not in text:
+              raise SystemExit('state runtime image visibility rule missing')
+
+          old_attach = "      if (previous) previous.replaceWith(canvas);\n      else frame.appendChild(canvas);"
+          new_attach = "      if (previous) previous.replaceWith(canvas);\n      else frame.appendChild(canvas);\n      frame.classList.add('bonsai-state-ready');"
+          if new_attach not in text:
+              if old_attach not in text:
+                  raise SystemExit('state canvas attach marker missing')
+              text = text.replace(old_attach, new_attach, 1)
+
+          old_catch = "    } catch (error) {\n      console.warn('[BONSAI state image]', error);"
+          new_catch = "    } catch (error) {\n      frame.classList.remove('bonsai-state-ready');\n      console.warn('[BONSAI state image]', error);"
+          if new_catch not in text:
+              if old_catch not in text:
+                  raise SystemExit('state runtime catch marker missing')
+              text = text.replace(old_catch, new_catch, 1)
+          runtime.write_text(text, encoding='utf-8')
+
+          sw = Path('sw.js')
+          sw.write_text(f"""const CACHE='bonsai-photo-v5-highres-state-20260718';
+          const ASSETS=['./','./index.html','./manifest.webmanifest','./icon.svg','./tree-renderer.js','./photo-assets.js','./photo-source-v2.js','./advanced-care.js','./advanced-care-bridge.js','./completion-core.js','./state-image-runtime.js','./judging-engine.js','./IMAGE_LICENSES.md'];
+          const REMOTE=['{remote}'];
+          self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
+          self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
+          self.addEventListener('fetch',event=>{{
+            if(event.request.method!=='GET')return;
+            const url=new URL(event.request.url);
+            const local=url.origin===location.origin;
+            const remote=REMOTE.includes(event.request.url);
+            if(!local&&!remote)return;
+            event.respondWith(caches.match(event.request).then(hit=>hit||fetch(event.request).then(response=>{{
+              if(response.ok||response.type==='opaque'){{const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));}}
+              return response;
+            }}).catch(()=>local&&event.request.mode==='navigate'?caches.match('./index.html'):hit)));
+          }});
+          """.replace('          ', ''), encoding='utf-8')
+          PY
+
+      - name: Validate high-resolution photograph integration
+        run: |
+          node --check photo-source-v2.js
+          node --check state-image-runtime.js
+          node --check completion-core.js
+          node --check judging-engine.js
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          const html=fs.readFileSync('index.html','utf8');
+          const required=[
+            '<script src="photo-assets.js"></script><script src="photo-source-v2.js"></script>',
+            'state-image-runtime.js','completion-core.js','advanced-care.js'
+          ];
+          for(const token of required) if(!html.includes(token)) throw Error(`missing index contract: ${token}`);
+          const inline=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(x=>x[1]).filter(x=>x.trim());
+          inline.forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
+          const runtime=fs.readFileSync('state-image-runtime.js','utf8');
+          for(const token of ["crossOrigin = 'anonymous'",'bonsai-state-ready','frame.classList.remove']) if(!runtime.includes(token)) throw Error(`missing runtime contract: ${token}`);
+          const completion=fs.readFileSync('completion-core.js','utf8');
+          if(!completion.includes("crossOrigin = 'anonymous'")) throw Error('memorial export CORS contract missing');
+          const sw=fs.readFileSync('sw.js','utf8');
+          for(const token of ['photo-source-v2.js','upload.wikimedia.org','bonsai-photo-v5-highres-state']) if(!sw.includes(token)) throw Error(`missing service worker contract: ${token}`);
+          console.log('high-resolution photo integration syntax: PASS');
+          NODE
+
+      - name: Verify remote image response and CORS
+        run: |
+          url='https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/Japanese_Black_Pine_bonsai_135%2C_October_10%2C_2008.jpg/960px-Japanese_Black_Pine_bonsai_135%2C_October_10%2C_2008.jpg'
+          curl --fail --location --silent --show-error --retry 5 --retry-delay 2 --max-time 45 -D /tmp/pine-headers -o /tmp/pine.jpg "$url"
+          test "$(wc -c </tmp/pine.jpg)" -gt 100000
+          grep -Eiq '^content-type: *image/(jpeg|jpg)' /tmp/pine-headers
+          grep -Eiq '^access-control-allow-origin: *\*' /tmp/pine-headers
+          python3 - <<'PY'
+          from pathlib import Path
+          data=Path('/tmp/pine.jpg').read_bytes()
+          if not data.startswith(b'\xff\xd8') or not data.endswith(b'\xff\xd9'):
+              raise SystemExit('remote photograph is not a complete JPEG')
+          print('remote high-resolution photograph: PASS', len(data), 'bytes')
+          PY
+
+      - name: Static HTTP smoke
+        run: |
+          python3 -m http.server 4173 >/tmp/highres-http.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4173/ >/tmp/index.html && break; sleep .2; done
+          grep -Fq 'photo-source-v2.js' /tmp/index.html
+          curl -fsS http://127.0.0.1:4173/photo-source-v2.js | grep -Fq 'BonsaiPhotoSource'
+          curl -fsS http://127.0.0.1:4173/sw.js | grep -Fq 'bonsai-photo-v5-highres-state'
+
+      - name: Commit integrated candidate
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add index.html state-image-runtime.js completion-core.js sw.js
+          git diff --cached --quiet && exit 0
+          git commit -m '高解像度黒松写真を表示・状態保存・オフラインへ接続'
+          git push origin HEAD:agent/highres-kuromatsu-v2
