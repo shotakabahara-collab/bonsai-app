@@ -1,0 +1,113 @@
+name: Apply BONSAI completion core
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'completion-core.js'
+      - '.github/workflows/apply-completion-core.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bonsai-completion-core
+  cancel-in-progress: true
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Connect completion core and offline cache
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          index = Path('index.html')
+          html = index.read_text(encoding='utf-8')
+          tag = '<script src="completion-core.js"></script>'
+          if tag not in html:
+              bridge = '<script src="advanced-care-bridge.js"></script>'
+              if bridge in html:
+                  html = html.replace(bridge, bridge + tag, 1)
+              elif '</body>' in html:
+                  html = html.replace('</body>', tag + '</body>', 1)
+              else:
+                  html += tag
+          index.write_text(html, encoding='utf-8')
+
+          sw = Path('sw.js')
+          text = sw.read_text(encoding='utf-8')
+          text = re.sub(r"const CACHE='[^']+'", "const CACHE='bonsai-photo-v3-completion-20260718'", text, count=1)
+          asset = "'./completion-core.js'"
+          if asset not in text:
+              text = text.replace('];', f',{asset}];', 1)
+          sw.write_text(text, encoding='utf-8')
+          PY
+      - name: Validate evaluation, exhibition and memorial triggers
+        run: |
+          node --check completion-core.js
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          global.window=global;
+          vm.runInThisContext(fs.readFileSync('advanced-care.js','utf8'),{filename:'advanced-care.js'});
+          vm.runInThisContext(fs.readFileSync('completion-core.js','utf8'),{filename:'completion-core.js'});
+          const A=global.BonsaiAdvancedCare,C=global.BonsaiCompletion;
+          let clean=A.migrateState({
+            started:true,name:'検査盆栽師',tree:'検査黒松',sp:'pine',born:Date.now()-86400000,
+            last:Date.now(),water:82,vit:92,stress:2,fert:2,pot:'black',money:5000,rep:150,
+            awards:[],log:[],stats:{water:2,prune:0,wire:0,shows:0}
+          });
+          for(const id of ['apex','first_left','second_right','third_left','back_branch','front_branch']){
+            clean.advanced.parts[id].foliage=74;
+            clean.advanced.parts[id].health=92;
+            clean.advanced.parts[id].pruneLevel=1;
+          }
+          const cleanScore=C.exhibitionEvaluation(clean);
+          const sick=JSON.parse(JSON.stringify(clean));
+          sick.advanced.parts.apex.disease='needle_blight';
+          sick.advanced.parts.first_left.pest='aphid';
+          const sickScore=C.exhibitionEvaluation(sick);
+          if(!(cleanScore.score>sickScore.score))throw Error('disease and pest penalties are not reflected');
+          const entry=C.exhibitionEntry(clean,Date.now());
+          if(!entry.ok||!entry.record.evaluation||entry.state.awards.length!==1)throw Error('advanced exhibition failed');
+          const capture=C.detectCapture(clean,entry.state);
+          if(!capture||capture.reason!=='award')throw Error('award memorial trigger missing');
+          console.log('completion evaluation: PASS',cleanScore.score,sickScore.score,entry.record.rank);
+          NODE
+      - name: Validate application connection and HTTP delivery
+        run: |
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          const html=fs.readFileSync('index.html','utf8');
+          if(!html.includes('<script src="completion-core.js"></script>'))throw Error('completion-core.js not connected');
+          const inline=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(x=>x[1]).filter(x=>x.trim());
+          inline.forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
+          const sw=fs.readFileSync('sw.js','utf8');
+          if(!sw.includes("'./completion-core.js'"))throw Error('completion core not cached');
+          if(!sw.includes('bonsai-photo-v3-completion'))throw Error('cache version not updated');
+          console.log('completion connection: PASS');
+          NODE
+          python3 -m http.server 4173 >/tmp/completion-http.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4173/ >/tmp/index.html && break; sleep .2; done
+          grep -Fq 'completion-core.js' /tmp/index.html
+          curl -fsS http://127.0.0.1:4173/completion-core.js | grep -Fq 'BonsaiCompletion'
+          curl -fsS http://127.0.0.1:4173/sw.js | grep -Fq 'completion-core.js'
+      - name: Commit integrated release candidate
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add index.html sw.js
+          git diff --cached --quiet && exit 0
+          git commit -m '部位審査と状態画像アルバムをゲームへ接続'
+          git push origin HEAD:main
