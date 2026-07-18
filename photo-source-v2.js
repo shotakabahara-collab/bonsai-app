@@ -23,9 +23,22 @@
   function useFallback(image) {
     if (!fallback || !image) return;
     ROOT.BonsaiPhotos.pine = fallback;
+    image.dataset.photoFallback = 'true';
+    image.dataset.photoCorsReady = 'true';
     image.removeAttribute('crossorigin');
     image.src = fallback;
-    image.dataset.photoFallback = 'true';
+  }
+
+  function prepareImage() {
+    if (!DOC) return;
+    const image = DOC.querySelector('.photo-bonsai img');
+    if (!image || image.dataset.photoFallback === 'true' || image.dataset.photoCorsReady === 'true') return;
+    const source = image.getAttribute('src') || image.src || '';
+    if (!source || (!source.includes('upload.wikimedia.org') && source !== REMOTE)) return;
+    image.dataset.photoCorsReady = 'true';
+    image.crossOrigin = 'anonymous';
+    image.referrerPolicy = 'no-referrer';
+    image.src = REMOTE;
   }
 
   function installFallback() {
@@ -35,7 +48,7 @@
       if (!(image instanceof HTMLImageElement)) return;
       if (!image.closest('.photo-bonsai')) return;
       if (image.dataset.photoFallback === 'true') return;
-      if (image.currentSrc === REMOTE || image.src === REMOTE) useFallback(image);
+      if (image.currentSrc === REMOTE || image.src === REMOTE || image.src.includes('upload.wikimedia.org')) useFallback(image);
     }, true);
   }
 
@@ -44,7 +57,9 @@
   }
 
   function ensureCredit() {
-    if (!DOC || DOC.getElementById('bonsai-photo-credit')) return;
+    if (!DOC) return;
+    prepareImage();
+    if (DOC.getElementById('bonsai-photo-credit')) return;
     const figure = DOC.querySelector('.photo-bonsai');
     if (!figure) return;
     const credit = DOC.createElement('div');
@@ -73,10 +88,11 @@
   }
 
   ROOT.BonsaiPhotoSource = {
-    version: '2.0.0',
+    version: '2.1.0',
     remote: REMOTE,
     fallback,
     credit: ROOT.BonsaiPhotos.pineCredit,
+    prepareImage,
     useFallback
   };
 
