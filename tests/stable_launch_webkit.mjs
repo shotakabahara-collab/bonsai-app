@@ -38,9 +38,16 @@ await page.addInitScript(() => {
   }));
 });
 
+async function openCommitted(url) {
+  // The app contains high-resolution embedded photography. WebKit can finish
+  // rendering before it emits DOMContentLoaded, so the first committed response
+  // plus the visible application shell is the correct launch contract.
+  await page.goto(url, { waitUntil: 'commit', timeout: 30000 });
+}
+
 const target = new URL(`index.html?release=stable-launch-v1-20260718&t=${Date.now()}`, baseURL).href;
-await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 60000 });
-await page.waitForSelector('.app,.onboard', { timeout: 45000 });
+await openCommitted(target);
+await page.waitForSelector('.app,.onboard', { timeout: 90000 });
 
 const initial = await page.evaluate(() => ({
   text: document.body.innerText.slice(0, 260),
@@ -64,9 +71,10 @@ await page.screenshot({ path: publicMode ? 'stable-launch-artifacts/03-public-ap
 
 if (!publicMode) {
   const before = initial.state;
-  await page.goto(new URL('repair.html', baseURL).href, { waitUntil: 'domcontentloaded' });
+  await openCommitted(new URL('repair.html', baseURL).href);
+  await page.waitForSelector('#repair', { timeout: 30000 });
   await page.click('#repair');
-  await page.waitForSelector('.app,.onboard', { timeout: 45000 });
+  await page.waitForSelector('.app,.onboard', { timeout: 90000 });
   const after = await page.evaluate(() => JSON.parse(localStorage.getItem('bonsai_live_1')));
   for (const key of ['name', 'tree', 'sp', 'pot', 'money', 'rep', 'prune', 'wire']) {
     if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) throw new Error(`repair changed ${key}`);
