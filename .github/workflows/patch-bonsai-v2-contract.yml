@@ -1,0 +1,45 @@
+name: Patch BONSAI stable v2 contract
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-bonsai-v2-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Add the explicit visual feature contract and retrigger release
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          app=Path('bonsai-v2.js')
+          text=app.read_text(encoding='utf-8')
+          marker="window.BonsaiFeatureContracts=Object.freeze(['part-pruning','part-wiring','disease','pest','jin','shari','memorial-images']);"
+          if marker not in text:
+              text += "\n" + marker + "\n"
+          app.write_text(text,encoding='utf-8')
+          workflow=Path('.github/workflows/release-bonsai-stable-v2.yml')
+          source=workflow.read_text(encoding='utf-8')
+          retry='# retry-contract-v2\n'
+          if retry not in source:
+              source=retry+source
+          workflow.write_text(source,encoding='utf-8')
+          PY
+          node --check bonsai-v2.js
+      - name: Commit correction and remove the one-shot patch workflow
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add bonsai-v2.js .github/workflows/release-bonsai-stable-v2.yml
+          git rm .github/workflows/patch-bonsai-v2-contract.yml
+          git commit -m '安定版v2の機能契約を補正して最終公開を再試験'
+          git push origin HEAD:main
