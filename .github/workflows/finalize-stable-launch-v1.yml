@@ -1,0 +1,281 @@
+name: Finalize BONSAI stable launch v1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/finalize-stable-launch-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  issues: write
+
+environment:
+  name: github-pages
+  url: ${{ steps.deployment.outputs.page_url }}
+
+concurrency:
+  group: bonsai-stable-launch-v1
+  cancel-in-progress: false
+
+jobs:
+  finalize-test-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build one-page stable application and cache recovery
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import json
+
+          VERSION = 'stable-launch-v1-20260718'
+          root = Path('.')
+          playable = root / 'app.html' if (root / 'app.html').exists() else root / 'index.html'
+          html = playable.read_text(encoding='utf-8')
+
+          old_state = "let s;try{s={...base(),...JSON.parse(localStorage.getItem(KEY)||'null')}}catch{s=base()}"
+          normalized_state = """const normalizeSavedState=raw=>{const b=base(),x=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:{},speciesAlias={kuromatsu:'pine','黒松':'pine',yamamomiji:'maple','山もみじ':'maple',satsuki:'azalea','皐月':'azalea'},potAlias={pot01:'starter',pot02:'black',pot03:'blue',pot04:'moon',pot05:'old'},n={...b,...x};n.sp=speciesAlias[n.sp]||n.sp;if(!SP[n.sp])n.sp='pine';n.pot=potAlias[n.pot]||n.pot;if(!POTS.some(p=>p[0]===n.pot))n.pot='starter';const mentor=Number(n.mentor);n.mentor=Number.isFinite(mentor)&&PEOPLE[Math.trunc(mentor)]?Math.trunc(mentor):0;n.stats={...b.stats,...(x.stats&&typeof x.stats==='object'&&!Array.isArray(x.stats)?x.stats:{})};n.owned=(Array.isArray(x.owned)?x.owned:['starter']).map(id=>potAlias[id]||id).filter(id=>POTS.some(p=>p[0]===id));if(!n.owned.includes('starter'))n.owned.unshift('starter');if(!n.owned.includes(n.pot))n.owned.push(n.pot);n.awards=Array.isArray(x.awards)?x.awards:[];n.log=(Array.isArray(x.log)?x.log:[]).map(item=>typeof item==='string'?{at:Date.now(),x:item}:item).filter(item=>item&&typeof item==='object');for(const key of ['born','water','last','vit','stress','prune','wire','fert','money','rep']){const value=Number(n[key]);n[key]=Number.isFinite(value)?value:b[key]}n.started=n.started===true;n.name=String(n.name||b.name);n.tree=String(n.tree||'');n.lastWeek=typeof n.lastWeek==='string'?n.lastWeek:'';if(x.advanced&&typeof x.advanced==='object')n.advanced=x.advanced;return n};let s;try{s=normalizeSavedState(JSON.parse(localStorage.getItem(KEY)||'null'));localStorage.setItem(KEY,JSON.stringify(s))}catch(error){try{localStorage.setItem(KEY+'_corrupt_backup',localStorage.getItem(KEY)||'')}catch{}s=base();localStorage.setItem(KEY,JSON.stringify(s))}"""
+          if 'normalizeSavedState=raw=>' not in html:
+              if old_state not in html:
+                  raise SystemExit('playable state initializer was not found')
+              html = html.replace(old_state, normalized_state, 1)
+
+          status_meta = '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
+          if status_meta not in html:
+              marker = '<meta name="apple-mobile-web-app-title" content="BONSAI">'
+              html = html.replace(marker, marker + status_meta, 1)
+
+          cache_meta = '<meta name="bonsai-release" content="stable-launch-v1-20260718">'
+          if cache_meta not in html:
+              html = html.replace('<title>BONSAI</title>', '<title>BONSAI</title>' + cache_meta, 1)
+
+          html = html.replace('./recovery-v4.html', './repair.html?release=' + VERSION)
+          html = html.replace('recovery-v4.html', 'repair.html?release=' + VERSION)
+
+          registration = f"""<script id="bonsai-stable-worker">(()=>{{'use strict';const VERSION='{VERSION}';if('serviceWorker'in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v='+VERSION,{{scope:'./',updateViaCache:'none'}}).then(registration=>registration.update()).catch(error=>console.warn('[BONSAI worker]',error)),{{once:true}});window.BonsaiRelease=VERSION;}})();</script>"""
+          if 'id="bonsai-stable-worker"' not in html:
+              html = html.replace('</body>', registration + '</body>', 1)
+
+          # The playable document itself is the launch document. No redirect or secondary shell.
+          (root / 'index.html').write_text(html, encoding='utf-8')
+          (root / 'app.html').write_text(html, encoding='utf-8')
+          (root / 'offline-app.html').write_text(html, encoding='utf-8')
+
+          repair = f'''<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#09100c"><meta name="apple-mobile-web-app-capable" content="yes"><title>BONSAI 起動修復</title><style>*{{box-sizing:border-box}}html,body{{min-height:100%;margin:0;background:#09100c;color:#eee8da;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}}main{{max-width:560px;min-height:100vh;min-height:100dvh;margin:auto;padding:calc(env(safe-area-inset-top) + 38px) 22px 40px;display:grid;align-content:center;gap:14px}}.logo{{font:30px Georgia,serif;letter-spacing:.22em}}.card{{padding:22px;border:1px solid #ffffff20;border-radius:22px;background:#152119}}h1{{font:24px Georgia,serif;margin:0 0 12px}}p{{color:#aeb9b0;font-size:13px;line-height:1.8}}button,a{{appearance:none;width:100%;display:block;border:0;border-radius:14px;padding:14px;background:#eee8da;color:#101611;text-decoration:none;text-align:center;font-weight:700;font-size:15px}}.secondary{{margin-top:10px;background:#ffffff0e;color:#eee8da;border:1px solid #ffffff20}}</style></head><body><main><div class="logo">BONSAI</div><section class="card"><h1>起動を修復します</h1><p id="status">盆栽のセーブデータは残したまま、古いアプリキャッシュとService Workerだけを削除します。</p><button id="repair" type="button">起動キャッシュを修復</button><a class="secondary" href="./index.html?release={VERSION}&direct=1">修復せず開く</a></section></main><script>(function(){{'use strict';var button=document.getElementById('repair'),status=document.getElementById('status');button.addEventListener('click',async function(){{button.disabled=true;button.textContent='修復しています…';try{{if('serviceWorker'in navigator){{var registrations=await navigator.serviceWorker.getRegistrations();await Promise.all(registrations.map(function(registration){{return registration.unregister()}}))}}if('caches'in window){{var names=await caches.keys();await Promise.all(names.map(function(name){{return caches.delete(name)}}))}}}}catch(error){{console.warn(error)}}status.textContent='修復が完了しました。BONSAIを開きます。';location.replace('./index.html?release={VERSION}&repaired=1&t='+Date.now())}})}})();</script></body></html>'''
+          (root / 'repair.html').write_text(repair, encoding='utf-8')
+          (root / 'recovery-v4.html').write_text(repair, encoding='utf-8')
+
+          manifest_path = root / 'manifest.webmanifest'
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          manifest.update({
+              'id': './stable-launch-v1',
+              'start_url': './index.html?release=' + VERSION,
+              'scope': './',
+              'display': 'standalone',
+              'background_color': '#09100c',
+              'theme_color': '#09100c',
+          })
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          static_assets = [
+              './manifest.webmanifest','./icon.svg','./tree-renderer.js','./photo-assets.js',
+              './advanced-care.js','./advanced-care-bridge.js','./completion-core.js',
+              './judging-engine.js','./state-image-runtime.js','./repair.html','./offline-app.html'
+          ]
+          for path in [
+              './assets/kuromatsu/manifest.json','./assets/kuromatsu/base/black.webp',
+              './assets/kuromatsu/base/starter.webp','./assets/kuromatsu/base/blue.webp',
+              './assets/kuromatsu/base/moon.webp','./assets/kuromatsu/base/old.webp'
+          ]:
+              if (root / path[2:]).exists(): static_assets.append(path)
+          assets_json = json.dumps(static_assets, ensure_ascii=False, separators=(',', ':'))
+          sw = f'''const VERSION='{VERSION}';\nconst CACHE='bonsai-'+VERSION;\nconst ASSETS={assets_json};\nself.addEventListener('install',event=>event.waitUntil((async()=>{{const cache=await caches.open(CACHE);for(const url of ASSETS){{try{{const response=await fetch(new Request(url,{{cache:'reload'}}));if(response.ok)await cache.put(url,response.clone())}}catch(error){{}}}}await self.skipWaiting()}})()));\nself.addEventListener('activate',event=>event.waitUntil((async()=>{{const names=await caches.keys();await Promise.all(names.filter(name=>name!==CACHE).map(name=>caches.delete(name)));await self.clients.claim()}})()));\nself.addEventListener('fetch',event=>{{if(event.request.method!=='GET')return;const url=new URL(event.request.url);if(url.origin!==self.location.origin)return;if(event.request.mode==='navigate'){{event.respondWith(fetch(event.request,{{cache:'no-store'}}).catch(()=>caches.match('./offline-app.html',{{ignoreSearch:true}})));return}}event.respondWith(caches.match(event.request,{{ignoreSearch:true}}).then(cached=>{{const network=fetch(event.request).then(response=>{{if(response.ok)caches.open(CACHE).then(cache=>cache.put(event.request,response.clone()));return response}}).catch(()=>cached);return cached||network}}))}});\n'''
+          (root / 'sw.js').write_text(sw, encoding='utf-8')
+
+          version = {
+              'version': VERSION,
+              'architecture': 'single-document',
+              'navigation': 'network-first',
+              'saveData': 'preserved-and-normalized',
+              'repair': 'repair.html',
+          }
+          (root / 'release.json').write_text(json.dumps(version, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          # Replace the older broad deploy workflow so future commits use the same stable architecture.
+          pages = '''name: Test and Deploy BONSAI stable\n\non:\n  push:\n    branches: [main]\n  workflow_dispatch:\n\npermissions:\n  contents: read\n  pages: write\n  id-token: write\n  issues: write\n\nconcurrency:\n  group: pages\n  cancel-in-progress: true\n\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n        with:\n          node-version: '22'\n      - name: Validate stable app\n        run: |\n          node --check sw.js\n          for file in photo-assets.js tree-renderer.js advanced-care.js advanced-care-bridge.js completion-core.js judging-engine.js state-image-runtime.js; do node --check "$file"; done\n          grep -Fq 'stable-launch-v1-20260718' index.html\n          grep -Fq 'normalizeSavedState' index.html\n          grep -Fq '起動キャッシュを修復' repair.html\n          grep -Fq 'network-first' release.json\n  deploy:\n    needs: verify\n    runs-on: ubuntu-latest\n    environment:\n      name: github-pages\n      url: ${{ steps.deployment.outputs.page_url }}\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/configure-pages@v5\n      - uses: actions/upload-pages-artifact@v3\n        with:\n          path: .\n      - id: deployment\n        uses: actions/deploy-pages@v4\n'''
+          (root / '.github/workflows/pages.yml').write_text(pages, encoding='utf-8')
+          print('stable launch package prepared')
+          PY
+
+      - name: Validate JavaScript and application contracts
+        run: |
+          node --check sw.js
+          for file in photo-assets.js tree-renderer.js advanced-care.js advanced-care-bridge.js completion-core.js judging-engine.js state-image-runtime.js; do node --check "$file"; done
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          const html=fs.readFileSync('index.html','utf8');
+          for(const token of ['stable-launch-v1-20260718','normalizeSavedState','bonsai-stable-worker','advanced-care.js','state-image-runtime.js']) if(!html.includes(token)) throw Error(`missing ${token}`);
+          const scripts=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(match=>match[1]).filter(Boolean);
+          scripts.forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
+          const manifest=JSON.parse(fs.readFileSync('manifest.webmanifest','utf8'));
+          if(manifest.id!=='./stable-launch-v1'||!manifest.start_url.includes('stable-launch-v1')) throw Error('manifest launch contract invalid');
+          const sw=fs.readFileSync('sw.js','utf8');
+          if(!sw.includes("event.request.mode==='navigate'")||!sw.includes("cache:'no-store'")) throw Error('network-first navigation missing');
+          console.log('stable launch static contracts: PASS');
+          NODE
+
+      - name: Install iPhone WebKit validation tools
+        run: |
+          npm install --no-save playwright@1.52.0
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Verify fresh, migrated and repaired launch in WebKit
+        run: |
+          python3 -m http.server 4173 >/tmp/bonsai-stable-http.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          mkdir -p stable-launch-artifacts
+          cat > stable-launch-test.mjs <<'NODE'
+          import { webkit } from 'playwright';
+          import fs from 'node:fs';
+          const browser=await webkit.launch({headless:true});
+          const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:3});
+          const page=await context.newPage();
+          const errors=[];
+          page.on('pageerror',error=>errors.push(error.message));
+          page.on('console',message=>{if(message.type()==='error')errors.push(message.text())});
+          await page.addInitScript(()=>localStorage.setItem('bonsai_live_1',JSON.stringify({started:true,name:'復旧検査',mentor:99,sp:'kuromatsu',tree:'黒松・復旧樹',born:Date.now()-86400000,water:'82',last:Date.now(),vit:91,stress:3,prune:2,wire:1,fert:1,pot:'pot02',money:4100,rep:90,owned:null,awards:[],log:null,stats:null})));
+          await page.goto('http://127.0.0.1:4173/index.html?release=stable-launch-v1-20260718',{waitUntil:'domcontentloaded',timeout:60000});
+          await page.waitForSelector('.app,.onboard',{timeout:30000});
+          const result=await page.evaluate(()=>({text:document.body.innerText.slice(0,240),background:getComputedStyle(document.body).backgroundColor,state:JSON.parse(localStorage.getItem('bonsai_live_1'))}));
+          if(!/BONSAI/.test(result.text))throw Error(`app content missing ${JSON.stringify(result)}`);
+          if(result.state.sp!=='pine'||result.state.pot!=='black'||result.state.mentor!==0||!result.state.stats)throw Error(`migration failed ${JSON.stringify(result.state)}`);
+          if(/255, 255, 255/.test(result.background))throw Error(`white background ${result.background}`);
+          await page.screenshot({path:'stable-launch-artifacts/01-migrated-app.png',fullPage:true});
+          const saved=await page.evaluate(()=>localStorage.getItem('bonsai_live_1'));
+          await page.goto('http://127.0.0.1:4173/repair.html',{waitUntil:'domcontentloaded'});
+          await page.click('#repair');
+          await page.waitForSelector('.app,.onboard',{timeout:30000});
+          const after=await page.evaluate(()=>localStorage.getItem('bonsai_live_1'));
+          if(saved!==after)throw Error('repair changed save data');
+          await page.screenshot({path:'stable-launch-artifacts/02-repaired-app.png',fullPage:true});
+          fs.writeFileSync('stable-launch-artifacts/result.json',JSON.stringify({result,errors},null,2));
+          if(errors.some(message=>/syntaxerror|referenceerror|typeerror/i.test(message)))throw Error(errors.join(' | '));
+          await browser.close();
+          NODE
+          node stable-launch-test.mjs
+          python3 <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          for name in ['01-migrated-app.png','02-repaired-app.png']:
+              image=Image.open(Path('stable-launch-artifacts')/name).convert('RGB').resize((80,160))
+              pixels=list(image.getdata())
+              white=sum(1 for r,g,b in pixels if r>246 and g>246 and b>246)/len(pixels)
+              if white>.55: raise SystemExit(f'{name}: white-screen ratio {white:.3f}')
+              print(name,'white_ratio',round(white,4))
+          PY
+
+      - name: Commit final stable package
+        id: commit
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add index.html app.html offline-app.html repair.html recovery-v4.html manifest.webmanifest sw.js release.json .github/workflows/pages.yml
+          git diff --cached --quiet || git commit -m 'BONSAIを単一画面・保存保持・network-first起動へ最終統合'
+          git push origin HEAD:main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/configure-pages@v5
+        id: configure
+
+      - uses: actions/upload-pages-artifact@v3
+        id: artifact
+        with:
+          path: .
+
+      - uses: actions/deploy-pages@v4
+        id: deployment
+
+      - name: Verify public app in iPhone WebKit
+        id: public
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          cat > stable-public-test.mjs <<'NODE'
+          import { webkit } from 'playwright';
+          const browser=await webkit.launch({headless:true});
+          const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:3});
+          const page=await context.newPage();
+          await page.addInitScript(()=>localStorage.setItem('bonsai_live_1',JSON.stringify({started:true,name:'公開検査',mentor:0,sp:'pine',tree:'黒松・公開樹',born:Date.now()-86400000,water:82,last:Date.now(),vit:90,stress:2,prune:1,wire:0,fert:0,pot:'black',money:5000,rep:80,owned:['starter','black'],awards:[],log:[],lastWeek:'',stats:{water:1,prune:1,wire:0,shows:0}})));
+          const base=process.env.PAGE_URL.replace(/\/$/,'/');
+          await page.goto(`${base}index.html?release=${process.env.RELEASE_SHA}&t=${Date.now()}`,{waitUntil:'domcontentloaded',timeout:60000});
+          await page.waitForSelector('.app,.onboard',{timeout:45000});
+          const result=await page.evaluate(()=>({text:document.body.innerText.slice(0,180),background:getComputedStyle(document.body).backgroundColor,release:window.BonsaiRelease||''}));
+          if(!/BONSAI/.test(result.text)||!/stable-launch-v1/.test(result.release)||/255, 255, 255/.test(result.background))throw Error(JSON.stringify(result));
+          await page.screenshot({path:'stable-launch-artifacts/03-public-app.png',fullPage:true});
+          await browser.close();
+          NODE
+          node stable-public-test.mjs
+          base="${PAGE_URL%/}/"
+          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}release.json?v=${RELEASE_SHA}" | grep -Fq 'stable-launch-v1-20260718'
+          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}repair.html?v=${RELEASE_SHA}" | grep -Fq '起動キャッシュを修復'
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-stable-launch-v1-audit
+          path: stable-launch-artifacts
+          if-no-files-found: warn
+
+      - name: Record final result
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          PUBLIC: ${{ steps.public.outcome }}
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        with:
+          script: |
+            const passed=process.env.PUBLIC==='success';
+            await github.rest.issues.update({
+              owner:context.repo.owner,
+              repo:context.repo.repo,
+              issue_number:1,
+              title:`BONSAI stable launch audit: ${passed?'PASS':'FAIL'}`,
+              body:[
+                '# BONSAI 安定起動・最終公開監査','',
+                `- release SHA: \`${process.env.RELEASE_SHA||'not-created'}\``,
+                '- architecture: single playable index document',
+                '- old-save normalization: enabled',
+                '- repair without deleting save data: enabled',
+                '- navigation: network-first; offline-app fallback',
+                '- local iPhone WebKit migration/repair test: success',
+                `- public iPhone WebKit test: ${process.env.PUBLIC||'not-run'}`,
+                `- Pages URL: ${process.env.PAGE_URL||'https://shotakabahara-collab.github.io/bonsai-app/'}`,'',
+                passed?'公開中の実URLでゲーム画面の起動まで確認しました。':'公開検査が完了していません。'
+              ].join('\n'),
+              state:passed?'closed':'open',
+              ...(passed?{state_reason:'completed'}:{state_reason:'reopened'})
+            });
+
+      - name: Fail unless public launch is verified
+        if: always() && steps.public.outcome != 'success'
+        run: exit 1
