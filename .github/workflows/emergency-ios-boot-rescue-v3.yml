@@ -1,0 +1,367 @@
+name: Emergency iPhone boot rescue v3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/emergency-ios-boot-rescue-v3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  issues: write
+
+concurrency:
+  group: emergency-ios-boot-rescue-v3
+  cancel-in-progress: false
+
+jobs:
+  repair-validate-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install WebKit validation tools
+        id: install
+        continue-on-error: true
+        run: |
+          npm install --no-save playwright@1.52.0 > /tmp/rescue-install.log 2>&1
+          npx playwright install --with-deps webkit >> /tmp/rescue-install.log 2>&1
+
+      - name: Add synchronous boot shell, save migration and cache repair
+        id: patch
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          python3 <<'PY' > /tmp/rescue-patch.log 2>&1
+          from pathlib import Path
+          import json
+
+          rescue = r'''(() => {
+            'use strict';
+            const KEY = 'bonsai_live_1';
+            const ROOT = document.getElementById('root');
+            const VERSION = 'ios-rescue-v3-20260718';
+            const SPECIES = new Set(['pine','maple','azalea']);
+            const POTS = new Set(['starter','blue','black','moon','old']);
+            const finite = (value, fallback, minimum = -Infinity, maximum = Infinity) => {
+              const number = Number(value);
+              return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;
+            };
+            const object = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+            const array = value => Array.isArray(value) ? value : [];
+            const base = () => ({
+              started:false,name:'あなた',mentor:0,sp:'pine',tree:'',born:Date.now(),water:80,last:Date.now(),
+              vit:84,stress:2,prune:0,wire:0,fert:0,pot:'starter',money:5000,rep:0,owned:['starter'],
+              awards:[],log:[],lastWeek:'',stats:{water:0,prune:0,wire:0,shows:0}
+            });
+            function normalize(raw) {
+              const source = object(raw);
+              const state = {...base(), ...source};
+              state.started = source.started === true;
+              state.name = String(source.name || 'あなた').slice(0,40);
+              state.mentor = Math.round(finite(source.mentor, 0, 0, 6));
+              state.sp = SPECIES.has(source.sp) ? source.sp : 'pine';
+              state.tree = String(source.tree || '').slice(0,80);
+              state.born = finite(source.born, Date.now(), 0);
+              state.water = finite(source.water, 80, 0, 100);
+              state.last = finite(source.last, Date.now(), 0);
+              state.vit = finite(source.vit, 84, 0, 100);
+              state.stress = finite(source.stress, 2, 0, 1000);
+              state.prune = Math.round(finite(source.prune, 0, 0, 10000));
+              state.wire = Math.round(finite(source.wire, 0, 0, 10000));
+              state.fert = finite(source.fert, 0, 0, 100);
+              state.pot = POTS.has(source.pot) ? source.pot : 'starter';
+              state.money = Math.round(finite(source.money, 5000, 0, 1000000000));
+              state.rep = Math.round(finite(source.rep, 0, 0, 1000000000));
+              state.owned = [...new Set(array(source.owned).filter(value => POTS.has(value)))];
+              if (!state.owned.includes('starter')) state.owned.unshift('starter');
+              if (!state.owned.includes(state.pot)) state.owned.push(state.pot);
+              state.awards = array(source.awards).filter(value => value && typeof value === 'object').slice(0,200);
+              state.log = array(source.log).filter(value => value && typeof value === 'object').slice(0,200);
+              state.lastWeek = typeof source.lastWeek === 'string' ? source.lastWeek : '';
+              const stats = object(source.stats);
+              state.stats = {
+                water:Math.round(finite(stats.water,0,0,1000000)),
+                prune:Math.round(finite(stats.prune,0,0,1000000)),
+                wire:Math.round(finite(stats.wire,0,0,1000000)),
+                shows:Math.round(finite(stats.shows,0,0,1000000))
+              };
+              if (source.advanced && typeof source.advanced === 'object') state.advanced = source.advanced;
+              if (state.started && !state.tree) {
+                state.tree = state.sp === 'maple' ? '山もみじ・再生樹' : state.sp === 'azalea' ? '皐月・再生樹' : '黒松・再生樹';
+              }
+              return state;
+            }
+            function migrate() {
+              let raw = null;
+              const stored = localStorage.getItem(KEY);
+              try { raw = stored ? JSON.parse(stored) : null; }
+              catch (error) {
+                try { localStorage.setItem(`${KEY}_corrupt_backup`, String(stored || '').slice(0, 500000)); } catch {}
+              }
+              const state = normalize(raw);
+              localStorage.setItem(KEY, JSON.stringify(state));
+              return state;
+            }
+            function screen(title, detail, failed = false) {
+              if (!ROOT) return;
+              ROOT.innerHTML = `<main style="min-height:100vh;background:#09100c;color:#eee8da;padding:calc(env(safe-area-inset-top) + 34px) 22px 40px;font-family:-apple-system,BlinkMacSystemFont,sans-serif"><div style="max-width:620px;margin:0 auto"><div style="font:28px Georgia,serif;letter-spacing:.22em">BONSAI</div><p style="margin:8px 0 34px;color:#9daa9f;font-size:12px">育てた時間が、作品になる。</p><section style="border:1px solid rgba(255,255,255,.12);border-radius:22px;background:#152119;padding:22px"><h1 style="font:24px Georgia,serif;margin:0 0 10px">${title}</h1><p style="color:#aeb9b0;font-size:13px;line-height:1.8;margin:0">${detail}</p>${failed ? '<button id="bonsai-repair-button" style="width:100%;margin-top:20px;border:0;border-radius:14px;padding:14px;background:#eee8da;color:#101611;font-weight:700">起動を修復する</button>' : '<div style="height:3px;margin-top:22px;overflow:hidden;border-radius:99px;background:#ffffff12"><div style="width:42%;height:100%;background:#d9b77b;animation:bonsaiBoot 1.2s ease-in-out infinite alternate"></div></div>'}</section><p style="color:#59665d;font-size:9px;margin-top:14px">${VERSION}</p></div></main>`;
+              const button = document.getElementById('bonsai-repair-button');
+              if (button) button.addEventListener('click', async () => {
+                button.disabled = true;
+                button.textContent = '修復しています…';
+                try {
+                  if ('serviceWorker' in navigator) {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(registrations.map(registration => registration.unregister()));
+                  }
+                  if ('caches' in window) {
+                    const names = await caches.keys();
+                    await Promise.all(names.map(name => caches.delete(name)));
+                  }
+                } catch {}
+                location.replace(`./?recovered=${Date.now()}`);
+              });
+            }
+            const style = document.createElement('style');
+            style.textContent = '@keyframes bonsaiBoot{from{transform:translateX(-30%)}to{transform:translateX(170%)}}';
+            document.head.appendChild(style);
+            try { migrate(); }
+            catch (error) { console.error('[BONSAI rescue migration]', error); }
+            if (!ROOT || !ROOT.children.length) screen('起動しています', '保存された作品を安全に読み込んでいます。');
+            let failureShown = false;
+            const fail = reason => {
+              if (failureShown) return;
+              failureShown = true;
+              console.error('[BONSAI boot rescue]', reason);
+              screen('起動を修復できます', '作品データは残したまま、古いアプリキャッシュだけを更新します。', true);
+            };
+            window.addEventListener('error', event => fail(event.error || event.message || 'script error'));
+            window.addEventListener('unhandledrejection', event => fail(event.reason || 'promise rejection'));
+            setTimeout(() => {
+              if (document.querySelector('#bonsai-static-boot') || document.querySelector('[data-bonsai-rescue-shell]')) fail('boot timeout');
+            }, 10000);
+            window.BonsaiBootRescue = {version:VERSION, normalize, migrate, fail};
+          })();
+          '''
+          Path('boot-rescue.js').write_text(rescue, encoding='utf-8')
+
+          repair = r'''<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#09100c"><title>BONSAI 起動修復</title><style>*{box-sizing:border-box}body{margin:0;background:#09100c;color:#eee8da;font-family:-apple-system,BlinkMacSystemFont,sans-serif}main{min-height:100vh;padding:calc(env(safe-area-inset-top) + 38px) 22px 40px}.box{max-width:620px;margin:auto}.logo{font:28px Georgia,serif;letter-spacing:.22em}.card{margin-top:34px;padding:22px;border:1px solid #ffffff1f;border-radius:22px;background:#152119}h1{font:24px Georgia,serif;margin:0 0 12px}p{color:#aeb9b0;font-size:13px;line-height:1.8}button{width:100%;border:0;border-radius:14px;padding:14px;background:#eee8da;color:#101611;font-weight:700}</style></head><body><main><div class="box"><div class="logo">BONSAI</div><div class="card"><h1>起動を修復します</h1><p id="status">作品データは削除せず、古いアプリキャッシュとService Workerだけを更新しています。</p><button id="retry" hidden>もう一度起動する</button></div></div></main><script>(async()=>{const status=document.getElementById('status'),button=document.getElementById('retry');try{if('serviceWorker'in navigator){const registrations=await navigator.serviceWorker.getRegistrations();await Promise.all(registrations.map(registration=>registration.unregister()))}if('caches'in window){const names=await caches.keys();await Promise.all(names.map(name=>caches.delete(name)))}status.textContent='修復が完了しました。BONSAIを開き直します。';setTimeout(()=>location.replace('./?recovered='+Date.now()),900)}catch(error){status.textContent='自動修復を完了できませんでした。下のボタンから再試行してください。';button.hidden=false;button.onclick=()=>location.replace('./?recovered='+Date.now())}})();</script></body></html>'''
+          Path('repair.html').write_text(repair, encoding='utf-8')
+
+          index = Path('index.html')
+          html = index.read_text(encoding='utf-8')
+          old_root = '<body><div id="root"></div>'
+          new_root = '<body><div id="root"><main id="bonsai-static-boot" data-bonsai-rescue-shell style="min-height:100vh;background:#09100c;color:#eee8da;padding:calc(env(safe-area-inset-top) + 34px) 22px;font-family:-apple-system,BlinkMacSystemFont,sans-serif"><div style="font:28px Georgia,serif;letter-spacing:.22em">BONSAI</div><p style="color:#9daa9f;font-size:12px">起動しています…</p></main></div>'
+          if old_root in html:
+              html = html.replace(old_root, new_root, 1)
+          elif 'id="bonsai-static-boot"' not in html:
+              raise SystemExit('root boot anchor missing')
+          tag = '<script src="boot-rescue.js?v=ios-rescue-v3"></script>'
+          anchor = '<script src="photo-assets.js"></script>'
+          if tag not in html:
+              if anchor not in html:
+                  raise SystemExit('photo-assets anchor missing')
+              html = html.replace(anchor, tag + anchor, 1)
+          index.write_text(html, encoding='utf-8')
+
+          manifest_path = Path('manifest.webmanifest')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          manifest['start_url'] = './?launch=ios-rescue-v3'
+          manifest['background_color'] = '#09100c'
+          manifest['theme_color'] = '#09100c'
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          assets = [
+              './','./index.html','./repair.html','./manifest.webmanifest','./icon.svg','./boot-rescue.js',
+              './tree-renderer.js','./photo-assets.js','./advanced-care.js','./advanced-care-bridge.js',
+              './completion-core.js','./judging-engine.js','./state-image-runtime.js'
+          ]
+          sw = f'''const CACHE='bonsai-ios-rescue-v3-20260718';\nconst ASSETS={json.dumps(assets,separators=(',',':'))};\nself.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));\nself.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));\nself.addEventListener('fetch',event=>{{if(event.request.method!=='GET')return;const url=new URL(event.request.url);if(url.origin!==location.origin)return;if(event.request.mode==='navigate'){{event.respondWith(fetch(event.request,{{cache:'no-store'}}).then(response=>{{if(response.ok){{const copy=response.clone();caches.open(CACHE).then(cache=>cache.put('./index.html',copy));}}return response;}}).catch(()=>caches.match('./index.html')));return;}}event.respondWith(caches.match(event.request).then(hit=>hit||fetch(event.request).then(response=>{{if(response.ok){{const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));}}return response;}})));}});\n'''
+          Path('sw.js').write_text(sw, encoding='utf-8')
+          print('rescue patch written')
+          PY
+
+      - name: Validate boot contracts and corrupted-save recovery
+        id: validate
+        if: steps.patch.outcome == 'success'
+        continue-on-error: true
+        run: |
+          {
+            node --check boot-rescue.js
+            node --check sw.js
+            node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          const html=fs.readFileSync('index.html','utf8');
+          for(const token of ['bonsai-static-boot','boot-rescue.js?v=ios-rescue-v3','photo-assets.js','advanced-care.js','state-image-runtime.js']) if(!html.includes(token)) throw Error(`missing boot contract: ${token}`);
+          [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(match=>match[1]).filter(Boolean).forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
+          const sw=fs.readFileSync('sw.js','utf8');
+          for(const token of ['bonsai-ios-rescue-v3','repair.html',"event.request.mode==='navigate'","cache:'no-store'"]) if(!sw.includes(token)) throw Error(`missing cache contract: ${token}`);
+          console.log('static boot contracts: PASS');
+          NODE
+            python3 -m http.server 4173 >/tmp/rescue-http.log 2>&1 &
+            server=$!; trap 'kill $server' EXIT
+            mkdir -p rescue-artifacts
+            cat > rescue-test.mjs <<'NODE'
+          import { webkit } from 'playwright';
+          import fs from 'node:fs';
+          const browser=await webkit.launch({headless:true});
+          const scenarios=[
+            {name:'new',raw:null,expected:'.onboard'},
+            {name:'corrupt-json',raw:'{not-json',expected:'.onboard'},
+            {name:'legacy-null-fields',raw:JSON.stringify({started:true,name:null,mentor:99,sp:'unknown',tree:null,born:'bad',water:null,last:null,vit:null,stress:null,prune:null,wire:null,fert:null,pot:'missing',money:null,rep:null,owned:null,awards:null,log:null,lastWeek:null,stats:null}),expected:'.app'},
+            {name:'legacy-partial',raw:JSON.stringify({started:true,sp:'pine',tree:'黒松・既存樹',pot:'black',stats:{shows:2}}),expected:'.app'}
+          ];
+          const results=[];
+          for(const scenario of scenarios){
+            const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2});
+            const page=await context.newPage();
+            const errors=[];
+            page.on('pageerror',error=>errors.push(error.message));
+            page.on('console',message=>{if(message.type()==='error')errors.push(message.text())});
+            if(scenario.raw!==null) await page.addInitScript(raw=>localStorage.setItem('bonsai_live_1',raw),scenario.raw);
+            await page.goto(`http://127.0.0.1:4173/?scenario=${scenario.name}`,{waitUntil:'domcontentloaded',timeout:30000});
+            await page.waitForSelector(scenario.expected,{timeout:15000});
+            const info=await page.evaluate(()=>({text:document.getElementById('root')?.innerText?.slice(0,200)||'',background:getComputedStyle(document.body).backgroundColor,boot:!!document.getElementById('bonsai-static-boot'),repair:!!document.getElementById('bonsai-repair-button')}));
+            if(!info.text.trim()) throw new Error(`${scenario.name}: empty root`);
+            if(info.boot) throw new Error(`${scenario.name}: static boot was not replaced`);
+            if(/rgb\(255, 255, 255\)/.test(info.background)) throw new Error(`${scenario.name}: white background`);
+            if(errors.some(value=>!/favicon|icon\.svg/i.test(value))) throw new Error(`${scenario.name}: ${errors.join(' | ')}`);
+            await page.screenshot({path:`rescue-artifacts/${scenario.name}.png`,fullPage:true});
+            results.push({scenario:scenario.name,info,errors});
+            await context.close();
+          }
+          fs.writeFileSync('rescue-artifacts/results.json',JSON.stringify(results,null,2));
+          await browser.close();
+          console.log('WebKit corrupted-save boot: PASS');
+          NODE
+            node rescue-test.mjs
+          } > /tmp/rescue-validate.log 2>&1
+
+      - name: Upload iPhone boot audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-ios-boot-rescue-v3
+          path: rescue-artifacts
+          if-no-files-found: warn
+
+      - name: Commit repaired application
+        id: commit
+        if: steps.validate.outcome == 'success'
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add boot-rescue.js repair.html index.html manifest.webmanifest sw.js
+          git diff --cached --quiet || git commit -m 'iPhone黒画面を同期ブートシェル・保存移行・ネットワーク優先起動で修復'
+          git push origin HEAD:main
+          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure Pages
+        id: configure
+        if: steps.commit.outcome == 'success'
+        continue-on-error: true
+        uses: actions/configure-pages@v5
+
+      - name: Upload repaired site
+        id: artifact
+        if: steps.configure.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy repaired site
+        id: deployment
+        if: steps.artifact.outcome == 'success'
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: Verify public WebKit launch with legacy data
+        id: public
+        if: steps.deployment.outcome == 'success'
+        continue-on-error: true
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          RELEASE_SHA: ${{ steps.commit.outputs.release_sha }}
+        run: |
+          cat > public-rescue-test.mjs <<'NODE'
+          import { webkit } from 'playwright';
+          const base=(process.env.PAGE_URL||'').replace(/\/$/,'')+'/';
+          const browser=await webkit.launch({headless:true});
+          const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2});
+          const page=await context.newPage();
+          const errors=[];
+          page.on('pageerror',error=>errors.push(error.message));
+          await page.addInitScript(()=>localStorage.setItem('bonsai_live_1',JSON.stringify({started:true,sp:'pine',tree:'黒松・公開検証樹',pot:'black',stats:null,owned:null,awards:null,log:null,mentor:99})));
+          await page.goto(`${base}?ios-rescue=${process.env.RELEASE_SHA||Date.now()}`,{waitUntil:'domcontentloaded',timeout:60000});
+          await page.waitForSelector('.app',{timeout:30000});
+          const info=await page.evaluate(()=>({text:document.getElementById('root')?.innerText?.slice(0,160)||'',boot:!!document.getElementById('bonsai-static-boot'),background:getComputedStyle(document.body).backgroundColor}));
+          if(!info.text.includes('黒松')) throw new Error(`public app content missing: ${JSON.stringify(info)}`);
+          if(info.boot) throw new Error('public static boot not replaced');
+          if(errors.length) throw new Error(errors.join(' | '));
+          await page.goto(`${base}repair.html?v=${process.env.RELEASE_SHA||Date.now()}`,{waitUntil:'domcontentloaded',timeout:60000});
+          await page.waitForFunction(()=>document.body.innerText.includes('起動を修復'),null,{timeout:10000});
+          await browser.close();
+          console.log('public WebKit boot and repair route: PASS');
+          NODE
+          PAGE_URL="$PAGE_URL" RELEASE_SHA="$RELEASE_SHA" node public-rescue-test.mjs > /tmp/rescue-public.log 2>&1
+
+      - name: Record iPhone rescue result
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          INSTALL: ${{ steps.install.outcome }}
+          PATCH: ${{ steps.patch.outcome }}
+          VALIDATE: ${{ steps.validate.outcome }}
+          COMMIT: ${{ steps.commit.outcome }}
+          CONFIGURE: ${{ steps.configure.outcome }}
+          ARTIFACT: ${{ steps.artifact.outcome }}
+          DEPLOY: ${{ steps.deployment.outcome }}
+          PUBLIC: ${{ steps.public.outcome }}
+          RELEASE_SHA: ${{ steps.commit.outputs.release_sha }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        with:
+          script: |
+            const values=[process.env.INSTALL,process.env.PATCH,process.env.VALIDATE,process.env.COMMIT,process.env.CONFIGURE,process.env.ARTIFACT,process.env.DEPLOY,process.env.PUBLIC];
+            const passed=values.every(value=>value==='success');
+            await github.rest.issues.update({
+              owner:context.repo.owner,repo:context.repo.repo,issue_number:1,
+              title:`BONSAI iPhone launch audit: ${passed?'PASS':'FAIL'}`,
+              body:[
+                '# BONSAI iPhone黒画面・起動復旧 v3', '',
+                `- release SHA: \`${process.env.RELEASE_SHA||'not-created'}\``,
+                `- dependency install: ${process.env.INSTALL||'not-run'}`,
+                `- rescue patch: ${process.env.PATCH||'not-run'}`,
+                `- local WebKit corrupted-save launch: ${process.env.VALIDATE||'not-run'}`,
+                `- commit: ${process.env.COMMIT||'not-run'}`,
+                `- configure Pages: ${process.env.CONFIGURE||'not-run'}`,
+                `- upload artifact: ${process.env.ARTIFACT||'not-run'}`,
+                `- deploy Pages: ${process.env.DEPLOY||'not-run'}`,
+                `- public WebKit launch and repair route: ${process.env.PUBLIC||'not-run'}`,
+                '- save data: preserved and normalized; repair only clears app caches and Service Workers',
+                `- recovery URL: ${(process.env.PAGE_URL||'https://shotakabahara-collab.github.io/bonsai-app/').replace(/\/$/,'')}/repair.html?v=ios-rescue-v3`,
+                '', passed?'既存セーブを含むWebKit起動と公開後検査を通過しました。':'未通過工程があります。監査ログを確認してください。'
+              ].join('\n'),state:passed?'closed':'open',...(passed?{state_reason:'completed'}:{})
+            });
+
+      - name: Fail unless all rescue gates pass
+        if: always() && (steps.install.outcome != 'success' || steps.patch.outcome != 'success' || steps.validate.outcome != 'success' || steps.commit.outcome != 'success' || steps.configure.outcome != 'success' || steps.artifact.outcome != 'success' || steps.deployment.outcome != 'success' || steps.public.outcome != 'success')
+        run: |
+          echo '=== install ==='; tail -n 80 /tmp/rescue-install.log 2>/dev/null || true
+          echo '=== patch ==='; tail -n 80 /tmp/rescue-patch.log 2>/dev/null || true
+          echo '=== validate ==='; tail -n 120 /tmp/rescue-validate.log 2>/dev/null || true
+          echo '=== public ==='; tail -n 120 /tmp/rescue-public.log 2>/dev/null || true
+          exit 1
