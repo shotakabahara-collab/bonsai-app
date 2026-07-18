@@ -1,0 +1,17 @@
+.page {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+  will-change: auto !important;
+}
+
+@supports (-webkit-touch-callout: none) {
+  .app-main,
+  .page,
+  .artwork-card,
+  .show-card,
+  .bonsai-stage {
+    transform: none !important;
+    -webkit-transform: none !important;
+  }
+}
