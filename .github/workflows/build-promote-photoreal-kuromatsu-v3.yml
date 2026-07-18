@@ -1,0 +1,162 @@
+name: Build, validate and promote photoreal kuromatsu v3
+
+on:
+  push:
+    branches:
+      - agent/photoreal-upscale-v3
+    paths:
+      - 'scripts/build_photoreal_kuromatsu_v3.py'
+      - '.github/workflows/build-promote-photoreal-kuromatsu-v3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: photoreal-kuromatsu-v3
+  cancel-in-progress: true
+
+jobs:
+  build-validate-promote:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-upscale-v3
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install image pipeline
+        run: python -m pip install --disable-pip-version-check pillow numpy opencv-contrib-python-headless==4.11.0.86
+      - name: Download verified EDSR x4 model
+        run: |
+          mkdir -p .cache
+          curl --fail --location --retry 5 --retry-delay 2 \
+            --output .cache/EDSR_x4.pb \
+            https://raw.githubusercontent.com/Saafke/EDSR_Tensorflow/master/models/EDSR_x4.pb
+          test "$(wc -c < .cache/EDSR_x4.pb)" -gt 30000000
+      - name: Build high-resolution same-tree assets
+        run: python scripts/build_photoreal_kuromatsu_v3.py
+      - name: Validate image identity contract, variants and PWA wiring
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageChops, ImageStat
+          import json
+
+          manifest = json.loads(Path('assets/kuromatsu/manifest.json').read_text())
+          assert manifest['version'] == 'kuromatsu-photoreal-v3'
+          assert manifest['sameTreeIdentity'] is True
+          assert manifest['width'] >= 1200 and manifest['height'] >= 1500
+          expected = {'black', 'starter', 'blue', 'moon', 'old'}
+          assert set(manifest['base']) == expected
+          images = {}
+          for pot, rel in manifest['base'].items():
+              path = Path(rel)
+              assert path.exists() and path.stat().st_size > 150_000, (pot, path.stat().st_size if path.exists() else -1)
+              with Image.open(path) as image:
+                  assert image.format == 'WEBP'
+                  assert image.size == (manifest['width'], manifest['height'])
+                  images[pot] = image.convert('RGB').copy()
+          black = images['black']
+          crop = (0, int(manifest['height'] * .78), manifest['width'], manifest['height'])
+          for pot in expected - {'black'}:
+              diff = ImageChops.difference(black.crop(crop), images[pot].crop(crop))
+              assert sum(ImageStat.Stat(diff).mean) / 3 > 2.0, pot
+          qa = Path('assets/kuromatsu/qa/pot-variants.webp')
+          assert qa.exists() and qa.stat().st_size > 80_000
+          print('image identity / dimensions / pot variants: PASS')
+          PY
+          node --check photo-assets.js
+          node --check state-image-runtime.js
+          node --check sw.js
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          for(const file of ['photo-assets.js','state-image-runtime.js','sw.js']) new vm.Script(fs.readFileSync(file,'utf8'),{filename:file});
+          const photo=fs.readFileSync('photo-assets.js','utf8');
+          for(const token of ['POT_IMAGES','pineForPot','sameTreeIdentity','kuromatsu-photoreal-v3']) if(!photo.includes(token)) throw Error(`photo ${token}`);
+          const runtime=fs.readFileSync('state-image-runtime.js','utf8');
+          for(const token of ['BonsaiStateRuntime','visualSignature','deadwood','shari','indexedDB']) if(!runtime.includes(token)) throw Error(`runtime ${token}`);
+          const sw=fs.readFileSync('sw.js','utf8');
+          for(const token of ['black.webp','starter.webp','blue.webp','moon.webp','old.webp','assets/kuromatsu/manifest.json']) if(!sw.includes(token)) throw Error(`offline ${token}`);
+          console.log('JavaScript / state-image / offline contracts: PASS');
+          NODE
+      - name: Static HTTP smoke before promotion
+        run: |
+          python -m http.server 4173 >/tmp/photoreal-http.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4173/assets/kuromatsu/manifest.json >/tmp/manifest.json && break; sleep .2; done
+          grep -Fq 'kuromatsu-photoreal-v3' /tmp/manifest.json
+          for pot in black starter blue moon old; do
+            curl -fsS "http://127.0.0.1:4173/assets/kuromatsu/base/${pot}.webp" -o "/tmp/${pot}.webp"
+            test "$(wc -c < "/tmp/${pot}.webp")" -gt 150000
+          done
+      - name: Commit generated candidate to feature branch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add assets/kuromatsu photo-assets.js sw.js PHOTOREAL_KUROMATSU_V3.md
+          if ! git diff --cached --quiet; then
+            git commit -m '黒松の高解像度実写マスターと鉢差分を生成'
+            git push origin HEAD:agent/photoreal-upscale-v3
+          fi
+      - name: Fast-forward main only after all candidate checks pass
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor origin/main HEAD
+          test -f assets/kuromatsu/manifest.json
+          grep -Fq 'kuromatsu-photoreal-v3' assets/kuromatsu/manifest.json
+          git push origin HEAD:main
+      - name: Wait for the new public Pages build and verify live assets
+        env:
+          PUBLIC_BASE: https://shotakabahara-collab.github.io/bonsai-app
+        run: |
+          ready=0
+          for i in $(seq 1 100); do
+            if curl -fsS --retry 2 "${PUBLIC_BASE}/photo-assets.js?candidate=${GITHUB_SHA}-${i}" -o /tmp/live-photo.js \
+              && grep -Fq 'kuromatsu-photoreal-v3' /tmp/live-photo.js; then
+              ready=1
+              break
+            fi
+            sleep 6
+          done
+          test "$ready" = 1
+          curl -fsS "${PUBLIC_BASE}/assets/kuromatsu/manifest.json?candidate=${GITHUB_SHA}" | grep -Fq 'kuromatsu-photoreal-v3'
+          for pot in black starter blue moon old; do
+            curl -fsS "${PUBLIC_BASE}/assets/kuromatsu/base/${pot}.webp?candidate=${GITHUB_SHA}" -o "/tmp/live-${pot}.webp"
+            test "$(wc -c < "/tmp/live-${pot}.webp")" -gt 150000
+          done
+          curl -fsS "${PUBLIC_BASE}/sw.js?candidate=${GITHUB_SHA}" | grep -Fq 'kuromatsu-photoreal-v3'
+      - name: Record promotion audit
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const passed = '${{ job.status }}' === 'success';
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1,
+              title: `BONSAI release audit: ${passed ? 'PASS' : 'FAIL'}`,
+              body: [
+                '# BONSAI photoreal promotion audit',
+                '',
+                `- candidate SHA: \`${context.sha}\``,
+                '- branch: `agent/photoreal-upscale-v3`',
+                `- build / image validation / promotion / public smoke: ${passed ? 'success' : 'failure'}`,
+                '- visual core: same-tree high-resolution black pine + five photoreal pot states',
+                '- part-state runtime: pruning / wiring / disease / pest / jin / shari / memorial snapshots',
+                '- Pages URL: https://shotakabahara-collab.github.io/bonsai-app/',
+                '',
+                passed ? '全検査合格後にmainへ切り替え、公開実体まで確認しました。' : '切替工程のいずれかが失敗しました。ログを確認してください。'
+              ].join('\n'),
+              state: passed ? 'closed' : 'open',
+              ...(passed ? {state_reason: 'completed'} : {})
+            });
