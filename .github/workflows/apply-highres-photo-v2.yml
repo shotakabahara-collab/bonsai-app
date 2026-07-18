@@ -84,7 +84,7 @@ jobs:
           runtime.write_text(text, encoding='utf-8')
 
           sw = Path('sw.js')
-          sw.write_text(f"""const CACHE='bonsai-photo-v5-highres-state-20260718';
+          sw.write_text(f"""const CACHE='bonsai-photo-v6-highres-state-20260718';
           const ASSETS=['./','./index.html','./manifest.webmanifest','./icon.svg','./tree-renderer.js','./photo-assets.js','./photo-source-v2.js','./advanced-care.js','./advanced-care-bridge.js','./completion-core.js','./state-image-runtime.js','./judging-engine.js','./IMAGE_LICENSES.md'];
           const REMOTE=['{remote}'];
           self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
@@ -95,8 +95,9 @@ jobs:
             const local=url.origin===location.origin;
             const remote=REMOTE.includes(event.request.url);
             if(!local&&!remote)return;
+            if(remote&&event.request.mode!=='cors')return;
             event.respondWith(caches.match(event.request).then(hit=>hit||fetch(event.request).then(response=>{{
-              if(response.ok||response.type==='opaque'){{const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));}}
+              if(response.ok){{const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));}}
               return response;
             }}).catch(()=>local&&event.request.mode==='navigate'?caches.match('./index.html'):hit)));
           }});
@@ -124,7 +125,7 @@ jobs:
           const completion=fs.readFileSync('completion-core.js','utf8');
           if(!completion.includes("crossOrigin = 'anonymous'")) throw Error('memorial export CORS contract missing');
           const sw=fs.readFileSync('sw.js','utf8');
-          for(const token of ['photo-source-v2.js','upload.wikimedia.org','bonsai-photo-v5-highres-state']) if(!sw.includes(token)) throw Error(`missing service worker contract: ${token}`);
+          for(const token of ['photo-source-v2.js','upload.wikimedia.org','bonsai-photo-v6-highres-state',"event.request.mode!=='cors'"]) if(!sw.includes(token)) throw Error(`missing service worker contract: ${token}`);
           console.log('high-resolution photo integration syntax: PASS');
           NODE
 
@@ -151,7 +152,7 @@ jobs:
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4173/ >/tmp/index.html && break; sleep .2; done
           grep -Fq 'photo-source-v2.js' /tmp/index.html
           curl -fsS http://127.0.0.1:4173/photo-source-v2.js | grep -Fq 'BonsaiPhotoSource'
-          curl -fsS http://127.0.0.1:4173/sw.js | grep -Fq 'bonsai-photo-v5-highres-state'
+          curl -fsS http://127.0.0.1:4173/sw.js | grep -Fq 'bonsai-photo-v6-highres-state'
 
       - name: Commit integrated candidate
         run: |
