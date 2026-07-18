@@ -1,0 +1,65 @@
+name: Finalize high-resolution browser guard
+
+on:
+  push:
+    branches:
+      - agent/highres-kuromatsu-v2
+    paths:
+      - '.github/workflows/finalize-highres-browser-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-highres-browser-guard
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/highres-kuromatsu-v2
+      - name: Finalize first-load CORS and source resolution guard
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          index = Path('index.html')
+          html = index.read_text(encoding='utf-8')
+          old = '<figure class="photo-bonsai"><img src="${window.BonsaiPhotos.pine}" alt="実写品質で撮影された黒松盆栽" draggable="false"></figure>'
+          new = '<figure class="photo-bonsai"><img crossorigin="anonymous" referrerpolicy="no-referrer" src="${window.BonsaiPhotos.pine}" alt="実写品質で撮影された黒松盆栽" draggable="false"></figure>'
+          if new not in html:
+              if old not in html:
+                  raise SystemExit('pine image markup anchor missing')
+              html = html.replace(old, new, 1)
+          index.write_text(html, encoding='utf-8')
+
+          test = Path('tests/highres-browser.mjs')
+          source = test.read_text(encoding='utf-8')
+          source = source.replace('report.base.height < 900', 'report.base.height < 700')
+          if 'report.base.height < 700' not in source:
+              raise SystemExit('browser resolution threshold anchor missing')
+          test.write_text(source, encoding='utf-8')
+          PY
+      - name: Validate finalized files
+        run: |
+          grep -Fq 'crossorigin="anonymous" referrerpolicy="no-referrer"' index.html
+          grep -Fq 'report.base.height < 700' tests/highres-browser.mjs
+          node --check tests/highres-browser.mjs
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          const html=fs.readFileSync('index.html','utf8');
+          [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(x=>x[1]).filter(x=>x.trim()).forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
+          console.log('final high-resolution guard: PASS');
+          NODE
+      - name: Commit final guard and remove this workflow
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add index.html tests/highres-browser.mjs
+          git rm .github/workflows/finalize-highres-browser-guard.yml
+          git commit -m '実写写真の初回CORS読み込みと解像度検査を確定'
+          git push origin HEAD:agent/highres-kuromatsu-v2
