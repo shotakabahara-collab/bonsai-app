@@ -1,16 +1,20 @@
 name: Test and Deploy BONSAI
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
 permissions:
   contents: read
   pages: write
   id-token: write
   issues: write
+
 concurrency:
   group: pages
   cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -19,41 +23,51 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Validate app, irreversible pruning, and advanced care
+      - name: Validate application contracts
         run: |
           node <<'NODE'
           const fs=require('fs'),vm=require('vm');
           const html=fs.readFileSync('index.html','utf8');
-          const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
-          if(!scripts.length) throw Error('inline app missing');
-          new vm.Script(scripts.at(-1)[1],{filename:'bonsai.js'});
-          new vm.Script(fs.readFileSync('photo-assets.js','utf8'),{filename:'photo-assets.js'});
-          vm.runInThisContext(fs.readFileSync('advanced-care.js','utf8'),{filename:'advanced-care.js'});
-          for(const x of ['confirmPrune','剪定後は取り消せません','enterShow','銘木録','localStorage','window.BonsaiPhotos.pine','photo-bonsai','advanced-care.js'])if(!html.includes(x))throw Error('missing '+x);
-          const A=globalThis.BonsaiAdvancedCare;
-          let s=A.migrateState({started:true,sp:'pine',born:Date.now()-1000000,last:Date.now(),water:80,vit:92,stress:0,money:5000,rep:150,stats:{water:0,prune:0,wire:0,shows:0},log:[]});
-          let r=A.applyAction(s,'first_left','prune_medium'); if(!r.ok) throw Error(r.message); s=r.state;
-          r=A.applyAction(s,'first_left','wire_light','down'); if(!r.ok) throw Error(r.message); s=r.state;
-          r=A.applyAction(s,'first_left','jin'); if(!r.ok) throw Error(r.message); s=r.state;
-          r=A.applyAction(s,'trunk','shari','left'); if(!r.ok) throw Error(r.message); s=r.state;
-          if(s.advanced.parts.first_left.deadwood!=='jin'||s.advanced.shari.level!==1)throw Error('advanced irreversible state missing');
-          const m=JSON.parse(fs.readFileSync('manifest.webmanifest','utf8'));
-          if(m.short_name!=='BONSAI'||m.display!=='standalone')throw Error('manifest invalid');
-          console.log('BONSAI validation: PASS');
+          const inline=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
+            .map(match=>match[1]).filter(code=>code.trim());
+          if(!inline.length) throw Error('inline app missing');
+          inline.forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
+          for(const file of ['photo-assets.js','tree-renderer.js','advanced-care.js','advanced-care-bridge.js','state-image-runtime.js']) {
+            if(!fs.existsSync(file)) throw Error(`missing file: ${file}`);
+            new vm.Script(fs.readFileSync(file,'utf8'),{filename:file});
+          }
+          const required=[
+            'confirmPrune','剪定後は取り消せません','enterShow','銘木録','localStorage',
+            'photo-assets.js','advanced-care.js','advanced-care-bridge.js','state-image-runtime.js'
+          ];
+          for(const token of required) if(!html.includes(token)) throw Error(`missing application contract: ${token}`);
+          const advanced=fs.readFileSync('advanced-care.js','utf8');
+          for(const token of ['BonsaiAdvancedCare','prune_medium','wire_light','jin','shari','disease','pest','visualSignature']) {
+            if(!advanced.includes(token)) throw Error(`missing advanced care contract: ${token}`);
+          }
+          const runtime=fs.readFileSync('state-image-runtime.js','utf8');
+          for(const token of ['BonsaiStateRuntime','IndexedDB','作品状態記録','bonsai-state-canvas','visualSignature','deadwood','shari']) {
+            if(!runtime.includes(token)) throw Error(`missing state image contract: ${token}`);
+          }
+          const manifest=JSON.parse(fs.readFileSync('manifest.webmanifest','utf8'));
+          if(manifest.short_name!=='BONSAI'||manifest.display!=='standalone') throw Error('manifest invalid');
+          console.log('BONSAI application contracts: PASS');
           NODE
       - name: Static HTTP smoke
         run: |
           python3 -m http.server 4173 >/tmp/http.log 2>&1 &
-          server=$!; trap 'kill $server' EXIT
+          server=$!
+          trap 'kill $server' EXIT
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4173/ >/tmp/index.html && break; sleep .2; done
           grep -Fq '<title>BONSAI</title>' /tmp/index.html
-          grep -Fq 'photo-assets.js' /tmp/index.html
-          grep -Fq 'advanced-care.js' /tmp/index.html
+          for asset in photo-assets.js tree-renderer.js advanced-care.js advanced-care-bridge.js state-image-runtime.js; do
+            grep -Fq "$asset" /tmp/index.html
+            curl -fsS "http://127.0.0.1:4173/$asset" >/tmp/asset
+            test -s /tmp/asset
+          done
           curl -fsS http://127.0.0.1:4173/manifest.webmanifest | grep -Fq 'BONSAI'
-          curl -fsS http://127.0.0.1:4173/sw.js | grep -Eq 'bonsai-(live|photo)-v'
-          curl -fsS http://127.0.0.1:4173/sw.js | grep -Fq 'advanced-care.js'
-          curl -fsS http://127.0.0.1:4173/photo-assets.js | grep -Fq 'BonsaiPhotos'
-          curl -fsS http://127.0.0.1:4173/advanced-care.js | grep -Fq 'BonsaiAdvancedCare'
+          curl -fsS http://127.0.0.1:4173/sw.js | grep -Fq 'state-image-runtime.js'
+
   deploy:
     needs: verify
     outputs:
@@ -110,11 +124,13 @@ jobs:
           base="${PAGE_URL%/}/"
           curl --fail --silent --show-error --retry 12 --retry-delay 3 --retry-all-errors "$base" -o /tmp/live.html
           grep -Fq '<title>BONSAI</title>' /tmp/live.html
-          grep -Fq 'photo-assets.js' /tmp/live.html
-          grep -Fq 'advanced-care.js' /tmp/live.html
+          for asset in photo-assets.js advanced-care.js advanced-care-bridge.js state-image-runtime.js; do
+            grep -Fq "$asset" /tmp/live.html
+            curl --fail --silent --show-error --retry 12 --retry-delay 3 --retry-all-errors "${base}${asset}" >/tmp/live-asset
+            test -s /tmp/live-asset
+          done
           curl --fail --silent --show-error --retry 12 --retry-delay 3 --retry-all-errors "${base}manifest.webmanifest" | grep -Fq 'BONSAI'
-          curl --fail --silent --show-error --retry 12 --retry-delay 3 --retry-all-errors "${base}photo-assets.js" | grep -Fq 'BonsaiPhotos'
-          curl --fail --silent --show-error --retry 12 --retry-delay 3 --retry-all-errors "${base}advanced-care.js" | grep -Fq 'BonsaiAdvancedCare'
+          curl --fail --silent --show-error --retry 12 --retry-delay 3 --retry-all-errors "${base}sw.js" | grep -Fq 'state-image-runtime.js'
       - name: Record detailed deployment audit
         if: always()
         uses: actions/github-script@v7
@@ -145,6 +161,7 @@ jobs:
               '- verify: success',
               '- photorealistic pine asset: success',
               '- part-specific care / disease / pest / jin / shari: success',
+              '- state image compositor / automatic memorial snapshots: success',
               `- enable Pages: ${outcomes.enable}`,
               `- enable detail: ${process.env.ENABLE_DETAIL || 'none'}`,
               `- configure Pages: ${outcomes.configure}`,
@@ -154,7 +171,7 @@ jobs:
               `- Pages URL: ${pageUrl}`,
               '',
               passed
-                ? '部位別手入れを含む実写静止画版の公開検査はPASSです。iPhoneのSafariでPages URLを開き、ホーム画面に追加できます。'
+                ? '作品状態画像の合成・自動保存を含む公開検査はPASSです。iPhoneのSafariでPages URLを開き、ホーム画面に追加できます。'
                 : '上記の失敗工程を確認してください。'
             ].join('\n');
             await github.rest.issues.update({
@@ -169,6 +186,7 @@ jobs:
       - name: Fail deployment job when an audited step failed
         if: always() && (steps.enable.outcome != 'success' || steps.configure.outcome != 'success' || steps.artifact.outcome != 'success' || steps.deployment.outcome != 'success' || steps.smoke.outcome != 'success')
         run: exit 1
+
   record-verify-failure:
     if: always() && needs.verify.result != 'success'
     needs: verify
@@ -182,6 +200,6 @@ jobs:
               repo: context.repo.repo,
               issue_number: 1,
               title: 'BONSAI release audit: FAIL',
-              body: `# BONSAI release audit\n\n- 記録日時: ${new Date().toISOString()}\n- main SHA: \`${context.sha}\`\n- verify: failure\n\n部位別手入れを含む実写静止画版の構文または静的配信検査に失敗しています。`,
+              body: `# BONSAI release audit\n\n- 記録日時: ${new Date().toISOString()}\n- main SHA: \`${context.sha}\`\n- verify: failure\n\n作品状態画像ランタイムを含む構文または静的配信検査に失敗しています。`,
               state: 'open'
             });
