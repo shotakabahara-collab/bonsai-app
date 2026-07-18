@@ -1,0 +1,83 @@
+name: Apply advanced bonsai care
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'advanced-care.js'
+      - '.github/workflows/apply-advanced-care.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: advanced-bonsai-care
+  cancel-in-progress: true
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Connect advanced-care module
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('index.html')
+          text = path.read_text(encoding='utf-8')
+          tag = '<script src="advanced-care.js"></script>'
+          if tag not in text:
+              if '</body>' in text:
+                  text = text.replace('</body>', tag + '</body>', 1)
+              elif '</html>' in text:
+                  text = text.replace('</html>', tag + '</html>', 1)
+              else:
+                  text += tag
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Validate module and irreversible actions
+        run: |
+          node --check advanced-care.js
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          const html=fs.readFileSync('index.html','utf8');
+          if(!html.includes('<script src="advanced-care.js"></script>')) throw Error('advanced-care.js is not connected');
+          const inline=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
+            .map(match=>match[1]).filter(code=>code.trim());
+          inline.forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
+          vm.runInThisContext(fs.readFileSync('advanced-care.js','utf8'),{filename:'advanced-care.js'});
+          const A=globalThis.BonsaiAdvancedCare;
+          let s=A.migrateState({started:true,sp:'pine',born:Date.now()-1000000,last:Date.now(),water:80,vit:92,stress:0,money:5000,rep:150,stats:{water:0,prune:0,wire:0,shows:0},log:[]});
+          let r=A.applyAction(s,'first_left','prune_medium'); if(!r.ok) throw Error(r.message); s=r.state;
+          r=A.applyAction(s,'first_left','wire_light','down'); if(!r.ok) throw Error(r.message); s=r.state;
+          r=A.applyAction(s,'first_left','jin'); if(!r.ok) throw Error(r.message); s=r.state;
+          r=A.applyAction(s,'trunk','shari','left'); if(!r.ok) throw Error(r.message); s=r.state;
+          if(s.advanced.parts.first_left.deadwood!=='jin') throw Error('jin was not persisted');
+          if(s.advanced.shari.level!==1) throw Error('shari was not persisted');
+          if(!A.visualSignature(s).includes('first_left:2')) throw Error('part state signature is missing');
+          console.log('advanced bonsai care: PASS');
+          NODE
+      - name: Static HTTP smoke
+        run: |
+          python3 -m http.server 4173 >/tmp/advanced-http.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4173/ >/tmp/index.html && break; sleep .2; done
+          grep -Fq 'advanced-care.js' /tmp/index.html
+          curl -fsS http://127.0.0.1:4173/advanced-care.js | grep -Fq 'BonsaiAdvancedCare'
+          curl -fsS http://127.0.0.1:4173/sw.js | grep -Fq 'advanced-care.js'
+      - name: Commit integrated application
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add index.html
+          git diff --cached --quiet && exit 0
+          git commit -m '部位別手入れをゲーム画面へ接続'
+          git push origin HEAD:main
