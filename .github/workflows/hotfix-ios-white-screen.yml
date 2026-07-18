@@ -1,0 +1,447 @@
+name: Hotfix iPhone white-screen launch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/hotfix-ios-white-screen.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: ios-white-screen-hotfix
+  cancel-in-progress: false
+
+jobs:
+  repair-test-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Patch boot safety, saved-state migration and PWA recovery
+        id: patch
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import json
+
+          index = Path('index.html')
+          html = index.read_text(encoding='utf-8')
+
+          title_meta = '<meta name="apple-mobile-web-app-title" content="BONSAI">'
+          status_meta = '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
+          if status_meta not in html:
+              if title_meta not in html:
+                  raise SystemExit('apple web app title marker missing')
+              html = html.replace(title_meta, title_meta + status_meta, 1)
+
+          safety_style = '''<style id="bonsai-ios-boot-v1">html,body,#root{min-height:100%;background:#09100c}body{min-height:100dvh}.bonsai-boot{min-height:100dvh;display:grid;place-content:center;gap:12px;padding:32px;text-align:center;background:#09100c;color:#eee8da;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}.bonsai-boot__logo{font:32px Georgia,serif;letter-spacing:.24em}.bonsai-boot__text{margin:0;color:#9daa9f;font-size:13px;line-height:1.7}.bonsai-boot__button{appearance:none;border:1px solid #d9b77b66;border-radius:14px;background:#eee8da;color:#101611;padding:13px 18px;font-weight:700}.bonsai-boot__note{font-size:10px;color:#758279}</style>'''
+          if 'id="bonsai-ios-boot-v1"' not in html:
+              html = html.replace('</head>', safety_style + '</head>', 1)
+
+          empty_root = '<body><div id="root"></div>'
+          boot_root = '<body><div id="root"><main id="bonsai-boot" class="bonsai-boot" role="status" aria-live="polite"><div class="bonsai-boot__logo">BONSAI</div><p class="bonsai-boot__text">作品と保存データを読み込んでいます…</p></main></div>'
+          if 'id="bonsai-boot"' not in html:
+              if empty_root not in html:
+                  raise SystemExit('root boot marker missing')
+              html = html.replace(empty_root, boot_root, 1)
+
+          guard = '''<script id="bonsai-boot-guard">(()=>{'use strict';const esc=value=>String(value||'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));const show=reason=>{const root=document.getElementById('root');if(!root||root.querySelector('.app,.onboard'))return;root.innerHTML=`<main id="bonsai-boot" class="bonsai-boot boot-error" role="alert"><div class="bonsai-boot__logo">BONSAI</div><p class="bonsai-boot__text">起動データを安全に修復できます。セーブデータは削除しません。</p><button id="bonsai-repair-button" class="bonsai-boot__button" type="button">起動を修復する</button><div class="bonsai-boot__note">${esc(reason).slice(0,160)}</div></main>`;document.getElementById('bonsai-repair-button')?.addEventListener('click',()=>location.assign('./?repair=1&v=ios-white-screen-v1'));};window.__BonsaiBootFail=show;addEventListener('error',event=>show(event?.message||'script-load-error'),true);addEventListener('unhandledrejection',event=>show(event?.reason?.message||event?.reason||'promise-error'));setTimeout(()=>{const root=document.getElementById('root');if(root?.querySelector('#bonsai-boot')&&!root.querySelector('.app,.onboard'))show('startup-timeout');},12000);})();</script>'''
+          photo_anchor = '<script src="photo-assets.js"></script>'
+          if 'id="bonsai-boot-guard"' not in html:
+              if photo_anchor not in html:
+                  raise SystemExit('photo asset script marker missing')
+              html = html.replace(photo_anchor, guard + photo_anchor, 1)
+
+          old_state = "let s;try{s={...base(),...JSON.parse(localStorage.getItem(KEY)||'null')}}catch{s=base()}"
+          new_state = "const normalizeSavedState=raw=>{const b=base(),x=raw&&typeof raw==='object'?raw:{},speciesAlias={kuromatsu:'pine','黒松':'pine',yamamomiji:'maple','山もみじ':'maple',satsuki:'azalea','皐月':'azalea'},potAlias={pot01:'starter',pot02:'black',pot03:'blue',pot04:'moon',pot05:'old'},n={...b,...x};n.sp=speciesAlias[n.sp]||n.sp;if(!SP[n.sp])n.sp='pine';n.pot=potAlias[n.pot]||n.pot;if(!POTS.some(p=>p[0]===n.pot))n.pot='starter';const mentor=Number(n.mentor);n.mentor=Number.isFinite(mentor)&&PEOPLE[Math.trunc(mentor)]?Math.trunc(mentor):0;n.stats={...b.stats,...(x.stats&&typeof x.stats==='object'?x.stats:{})};n.owned=(Array.isArray(x.owned)?x.owned:['starter']).map(id=>potAlias[id]||id).filter(id=>POTS.some(p=>p[0]===id));if(!n.owned.includes('starter'))n.owned.unshift('starter');if(!n.owned.includes(n.pot))n.owned.push(n.pot);n.awards=Array.isArray(x.awards)?x.awards:[];n.log=(Array.isArray(x.log)?x.log:[]).map(item=>typeof item==='string'?{at:Date.now(),x:item}:item).filter(item=>item&&typeof item==='object');for(const key of ['born','water','last','vit','stress','prune','wire','fert','money','rep']){const value=Number(n[key]);n[key]=Number.isFinite(value)?value:b[key]}n.started=Boolean(n.started);n.name=String(n.name||b.name);n.tree=String(n.tree||'');return n};let s;try{s=normalizeSavedState(JSON.parse(localStorage.getItem(KEY)||'null'))}catch{s=base()}"
+          if 'normalizeSavedState=raw=>' not in html:
+              if old_state not in html:
+                  raise SystemExit('saved-state initialization marker missing')
+              html = html.replace(old_state, new_state, 1)
+
+          recovery_tag = '<script src="pwa-recovery.js"></script>'
+          if recovery_tag not in html:
+              html = html.replace('</body>', recovery_tag + '</body>', 1)
+
+          index.write_text(html, encoding='utf-8')
+
+          recovery_js = r'''(() => {
+            'use strict';
+            const VERSION = 'ios-white-screen-v1';
+            const repairRequested = new URL(location.href).searchParams.get('repair') === '1';
+
+            async function clearRuntimeCaches() {
+              try {
+                if ('caches' in window) {
+                  const keys = await caches.keys();
+                  await Promise.all(keys.map(key => caches.delete(key)));
+                }
+              } catch (error) { console.warn('[BONSAI recovery cache]', error); }
+              try {
+                if ('serviceWorker' in navigator) {
+                  const registrations = await navigator.serviceWorker.getRegistrations();
+                  await Promise.all(registrations.map(registration => registration.unregister()));
+                }
+              } catch (error) { console.warn('[BONSAI recovery worker]', error); }
+            }
+
+            async function repairAndReload() {
+              await clearRuntimeCaches();
+              const target = new URL('./', location.href);
+              target.searchParams.set('v', VERSION);
+              target.searchParams.set('recovered', '1');
+              location.replace(target.href);
+            }
+
+            if (repairRequested) {
+              repairAndReload();
+              return;
+            }
+
+            addEventListener('load', async () => {
+              if (!('serviceWorker' in navigator)) return;
+              try {
+                const registration = await navigator.serviceWorker.register(`./sw.js?v=${VERSION}`, { updateViaCache: 'none' });
+                await registration.update();
+                if (registration.waiting) registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+              } catch (error) {
+                console.warn('[BONSAI service worker]', error);
+              }
+            }, { once: true });
+
+            window.BonsaiRecovery = Object.freeze({ version: VERSION, repair: repairAndReload });
+          })();
+          '''
+          Path('pwa-recovery.js').write_text(recovery_js, encoding='utf-8')
+
+          recovery_html = '''<!doctype html><html lang="ja" style="background:#09100c"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#09100c"><title>BONSAI 起動修復</title><style>html,body{min-height:100%;margin:0;background:#09100c;color:#eee8da;font-family:-apple-system,sans-serif}main{min-height:100dvh;display:grid;place-content:center;text-align:center;padding:32px;gap:14px}.logo{font:34px Georgia;letter-spacing:.24em}a{display:block;border-radius:14px;padding:14px 18px;background:#eee8da;color:#101611;text-decoration:none;font-weight:700}p{color:#9daa9f;line-height:1.7}</style></head><body><main><div class="logo">BONSAI</div><p>起動キャッシュを更新します。<br>セーブデータは削除されません。</p><a href="./?repair=1&v=ios-white-screen-v1">起動を修復する</a></main></body></html>'''
+          Path('recovery.html').write_text(recovery_html, encoding='utf-8')
+
+          manifest_path = Path('manifest.webmanifest')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          manifest['id'] = './'
+          manifest['start_url'] = './?source=pwa&v=ios-white-screen-v1'
+          manifest['scope'] = './'
+          manifest['display'] = 'standalone'
+          manifest['display_override'] = ['standalone', 'minimal-ui']
+          manifest['background_color'] = '#09100c'
+          manifest['theme_color'] = '#09100c'
+          manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          sw = r'''const CACHE = 'bonsai-ios-white-screen-v1-20260718';
+          const CORE = [
+            './', './index.html', './recovery.html', './manifest.webmanifest', './icon.svg',
+            './tree-renderer.js', './photo-assets.js', './advanced-care.js', './advanced-care-bridge.js',
+            './completion-core.js', './judging-engine.js', './state-image-runtime.js', './pwa-recovery.js',
+            './assets/kuromatsu/manifest.json', './assets/kuromatsu/base/black.webp',
+            './assets/kuromatsu/base/starter.webp', './assets/kuromatsu/base/blue.webp',
+            './assets/kuromatsu/base/moon.webp', './assets/kuromatsu/base/old.webp'
+          ];
+
+          self.addEventListener('message', event => {
+            if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+          });
+
+          self.addEventListener('install', event => {
+            event.waitUntil((async () => {
+              const cache = await caches.open(CACHE);
+              await Promise.allSettled(CORE.map(async path => {
+                const request = new Request(path, { cache: 'reload' });
+                const response = await fetch(request);
+                if (response.ok) await cache.put(path, response.clone());
+              }));
+              await self.skipWaiting();
+            })());
+          });
+
+          self.addEventListener('activate', event => {
+            event.waitUntil((async () => {
+              const current = await caches.open(CACHE);
+              const hasIndex = await current.match('./index.html');
+              if (hasIndex) {
+                const keys = await caches.keys();
+                await Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)));
+              }
+              await self.clients.claim();
+            })());
+          });
+
+          async function recoveryResponse() {
+            const cached = await caches.match('./recovery.html', { ignoreSearch: true });
+            if (cached) return cached;
+            return new Response('<!doctype html><html style="background:#09100c"><meta name="viewport" content="width=device-width"><body style="margin:0;min-height:100vh;background:#09100c;color:#eee8da;display:grid;place-content:center;font-family:sans-serif;text-align:center"><h1>BONSAI</h1><p>通信回復後に、もう一度開いてください。</p></body></html>', { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+          }
+
+          async function navigationResponse(request) {
+            const cache = await caches.open(CACHE);
+            try {
+              const response = await fetch(request, { cache: 'no-store' });
+              if (response.ok) {
+                await cache.put('./index.html', response.clone());
+                return response;
+              }
+            } catch (error) { /* use the last valid app shell */ }
+            return await cache.match('./index.html', { ignoreSearch: true })
+              || await caches.match('./index.html', { ignoreSearch: true })
+              || await recoveryResponse();
+          }
+
+          self.addEventListener('fetch', event => {
+            if (event.request.method !== 'GET') return;
+            const url = new URL(event.request.url);
+            if (url.origin !== self.location.origin) return;
+
+            if (event.request.mode === 'navigate') {
+              event.respondWith(navigationResponse(event.request));
+              return;
+            }
+
+            event.respondWith((async () => {
+              const cached = await caches.match(event.request, { ignoreSearch: true });
+              if (cached) return cached;
+              try {
+                const response = await fetch(event.request);
+                if (response.ok) {
+                  const cache = await caches.open(CACHE);
+                  await cache.put(event.request, response.clone());
+                }
+                return response;
+              } catch (error) {
+                return new Response('', { status: 504, statusText: 'Offline' });
+              }
+            })());
+          });
+          '''
+          Path('sw.js').write_text(sw.replace('          ', ''), encoding='utf-8')
+
+          print('iOS white-screen patch: prepared')
+          PY
+
+      - name: Validate syntax and migration contracts
+        run: |
+          node --check pwa-recovery.js
+          node --check sw.js
+          node --check advanced-care.js
+          node --check advanced-care-bridge.js
+          node --check completion-core.js
+          node --check judging-engine.js
+          node --check state-image-runtime.js
+          node <<'NODE'
+          const fs = require('fs'), vm = require('vm');
+          const html = fs.readFileSync('index.html', 'utf8');
+          const required = [
+            'bonsai-ios-boot-v1', 'bonsai-boot-guard', 'normalizeSavedState',
+            'pwa-recovery.js', 'repair=1', 'advanced-care.js', 'state-image-runtime.js'
+          ];
+          for (const token of required) if (!html.includes(token)) throw Error(`missing boot contract: ${token}`);
+          const inline = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
+            .map(match => match[1]).filter(code => code.trim());
+          inline.forEach((code, index) => new vm.Script(code, { filename: `inline-${index}.js` }));
+          const manifest = JSON.parse(fs.readFileSync('manifest.webmanifest', 'utf8'));
+          if (manifest.id !== './' || !manifest.start_url.includes('ios-white-screen-v1') || manifest.background_color !== '#09100c') throw Error('manifest recovery contract invalid');
+          const sw = fs.readFileSync('sw.js', 'utf8');
+          for (const token of ['navigationResponse', 'recoveryResponse', 'ignoreSearch', 'pwa-recovery.js']) if (!sw.includes(token)) throw Error(`missing worker recovery contract: ${token}`);
+          console.log('boot, migration and service worker contracts: PASS');
+          NODE
+
+      - name: Install WebKit and screenshot tools
+        run: |
+          npm install --no-save playwright@1.52.0
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Run iPhone-sized WebKit launch and corruption recovery test
+        id: browser
+        run: |
+          python3 -m http.server 4173 >/tmp/ios-hotfix-http.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          mkdir -p ios-hotfix-artifacts
+          cat > ios-hotfix-test.mjs <<'NODE'
+          import { webkit } from 'playwright';
+          import fs from 'node:fs';
+
+          const browser = await webkit.launch({ headless: true });
+          const errors = [];
+          const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 });
+          const page = await context.newPage();
+          page.on('pageerror', error => errors.push(error.message));
+          page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+
+          const corrupted = {
+            started: true, name: '復旧検査', mentor: 99, sp: 'kuromatsu', tree: '黒松・復旧樹',
+            born: Date.now() - 86400000, water: '82', last: Date.now(), vit: 91, stress: 3,
+            prune: 2, wire: 1, fert: 1, pot: 'pot02', money: 4100, rep: 90,
+            owned: null, awards: [], log: null, stats: null
+          };
+          await page.addInitScript(value => localStorage.setItem('bonsai_live_1', JSON.stringify(value)), corrupted);
+          await page.goto('http://127.0.0.1:4173/?v=ios-white-screen-v1', { waitUntil: 'domcontentloaded' });
+          await page.waitForSelector('.app, .onboard', { timeout: 30000 });
+          await page.waitForFunction(() => !document.querySelector('#bonsai-boot'));
+          const state = await page.evaluate(() => ({
+            background: getComputedStyle(document.documentElement).backgroundColor,
+            bodyBackground: getComputedStyle(document.body).backgroundColor,
+            text: document.body.innerText.slice(0, 300),
+            saved: JSON.parse(localStorage.getItem('bonsai_live_1'))
+          }));
+          if (!/BONSAI/.test(state.text)) throw new Error(`app content missing: ${JSON.stringify(state)}`);
+          if (state.saved.sp !== 'pine' || state.saved.pot !== 'black' || state.saved.mentor !== 0) throw new Error(`saved-state migration failed: ${JSON.stringify(state.saved)}`);
+          if (/255, 255, 255/.test(state.background) || /255, 255, 255/.test(state.bodyBackground)) throw new Error(`white launch background: ${JSON.stringify(state)}`);
+          await page.screenshot({ path: 'ios-hotfix-artifacts/01-recovered-app.png', fullPage: true });
+
+          const failedContext = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 });
+          const failedPage = await failedContext.newPage();
+          await failedPage.route('**/photo-assets.js', route => route.abort());
+          await failedPage.route('**/tree-renderer.js', route => route.abort());
+          await failedPage.addInitScript(value => localStorage.setItem('bonsai_live_1', JSON.stringify(value)), { ...corrupted, sp: 'pine', pot: 'black' });
+          await failedPage.goto('http://127.0.0.1:4173/?v=ios-white-screen-v1&failure-test=1', { waitUntil: 'domcontentloaded' });
+          await failedPage.waitForSelector('#bonsai-boot.boot-error', { timeout: 15000 });
+          await failedPage.screenshot({ path: 'ios-hotfix-artifacts/02-visible-recovery-screen.png', fullPage: true });
+
+          fs.writeFileSync('ios-hotfix-artifacts/browser-result.json', JSON.stringify({ state, errors }, null, 2));
+          await failedContext.close();
+          await context.close();
+          await browser.close();
+          NODE
+          node ios-hotfix-test.mjs
+
+          python3 <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          for name in ['01-recovered-app.png', '02-visible-recovery-screen.png']:
+              path = Path('ios-hotfix-artifacts') / name
+              image = Image.open(path).convert('RGB')
+              pixels = list(image.resize((80, 160)).getdata())
+              white = sum(1 for r, g, b in pixels if r > 246 and g > 246 and b > 246) / len(pixels)
+              if white > .65:
+                  raise SystemExit(f'{name}: excessive white-screen ratio {white:.3f}')
+              print(name, 'white_ratio', round(white, 4))
+          PY
+
+      - name: Record local hotfix audit
+        run: |
+          cat > IOS_WHITE_SCREEN_HOTFIX.md <<EOF
+          # BONSAI iPhone白画面ホットフィックス
+
+          - 起動前から暗色のアプリシェルを表示
+          - 旧保存データの樹種・鉢・師匠・統計値を安全に移行
+          - JavaScript例外時は白画面ではなく復旧ボタンを表示
+          - repair=1でキャッシュとService Workerだけを消去（localStorageのセーブデータは保持）
+          - ナビゲーションはnetwork-first、失敗時は最後の正常なindex.htmlまたはrecovery.htmlへ復帰
+          - WebKit 390×844 / DPR 3で起動・破損保存データ・スクリプト欠落を検査
+          - 検査日時: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+
+      - name: Commit verified recovery release
+        id: commit
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add index.html manifest.webmanifest sw.js pwa-recovery.js recovery.html IOS_WHITE_SCREEN_HOTFIX.md
+          git diff --cached --quiet || git commit -m 'iPhone白画面を保存データ保持のまま復旧'
+          git push origin HEAD:main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Pages deployment and verify public recovery shell
+        id: public
+        env:
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+          PUBLIC_BASE: https://shotakabahara-collab.github.io/bonsai-app
+        run: |
+          ready=0
+          for i in $(seq 1 120); do
+            if curl -fsS --retry 2 "${PUBLIC_BASE}/?v=${RELEASE_SHA}-${i}" -o /tmp/live-index.html \
+              && grep -Fq 'bonsai-ios-boot-v1' /tmp/live-index.html \
+              && curl -fsS "${PUBLIC_BASE}/pwa-recovery.js?v=${RELEASE_SHA}-${i}" -o /tmp/live-recovery.js \
+              && grep -Fq 'ios-white-screen-v1' /tmp/live-recovery.js \
+              && curl -fsS "${PUBLIC_BASE}/sw.js?v=${RELEASE_SHA}-${i}" -o /tmp/live-sw.js \
+              && grep -Fq 'bonsai-ios-white-screen-v1' /tmp/live-sw.js; then
+              ready=1
+              break
+            fi
+            sleep 5
+          done
+          test "$ready" = 1
+
+      - name: Verify the public app in iPhone-sized WebKit
+        id: live_browser
+        env:
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          cat > ios-live-test.mjs <<'NODE'
+          import { webkit } from 'playwright';
+          const browser = await webkit.launch({ headless: true });
+          const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 });
+          const page = await context.newPage();
+          await page.addInitScript(() => localStorage.setItem('bonsai_live_1', JSON.stringify({ started:true, sp:'kuromatsu', pot:'pot02', mentor:99, stats:null, owned:null, log:null, name:'公開検査', tree:'黒松・公開検査樹', born:Date.now()-86400000, water:80, last:Date.now(), vit:90, stress:2, prune:1, wire:0, fert:0, money:4100, rep:80, awards:[] })));
+          await page.goto(`https://shotakabahara-collab.github.io/bonsai-app/?v=${process.env.RELEASE_SHA}`, { waitUntil:'domcontentloaded', timeout:60000 });
+          await page.waitForSelector('.app, .onboard', { timeout:45000 });
+          await page.waitForFunction(() => !document.querySelector('#bonsai-boot'));
+          const result = await page.evaluate(() => ({ text:document.body.innerText.slice(0,120), background:getComputedStyle(document.body).backgroundColor, state:JSON.parse(localStorage.getItem('bonsai_live_1')) }));
+          if (!/BONSAI/.test(result.text) || result.state.sp !== 'pine' || result.state.pot !== 'black') throw new Error(JSON.stringify(result));
+          await page.screenshot({ path:'ios-hotfix-artifacts/03-public-app.png', fullPage:true });
+          await browser.close();
+          NODE
+          node ios-live-test.mjs
+
+      - name: Upload iPhone launch audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-ios-white-screen-hotfix
+          path: ios-hotfix-artifacts
+          if-no-files-found: warn
+
+      - name: Record release result
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          PATCH: ${{ steps.patch.outcome }}
+          BROWSER: ${{ steps.browser.outcome }}
+          PUBLIC: ${{ steps.public.outcome }}
+          LIVE_BROWSER: ${{ steps.live_browser.outcome }}
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+        with:
+          script: |
+            const outcomes = [process.env.PATCH, process.env.BROWSER, process.env.PUBLIC, process.env.LIVE_BROWSER];
+            const passed = outcomes.every(value => value === 'success');
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1,
+              title: `BONSAI iPhone launch audit: ${passed ? 'PASS' : 'FAIL'}`,
+              body: [
+                '# BONSAI iPhone白画面・起動復旧監査',
+                '',
+                `- release SHA: \`${process.env.RELEASE_SHA || 'not-created'}\``,
+                `- boot/state/cache patch: ${process.env.PATCH || 'not-run'}`,
+                `- local WebKit launch: ${process.env.BROWSER || 'not-run'}`,
+                `- public file deployment: ${process.env.PUBLIC || 'not-run'}`,
+                `- public iPhone-sized WebKit launch: ${process.env.LIVE_BROWSER || 'not-run'}`,
+                '- save data: retained; only caches and Service Worker are cleared by repair mode',
+                '- recovery URL: https://shotakabahara-collab.github.io/bonsai-app/?repair=1',
+                '',
+                passed ? '白画面を再現不能にし、破損した旧保存形式からの復旧と公開実体まで確認しました。' : '未通過工程があります。Actions artifactとログを確認してください。'
+              ].join('\n'),
+              state: passed ? 'closed' : 'open',
+              ...(passed ? { state_reason:'completed' } : {})
+            });
+
+      - name: Fail unless public iPhone launch is verified
+        if: always() && (steps.patch.outcome != 'success' || steps.browser.outcome != 'success' || steps.public.outcome != 'success' || steps.live_browser.outcome != 'success')
+        run: exit 1
