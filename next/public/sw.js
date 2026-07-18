@@ -5,7 +5,14 @@ const CORE = [
   '/bonsai-app/index.html',
   '/bonsai-app/manifest.webmanifest',
   '/bonsai-app/icon.svg',
-  '/bonsai-app/photo-assets.js'
+  '/bonsai-app/photo-assets.js',
+  '/bonsai-app/IMAGE_LICENSES.md',
+  '/bonsai-app/assets/kuromatsu/manifest.json',
+  '/bonsai-app/assets/kuromatsu/base/black.webp',
+  '/bonsai-app/assets/kuromatsu/base/starter.webp',
+  '/bonsai-app/assets/kuromatsu/base/blue.webp',
+  '/bonsai-app/assets/kuromatsu/base/moon.webp',
+  '/bonsai-app/assets/kuromatsu/base/old.webp'
 ];
 
 self.addEventListener('install', event => {

@@ -1,0 +1,17 @@
+{
+  "version": "react-kuromatsu-photoreal-v1",
+  "sourceTitle": "Japanese Black Pine bonsai 135, October 10, 2008",
+  "sourceAuthor": "Sage Ross",
+  "sourceLicense": "CC BY-SA 3.0",
+  "sourceSha256": "825a75ef70d18f1dfd4584a35c103d3300f110874c0f7ac0716a6d26521fe8a3",
+  "width": 900,
+  "height": 1500,
+  "sameTreeIdentity": true,
+  "base": {
+    "black": "assets/kuromatsu/base/black.webp",
+    "starter": "assets/kuromatsu/base/starter.webp",
+    "blue": "assets/kuromatsu/base/blue.webp",
+    "moon": "assets/kuromatsu/base/moon.webp",
+    "old": "assets/kuromatsu/base/old.webp"
+  }
+}
