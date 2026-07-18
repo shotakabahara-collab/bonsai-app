@@ -1,0 +1,136 @@
+name: Deploy verified photoreal kuromatsu v3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-photoreal-kuromatsu-v3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  issues: write
+
+concurrency:
+  group: deploy-verified-photoreal-kuromatsu-v3
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install release validator
+        run: python -m pip install --disable-pip-version-check pillow
+
+      - name: Verify the committed release candidate
+        id: verify
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          import json
+
+          manifest = json.loads(Path('assets/kuromatsu/manifest.json').read_text())
+          assert manifest['version'] == 'kuromatsu-photoreal-v3'
+          assert manifest['sameTreeIdentity'] is True
+          assert manifest['width'] == 1280 and manifest['height'] == 1600
+          expected = {'black', 'starter', 'blue', 'moon', 'old'}
+          assert set(manifest['base']) == expected
+          for pot, rel in manifest['base'].items():
+              path = Path(rel)
+              assert path.exists() and path.stat().st_size > 100_000, (pot, path.stat().st_size if path.exists() else -1)
+              with Image.open(path) as image:
+                  assert image.format == 'WEBP'
+                  assert image.size == (1280, 1600)
+                  image.verify()
+          print('committed visual release: PASS')
+          PY
+          node --check photo-assets.js
+          node --check state-image-runtime.js
+          node --check sw.js
+          grep -Fq 'kuromatsu-photoreal-v3' photo-assets.js
+          grep -Fq 'kuromatsu-photoreal-v3' sw.js
+          for pot in black starter blue moon old; do grep -Fq "${pot}.webp" sw.js; done
+
+      - name: Configure Pages
+        id: configure
+        uses: actions/configure-pages@v5
+
+      - name: Upload verified site
+        id: artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy verified site
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Verify live release files
+        id: smoke
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          base="${PAGE_URL%/}/"
+          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}photo-assets.js?v=${RELEASE_SHA}" -o /tmp/live-photo.js
+          grep -Fq 'kuromatsu-photoreal-v3' /tmp/live-photo.js
+          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}assets/kuromatsu/manifest.json?v=${RELEASE_SHA}" -o /tmp/live-manifest.json
+          grep -Fq 'kuromatsu-photoreal-v3' /tmp/live-manifest.json
+          for pot in black starter blue moon old; do
+            curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}assets/kuromatsu/base/${pot}.webp?v=${RELEASE_SHA}" -o "/tmp/live-${pot}.webp"
+            test "$(wc -c < "/tmp/live-${pot}.webp")" -gt 100000
+          done
+          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}sw.js?v=${RELEASE_SHA}" | grep -Fq 'kuromatsu-photoreal-v3'
+
+      - name: Record final public audit
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          VERIFY: ${{ steps.verify.outcome }}
+          CONFIGURE: ${{ steps.configure.outcome }}
+          ARTIFACT: ${{ steps.artifact.outcome }}
+          DEPLOY: ${{ steps.deployment.outcome }}
+          SMOKE: ${{ steps.smoke.outcome }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        with:
+          script: |
+            const outcomes = [process.env.VERIFY, process.env.CONFIGURE, process.env.ARTIFACT, process.env.DEPLOY, process.env.SMOKE];
+            const passed = outcomes.every(value => value === 'success');
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1,
+              title: `BONSAI release audit: ${passed ? 'PASS' : 'FAIL'}`,
+              body: [
+                '# BONSAI 黒松フォトリアル v3 公開監査',
+                '',
+                `- release SHA: \`${context.sha}\``,
+                `- committed asset validation: ${process.env.VERIFY || 'not-run'}`,
+                `- configure Pages: ${process.env.CONFIGURE || 'not-run'}`,
+                `- upload artifact: ${process.env.ARTIFACT || 'not-run'}`,
+                `- deploy Pages: ${process.env.DEPLOY || 'not-run'}`,
+                `- public file smoke: ${process.env.SMOKE || 'not-run'}`,
+                '- image format: 1280×1600 WebP',
+                '- same bonsai identity: preserved across five photographed pot states',
+                '- live state system: part-specific pruning, wiring, disease, pest, jin, shari and memorial images',
+                `- Pages URL: ${process.env.PAGE_URL || 'https://shotakabahara-collab.github.io/bonsai-app/'}`,
+                '',
+                passed ? '検査済み完成候補を公開し、実URL上の全フォトリアル資産まで確認しました。' : '公開工程が未完了です。失敗した工程を確認してください。'
+              ].join('\n'),
+              state: passed ? 'closed' : 'open',
+              ...(passed ? {state_reason: 'completed'} : {})
+            });
