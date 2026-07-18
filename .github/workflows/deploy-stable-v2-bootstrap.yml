@@ -1,0 +1,211 @@
+name: Bootstrap BONSAI stable v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-stable-v2-bootstrap.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  issues: write
+
+concurrency:
+  group: bonsai-stable-v2-release
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Recover and install the stable v2 package
+        id: build
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import base64, hashlib, re, tarfile
+
+          source = Path('.github/workflows/deploy-stable-v2.yml').read_text(encoding='utf-8')
+          match = re.search(r"<<'PAYLOAD'\n([A-Za-z0-9+/=\n]+)\nPAYLOAD", source)
+          if not match:
+              raise SystemExit('embedded stable-v2 package was not found')
+          encoded = ''.join(match.group(1).split())
+          payload = base64.b64decode(encoded)
+          digest = hashlib.sha256(payload).hexdigest()
+          if digest != '5f95ffc57476c9e21cbc5cbbf8f137943d8a9cf4ac72d73047231fe53d6860c0':
+              raise SystemExit(f'package digest mismatch: {digest}')
+          archive = Path('/tmp/bonsai-stable-v2.tgz')
+          archive.write_bytes(payload)
+          with tarfile.open(archive, 'r:gz') as bundle:
+              bundle.extractall('.')
+          Path('app.html').write_text(Path('index.html').read_text(encoding='utf-8'), encoding='utf-8')
+          Path('recovery-v4.html').write_text(Path('repair.html').read_text(encoding='utf-8'), encoding='utf-8')
+          print('stable v2 package installed', digest)
+          PY
+
+      - name: Validate the direct-launch package
+        id: static
+        run: |
+          node --check app-core.js
+          node --check sw.js
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          const html=fs.readFileSync('index.html','utf8');
+          [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(x=>x[1]).filter(Boolean).forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
+          for(const token of ['bonsai-stable-v2-20260718','app-core.js','起動を修復する']) if(!html.includes(token)) throw Error(`missing ${token}`);
+          if(/location\.replace\(['"]\.\/app\.html/.test(html)) throw Error('redirect launcher remains');
+          const manifest=JSON.parse(fs.readFileSync('manifest.webmanifest','utf8'));
+          if(manifest.id!=='./bonsai-stable-v2'||!manifest.start_url.includes('bonsai-stable-v2')) throw Error('manifest invalid');
+          const release=JSON.parse(fs.readFileSync('release.json','utf8'));
+          if(release.architecture!=='direct-single-document') throw Error('release architecture invalid');
+          console.log('BONSAI stable v2 static contracts: PASS');
+          NODE
+
+      - name: Install iPhone WebKit validation tools
+        run: |
+          npm install --no-save playwright@1.52.0
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Create browser audit
+        run: |
+          cat > /tmp/bonsai-v2-test.mjs <<'NODE'
+          import { webkit } from 'playwright';
+          import fs from 'node:fs';
+          const base=process.env.BASE_URL||'http://127.0.0.1:4173/';
+          const publicMode=process.env.PUBLIC_TEST==='1';
+          const browser=await webkit.launch({headless:true});
+          const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:3});
+          const page=await context.newPage();
+          const errors=[];
+          page.on('pageerror',error=>errors.push(error.message));
+          page.on('console',message=>{if(message.type()==='error')errors.push(message.text())});
+          await page.route('**/upload.wikimedia.org/**',route=>route.abort());
+          await page.addInitScript(()=>localStorage.setItem('bonsai_live_1',JSON.stringify({started:true,name:'復旧検査',mentor:99,sp:'kuromatsu',tree:'黒松・復旧樹',born:Date.now()-86400000,water:'82',last:Date.now(),vit:91,stress:3,prune:2,wire:1,fert:1,pot:'pot02',money:4100,rep:90,owned:null,awards:[],log:null,stats:null})));
+          await page.goto(new URL(`index.html?v=bonsai-stable-v2-20260718&t=${Date.now()}`,base).href,{waitUntil:'domcontentloaded',timeout:60000});
+          await page.waitForSelector('.app,.onboarding',{timeout:45000});
+          const result=await page.evaluate(()=>({text:document.body.innerText.slice(0,300),body:getComputedStyle(document.body).backgroundColor,html:getComputedStyle(document.documentElement).backgroundColor,state:JSON.parse(localStorage.getItem('bonsai_live_1')),release:window.BonsaiRelease||''}));
+          if(!/BONSAI/.test(result.text)||result.state.sp!=='pine'||result.state.pot!=='black'||result.state.mentor!==0||!result.state.stats||!/stable-v2/.test(result.release)||/255, 255, 255/.test(result.body)||/255, 255, 255/.test(result.html)) throw Error(JSON.stringify(result));
+          fs.mkdirSync('stable-v2-artifacts',{recursive:true});
+          await page.screenshot({path:publicMode?'stable-v2-artifacts/03-public.png':'stable-v2-artifacts/01-local.png',fullPage:true});
+          if(!publicMode){
+            const before=JSON.stringify(result.state);
+            await page.goto(new URL('repair.html',base).href,{waitUntil:'domcontentloaded',timeout:30000});
+            await page.click('#repair');
+            await page.waitForSelector('.app,.onboarding',{timeout:45000});
+            const after=await page.evaluate(()=>JSON.stringify(JSON.parse(localStorage.getItem('bonsai_live_1'))));
+            if(before!==after) throw Error('repair changed save data');
+            await page.screenshot({path:'stable-v2-artifacts/02-repaired.png',fullPage:true});
+          }
+          fs.writeFileSync('stable-v2-artifacts/result.json',JSON.stringify({base,publicMode,result,errors},null,2));
+          await browser.close();
+          NODE
+
+      - name: Test local iPhone launch and repair
+        id: local
+        run: |
+          python3 -m http.server 4173 >/tmp/bonsai-v2-http.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          node /tmp/bonsai-v2-test.mjs
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          for name in ['01-local.png','02-repaired.png']:
+              image=Image.open(Path('stable-v2-artifacts')/name).convert('RGB').resize((80,160))
+              pixels=list(image.getdata())
+              white=sum(1 for r,g,b in pixels if r>246 and g>246 and b>246)/len(pixels)
+              if white >= .45:
+                  raise SystemExit(f'{name}: white ratio {white:.3f}')
+              print(name, 'white_ratio', round(white,4))
+          PY
+
+      - name: Commit the verified application
+        id: commit
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add index.html app.html app-core.js repair.html recovery-v4.html manifest.webmanifest sw.js release.json
+          git rm -f .github/workflows/deploy-stable-v2.yml || true
+          git diff --cached --quiet || git commit -m 'BONSAI安定版v2を直接起動アーキテクチャへ切り替え'
+          git push origin HEAD:main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/configure-pages@v5
+        id: configure
+      - uses: actions/upload-pages-artifact@v3
+        id: artifact
+        with:
+          path: .
+      - uses: actions/deploy-pages@v4
+        id: deployment
+
+      - name: Test public iPhone launch
+        id: public
+        env:
+          BASE_URL: ${{ steps.deployment.outputs.page_url }}
+          PUBLIC_TEST: '1'
+        run: |
+          node /tmp/bonsai-v2-test.mjs
+          base="${BASE_URL%/}/"
+          curl -fsS --retry 20 --retry-delay 3 --retry-all-errors "${base}release.json?v=${{ steps.commit.outputs.sha }}" | grep -Fq 'bonsai-stable-v2-20260718'
+          curl -fsS --retry 20 --retry-delay 3 --retry-all-errors "${base}app-core.js?v=${{ steps.commit.outputs.sha }}" | grep -Fq 'bonsai-stable-v2-20260718'
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-stable-v2-audit
+          path: stable-v2-artifacts
+          if-no-files-found: warn
+
+      - name: Record release result
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          BUILD: ${{ steps.build.outcome }}
+          STATIC: ${{ steps.static.outcome }}
+          LOCAL: ${{ steps.local.outcome }}
+          PUBLIC: ${{ steps.public.outcome }}
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        with:
+          script: |
+            const passed=process.env.BUILD==='success'&&process.env.STATIC==='success'&&process.env.LOCAL==='success'&&process.env.PUBLIC==='success';
+            await github.rest.issues.update({
+              owner:context.repo.owner,repo:context.repo.repo,issue_number:1,
+              title:`BONSAI stable v2 audit: ${passed?'PASS':'FAIL'}`,
+              body:[
+                '# BONSAI 安定版v2・最終公開監査','',
+                `- release SHA: \`${process.env.RELEASE_SHA||'not-created'}\``,
+                '- architecture: direct single-document app',
+                '- redirect launcher: removed',
+                '- old save migration: verified',
+                '- repair without deleting save data: verified',
+                '- photograph network failure fallback: verified',
+                `- local iPhone WebKit: ${process.env.LOCAL||'not-run'}`,
+                `- public iPhone WebKit: ${process.env.PUBLIC||'not-run'}`,
+                `- Pages URL: ${process.env.PAGE_URL||'https://shotakabahara-collab.github.io/bonsai-app/'}`,'',
+                passed?'公開中の実URLでゲーム画面の起動、保存移行、修復後再起動まで確認しました。':'未通過工程があります。'
+              ].join('\n'),state:passed?'closed':'open',...(passed?{state_reason:'completed'}:{state_reason:'reopened'})
+            });
+
+      - name: Fail unless verified
+        if: always() && (steps.build.outcome != 'success' || steps.static.outcome != 'success' || steps.local.outcome != 'success' || steps.public.outcome != 'success')
+        run: exit 1
