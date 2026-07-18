@@ -23,6 +23,20 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error?: Error }
 const root = document.getElementById('root');
 if (!root) throw new Error('BONSAI root element was not found');
 
+function resetScrollAfterTabChange(event: MouseEvent) {
+  const target = event.target instanceof Element ? event.target.closest('.bottom-nav button') : null;
+  if (!target) return;
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    });
+  });
+}
+
+document.addEventListener('click', resetScrollAfterTabChange, { capture: true });
+
 createRoot(root).render(
   <ErrorBoundary>
     <App />
