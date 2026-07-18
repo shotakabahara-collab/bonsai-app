@@ -1,0 +1,101 @@
+name: Vendor the verified high-resolution pine photograph
+
+on:
+  push:
+    branches:
+      - agent/highres-kuromatsu-v2
+    paths:
+      - '.github/workflows/vendor-highres-pine.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vendor-highres-pine
+  cancel-in-progress: true
+
+jobs:
+  vendor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/highres-kuromatsu-v2
+          fetch-depth: 0
+      - name: Download and validate the licensed master photograph
+        run: |
+          mkdir -p assets
+          url='https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/Japanese_Black_Pine_bonsai_135%2C_October_10%2C_2008.jpg/960px-Japanese_Black_Pine_bonsai_135%2C_October_10%2C_2008.jpg'
+          curl --fail --location --silent --show-error --retry 8 --retry-delay 2 --retry-all-errors --max-time 90 -o assets/kuromatsu-master.jpg "$url"
+          python3 <<'PY'
+          from pathlib import Path
+          data = Path('assets/kuromatsu-master.jpg').read_bytes()
+          if len(data) < 100_000:
+              raise SystemExit(f'master photograph is too small: {len(data)} bytes')
+          if not data.startswith(b'\xff\xd8') or not data.endswith(b'\xff\xd9'):
+              raise SystemExit('master photograph is not a complete JPEG')
+          print('vendored master photograph:', len(data), 'bytes')
+          PY
+      - name: Switch the application and offline cache to the local master
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          original = 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/Japanese_Black_Pine_bonsai_135%2C_October_10%2C_2008.jpg/960px-Japanese_Black_Pine_bonsai_135%2C_October_10%2C_2008.jpg'
+          photo = Path('photo-source-v2.js')
+          text = photo.read_text(encoding='utf-8')
+          remote_line = f"  const REMOTE = '{original}';"
+          local_lines = f"  const ORIGINAL = '{original}';\n  const REMOTE = './assets/kuromatsu-master.jpg';"
+          if local_lines not in text:
+              if remote_line not in text:
+                  raise SystemExit('photo source URL anchor missing')
+              text = text.replace(remote_line, local_lines, 1)
+          text = text.replace("image.currentSrc === REMOTE || image.src === REMOTE || image.src.includes('upload.wikimedia.org')", "image.currentSrc.includes('kuromatsu-master.jpg') || image.src.includes('kuromatsu-master.jpg') || image.src.includes('upload.wikimedia.org')")
+          text = text.replace("version: '2.1.0'", "version: '2.2.0'")
+          text = text.replace("remote: REMOTE,", "remote: ORIGINAL,\n    local: REMOTE,")
+          photo.write_text(text, encoding='utf-8')
+
+          sw = Path('sw.js')
+          sw.write_text("""const CACHE='bonsai-photo-v7-vendored-state-20260718';
+          const ASSETS=['./','./index.html','./manifest.webmanifest','./icon.svg','./tree-renderer.js','./photo-assets.js','./photo-source-v2.js','./assets/kuromatsu-master.jpg','./advanced-care.js','./advanced-care-bridge.js','./completion-core.js','./state-image-runtime.js','./judging-engine.js','./IMAGE_LICENSES.md'];
+          self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())));
+          self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
+          self.addEventListener('fetch',event=>{
+            if(event.request.method!=='GET')return;
+            const url=new URL(event.request.url);
+            if(url.origin!==location.origin)return;
+            event.respondWith(caches.match(event.request).then(hit=>hit||fetch(event.request).then(response=>{
+              if(response.ok){const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(event.request,copy));}
+              return response;
+            }).catch(()=>event.request.mode==='navigate'?caches.match('./index.html'):hit)));
+          });
+          """.replace('          ', ''), encoding='utf-8')
+
+          validation = Path('.github/workflows/validate-highres-photo.yml')
+          source = validation.read_text(encoding='utf-8')
+          source = source.replace("'bonsai-photo-v6-highres-state','photo-source-v2.js','upload.wikimedia.org',\"event.request.mode!=='cors'\"", "'bonsai-photo-v7-vendored-state','photo-source-v2.js','assets/kuromatsu-master.jpg'")
+          source = source.replace('bonsai-photo-v6-highres-state', 'bonsai-photo-v7-vendored-state')
+          source = source.replace("for(const token of ['photo-source-v2.js','upload.wikimedia.org','bonsai-photo-v5-highres-state'])", "for(const token of ['photo-source-v2.js','assets/kuromatsu-master.jpg','bonsai-photo-v7-vendored-state'])")
+          validation.write_text(source, encoding='utf-8')
+          PY
+      - name: Validate the self-contained candidate
+        run: |
+          node --check photo-source-v2.js
+          node --check state-image-runtime.js
+          node --check completion-core.js
+          node --check tests/highres-browser.mjs
+          grep -Fq "const REMOTE = './assets/kuromatsu-master.jpg'" photo-source-v2.js
+          grep -Fq 'assets/kuromatsu-master.jpg' sw.js
+          grep -Fq 'bonsai-photo-v7-vendored-state' sw.js
+          grep -Fq 'crossorigin="anonymous" referrerpolicy="no-referrer"' index.html
+      - name: Remove obsolete integration workflows and commit
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm -f .github/workflows/vendor-highres-pine.yml
+          git rm -f .github/workflows/apply-highres-photo-v2.yml || true
+          git rm -f .github/workflows/fix-validation-script-path.yml || true
+          git add assets/kuromatsu-master.jpg photo-source-v2.js sw.js .github/workflows/validate-highres-photo.yml index.html tests/highres-browser.mjs
+          git commit -m '高解像度黒松実写をアプリ内へ内蔵してオフライン対応'
+          git push origin HEAD:agent/highres-kuromatsu-v2
