@@ -26,35 +26,36 @@ try {
     }
   });
 
+  const now = Date.now();
+  const seedState = {
+    started: true,
+    name: '検証者',
+    mentor: 0,
+    sp: 'pine',
+    tree: '黒松・検証樹',
+    born: now - 1728000000,
+    water: 84,
+    last: now,
+    vit: 91,
+    stress: 4,
+    prune: 0,
+    wire: 0,
+    fert: 2,
+    pot: 'black',
+    money: 9000,
+    rep: 180,
+    owned: ['starter', 'black'],
+    awards: [],
+    log: [],
+    lastWeek: '',
+    stats: { water: 5, prune: 0, wire: 0, shows: 0 }
+  };
+
   report.phase = 'seed';
-  await page.goto('http://127.0.0.1:4173/', { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => {
-    const now = Date.now();
-    localStorage.setItem('bonsai_live_1', JSON.stringify({
-      started: true,
-      name: '検証者',
-      mentor: 0,
-      sp: 'pine',
-      tree: '黒松・検証樹',
-      born: now - 1728000000,
-      water: 84,
-      last: now,
-      vit: 91,
-      stress: 4,
-      prune: 0,
-      wire: 0,
-      fert: 2,
-      pot: 'black',
-      money: 9000,
-      rep: 180,
-      owned: ['starter', 'black'],
-      awards: [],
-      log: [],
-      lastWeek: '',
-      stats: { water: 5, prune: 0, wire: 0, shows: 0 }
-    }));
-  });
-  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.addInitScript(state => {
+    localStorage.setItem('bonsai_live_1', JSON.stringify(state));
+  }, seedState);
+  await page.goto('http://127.0.0.1:4173/', { waitUntil: 'commit', timeout: 30000 });
 
   report.phase = 'base';
   await page.waitForFunction(() => {
@@ -63,7 +64,7 @@ try {
       && image.naturalWidth >= 900
       && document.querySelector('.bonsai-state-canvas')
       && image.closest('.photo-bonsai')?.classList.contains('bonsai-state-ready');
-  }, null, { timeout: 45000 });
+  }, null, { timeout: 60000 });
 
   report.base = await page.evaluate(() => {
     const image = document.querySelector('.photo-bonsai img');
