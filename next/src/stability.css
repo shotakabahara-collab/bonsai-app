@@ -36,6 +36,10 @@
   height: 310px !important;
 }
 
+.offer-list .offer-purchase ~ .offer-purchase {
+  display: none !important;
+}
+
 @supports (-webkit-touch-callout: none) {
   .app-main,
   .page,
