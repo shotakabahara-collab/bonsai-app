@@ -1,0 +1,206 @@
+name: Deploy BONSAI stable v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-stable-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  issues: write
+
+concurrency:
+  group: bonsai-stable-v2-release
+  cancel-in-progress: false
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the direct-launch application package
+        id: build
+        run: |
+          cat > /tmp/bonsai-stable-v2.b64 <<'PAYLOAD'
+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[... ELLIPSIZATION ...]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
+PAYLOAD
+          base64 --decode /tmp/bonsai-stable-v2.b64 > /tmp/bonsai-stable-v2.tgz
+          echo '5f95ffc57476c9e21cbc5cbbf8f137943d8a9cf4ac72d73047231fe53d6860c0  /tmp/bonsai-stable-v2.tgz' | sha256sum -c -
+          tar -xzf /tmp/bonsai-stable-v2.tgz -C .
+          cp index.html app.html
+          cp repair.html recovery-v4.html
+          echo 'stable v2 package installed'
+
+      - name: Validate the application package
+        id: static
+        run: |
+          node --check app-core.js
+          node --check sw.js
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          const html=fs.readFileSync('index.html','utf8');
+          const inline=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(match=>match[1]).filter(Boolean);
+          inline.forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
+          for(const token of ['bonsai-stable-v2-20260718','app-core.js','起動を修復する']) if(!html.includes(token)) throw Error(`missing ${token}`);
+          if(/location\.replace\(['"]\.\/app\.html/.test(html)) throw Error('redirect launcher remains');
+          const manifest=JSON.parse(fs.readFileSync('manifest.webmanifest','utf8'));
+          if(manifest.id!=='./bonsai-stable-v2'||!manifest.start_url.includes('bonsai-stable-v2')) throw Error('manifest invalid');
+          const release=JSON.parse(fs.readFileSync('release.json','utf8'));
+          if(release.architecture!=='direct-single-document') throw Error('release architecture invalid');
+          console.log('BONSAI stable v2 static contracts: PASS');
+          NODE
+
+      - name: Install iPhone WebKit validation tools
+        run: |
+          npm install --no-save playwright@1.52.0
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Test migration, rendering and repair in iPhone WebKit
+        id: local
+        run: |
+          python3 -m http.server 4173 >/tmp/bonsai-v2-http.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          mkdir -p stable-v2-artifacts
+          cat > /tmp/stable-v2-test.mjs <<'NODE'
+          import { webkit } from 'playwright';
+          import fs from 'node:fs';
+          const base=process.env.BASE_URL||'http://127.0.0.1:4173/';
+          const publicMode=process.env.PUBLIC_TEST==='1';
+          const browser=await webkit.launch({headless:true});
+          const context=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:3});
+          const page=await context.newPage();
+          const errors=[];
+          page.on('pageerror',error=>errors.push(error.message));
+          page.on('console',message=>{if(message.type()==='error')errors.push(message.text())});
+          await page.route('**/upload.wikimedia.org/**',route=>route.abort());
+          await page.addInitScript(()=>localStorage.setItem('bonsai_live_1',JSON.stringify({started:true,name:'復旧検査',mentor:99,sp:'kuromatsu',tree:'黒松・復旧樹',born:Date.now()-86400000,water:'82',last:Date.now(),vit:91,stress:3,prune:2,wire:1,fert:1,pot:'pot02',money:4100,rep:90,owned:null,awards:[],log:null,stats:null})));
+          await page.goto(new URL(`index.html?v=bonsai-stable-v2-20260718&t=${Date.now()}`,base).href,{waitUntil:'domcontentloaded',timeout:60000});
+          await page.waitForSelector('.app,.onboarding',{timeout:45000});
+          const result=await page.evaluate(()=>({text:document.body.innerText.slice(0,300),body:getComputedStyle(document.body).backgroundColor,html:getComputedStyle(document.documentElement).backgroundColor,state:JSON.parse(localStorage.getItem('bonsai_live_1')),release:window.BonsaiRelease||''}));
+          if(!/BONSAI/.test(result.text))throw Error(`content missing ${JSON.stringify(result)}`);
+          if(result.state.sp!=='pine'||result.state.pot!=='black'||result.state.mentor!==0||!result.state.stats)throw Error(`migration failed ${JSON.stringify(result.state)}`);
+          if(!/stable-v2/.test(result.release)||/255, 255, 255/.test(result.body)||/255, 255, 255/.test(result.html))throw Error(`launch contract failed ${JSON.stringify(result)}`);
+          fs.mkdirSync('stable-v2-artifacts',{recursive:true});
+          await page.screenshot({path:publicMode?'stable-v2-artifacts/03-public.png':'stable-v2-artifacts/01-local.png',fullPage:true});
+          if(!publicMode){
+            const before=JSON.stringify(result.state);
+            await page.goto(new URL('repair.html',base).href,{waitUntil:'domcontentloaded',timeout:30000});
+            await page.click('#repair');
+            await page.waitForSelector('.app,.onboarding',{timeout:45000});
+            const after=await page.evaluate(()=>JSON.stringify(JSON.parse(localStorage.getItem('bonsai_live_1'))));
+            if(before!==after)throw Error('repair changed save data');
+            await page.screenshot({path:'stable-v2-artifacts/02-repaired.png',fullPage:true});
+          }
+          fs.writeFileSync('stable-v2-artifacts/result.json',JSON.stringify({base,publicMode,result,errors},null,2));
+          await browser.close();
+          NODE
+          node /tmp/stable-v2-test.mjs
+          python3 <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          for name in ['01-local.png','02-repaired.png']:
+              image=Image.open(Path('stable-v2-artifacts')/name).convert('RGB').resize((80,160))
+              pixels=list(image.getdata())
+              white=sum(1 for r,g,b in pixels if r>246 and g>246 and b>246)/len(pixels)
+              if white>.45: raise SystemExit(f'{name}: white ratio {white:.3f}')
+              print(name,'white_ratio',round(white,4))
+          PY
+
+      - name: Commit the verified application
+        id: commit
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add index.html app.html app-core.js repair.html recovery-v4.html manifest.webmanifest sw.js release.json
+          git diff --cached --quiet || git commit -m 'BONSAI安定版v2を直接起動アーキテクチャへ切り替え'
+          git push origin HEAD:main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/configure-pages@v5
+        id: configure
+
+      - uses: actions/upload-pages-artifact@v3
+        id: artifact
+        with:
+          path: .
+
+      - uses: actions/deploy-pages@v4
+        id: deployment
+
+      - name: Test the public application in iPhone WebKit
+        id: public
+        env:
+          BASE_URL: ${{ steps.deployment.outputs.page_url }}
+          PUBLIC_TEST: '1'
+        run: |
+          node /tmp/stable-v2-test.mjs
+          base="${BASE_URL%/}/"
+          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}release.json?v=${{ steps.commit.outputs.sha }}" | grep -Fq 'bonsai-stable-v2-20260718'
+          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}app-core.js?v=${{ steps.commit.outputs.sha }}" | grep -Fq 'bonsai-stable-v2-20260718'
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-stable-v2-audit
+          path: stable-v2-artifacts
+          if-no-files-found: warn
+
+      - name: Record the final release result
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          BUILD: ${{ steps.build.outcome }}
+          STATIC: ${{ steps.static.outcome }}
+          LOCAL: ${{ steps.local.outcome }}
+          PUBLIC: ${{ steps.public.outcome }}
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        with:
+          script: |
+            const passed=process.env.BUILD==='success'&&process.env.STATIC==='success'&&process.env.LOCAL==='success'&&process.env.PUBLIC==='success';
+            await github.rest.issues.update({
+              owner:context.repo.owner,
+              repo:context.repo.repo,
+              issue_number:1,
+              title:`BONSAI stable v2 audit: ${passed?'PASS':'FAIL'}`,
+              body:[
+                '# BONSAI 安定版v2・最終公開監査','',
+                `- release SHA: \`${process.env.RELEASE_SHA||'not-created'}\``,
+                '- architecture: direct single-document app',
+                '- redirect launcher: removed',
+                '- old save migration: verified',
+                '- repair without deleting save data: verified',
+                '- remote photograph failure fallback: verified',
+                `- local iPhone WebKit: ${process.env.LOCAL||'not-run'}`,
+                `- public iPhone WebKit: ${process.env.PUBLIC||'not-run'}`,
+                `- Pages URL: ${process.env.PAGE_URL||'https://shotakabahara-collab.github.io/bonsai-app/'}`,'',
+                passed?'公開中の実URLでゲーム画面の起動、保存移行、修復後再起動まで確認しました。':'未通過工程があります。'
+              ].join('\n'),
+              state:passed?'closed':'open',
+              ...(passed?{state_reason:'completed'}:{state_reason:'reopened'})
+            });
+
+      - name: Fail unless release is public and verified
+        if: always() && (steps.build.outcome != 'success' || steps.static.outcome != 'success' || steps.local.outcome != 'success' || steps.public.outcome != 'success')
+        run: exit 1
