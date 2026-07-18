@@ -40,15 +40,34 @@ await page.addInitScript(() => {
 });
 
 async function openCommitted(url) {
-  // The app contains high-resolution embedded photography. WebKit can finish
-  // rendering before it emits DOMContentLoaded, so the first committed response
-  // plus the visible application shell is the correct launch contract.
   await page.goto(url, { waitUntil: 'commit', timeout: 30000 });
+}
+
+async function waitForPlayable(label) {
+  try {
+    await page.waitForSelector('.app,.onboard', { timeout: 45000 });
+  } catch (error) {
+    const diagnostic = await page.evaluate(() => ({
+      readyState: document.readyState,
+      title: document.title,
+      text: document.body?.innerText?.slice(0, 1000) || '',
+      root: document.getElementById('root')?.innerHTML?.slice(0, 2000) || '',
+      release: window.BonsaiRelease || '',
+      bootFailure: typeof window.__BonsaiLaunchFailure,
+      advanced: typeof window.BonsaiAdvancedCare,
+      stateRuntime: typeof window.BonsaiStateRuntime,
+      scripts: [...document.scripts].map(script => script.src || script.id || 'inline')
+    }));
+    fs.mkdirSync('stable-launch-artifacts', { recursive: true });
+    fs.writeFileSync('stable-launch-artifacts/failure-diagnostic.json', JSON.stringify({ label, diagnostic, errors }, null, 2));
+    try { await page.screenshot({ path: 'stable-launch-artifacts/99-launch-failure.png', fullPage: true }); } catch {}
+    throw new Error(`${label} did not render: ${JSON.stringify({ diagnostic, errors })}`);
+  }
 }
 
 const target = new URL(`index.html?release=stable-launch-v1-20260718&t=${Date.now()}`, baseURL).href;
 await openCommitted(target);
-await page.waitForSelector('.app,.onboard', { timeout: 90000 });
+await waitForPlayable('initial launch');
 
 const initial = await page.evaluate(() => ({
   text: document.body.innerText.slice(0, 260),
@@ -75,7 +94,7 @@ if (!publicMode) {
   await openCommitted(new URL('repair.html', baseURL).href);
   await page.waitForSelector('#repair', { timeout: 30000 });
   await page.click('#repair');
-  await page.waitForSelector('.app,.onboard', { timeout: 90000 });
+  await waitForPlayable('repaired launch');
   const after = await page.evaluate(() => JSON.parse(localStorage.getItem('bonsai_live_1')));
   for (const key of ['name', 'tree', 'sp', 'pot', 'money', 'rep', 'prune', 'wire']) {
     if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) throw new Error(`repair changed ${key}`);
@@ -83,8 +102,5 @@ if (!publicMode) {
   await page.screenshot({ path: 'stable-launch-artifacts/02-repaired-app.png', fullPage: true });
 }
 
-// The visible application, migrated state, dark background and repair round-trip are
-// authoritative. Canvas/image warnings are retained in the artifact for diagnosis,
-// but do not fail a launch that demonstrably rendered and preserved the work.
 fs.writeFileSync('stable-launch-artifacts/result.json', JSON.stringify({ baseURL, publicMode, initial, errors }, null, 2));
 await browser.close();
