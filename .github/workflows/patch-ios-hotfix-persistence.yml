@@ -19,6 +19,7 @@ jobs:
           ref: main
       - name: Persist the normalized state before first render
         run: |
+          echo 'Patching normalized-state persistence v1'
           python3 <<'PY'
           from pathlib import Path
           path = Path('.github/workflows/hotfix-ios-white-screen.yml')
