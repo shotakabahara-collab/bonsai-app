@@ -1,0 +1,195 @@
+name: Deploy BONSAI React production
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'next/**'
+      - '.github/workflows/deploy-react-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  issues: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+      - name: Install exact dependencies
+        working-directory: next
+        run: npm ci
+      - name: Typecheck and production build
+        working-directory: next
+        run: npm run build
+      - name: Install iPhone WebKit and image audit tools
+        working-directory: next
+        run: |
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+      - name: Run local iPhone migration, care and artwork audit
+        run: |
+          cd next
+          npm run preview >/tmp/bonsai-react-preview.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for i in $(seq 1 80); do curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break; sleep .25; done
+          npm run test:smoke
+      - name: Reject blank or hidden iPhone captures
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageStat
+          import json
+
+          root = Path('next/test-artifacts')
+          results = {}
+          for name in ('01-grow-visible.png', '03-show-visible.png'):
+              path = root / name
+              if not path.exists() or path.stat().st_size < 300_000:
+                  raise SystemExit(f'{name}: missing or suspiciously small')
+              image = Image.open(path).convert('RGB')
+              width, height = image.size
+              crop = image.crop((0, int(height * .12), width, int(height * .78))).resize((96, 144)).convert('L')
+              stat = ImageStat.Stat(crop)
+              pixels = list(crop.getdata())
+              bright = sum(value > 45 for value in pixels) / len(pixels)
+              results[name] = {'size':[width,height], 'bytes':path.stat().st_size, 'mean':stat.mean[0], 'variance':stat.var[0], 'brightRatio':bright}
+              if stat.mean[0] < 18 or stat.var[0] < 260 or bright < .055:
+                  raise SystemExit(f'{name}: blank central artwork {results[name]}')
+          (root / 'visual-audit.json').write_text(json.dumps(results, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(results, ensure_ascii=False))
+          PY
+      - uses: actions/configure-pages@v5
+        id: configure
+      - uses: actions/upload-pages-artifact@v3
+        id: pages-artifact
+        with:
+          path: next/dist
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-react-local-final-audit
+          path: next/test-artifacts
+          if-no-files-found: error
+
+  deploy:
+    needs: build-and-audit
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy verified production bundle
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  public-iphone-audit:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+      - name: Install public audit dependencies
+        working-directory: next
+        run: |
+          npm ci
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+      - name: Run the same interaction audit against GitHub Pages
+        working-directory: next
+        env:
+          BONSAI_BASE_URL: ${{ needs.deploy.outputs.page_url }}
+          BONSAI_PUBLIC: '1'
+        run: npm run test:smoke
+      - name: Verify public files and visible captures
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          base="${PAGE_URL%/}/"
+          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}index.html?v=${RELEASE_SHA}" | grep -Fq '<title>BONSAI</title>'
+          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}photo-assets.js?v=${RELEASE_SHA}" | grep -Fq 'react-kuromatsu-photoreal-v1'
+          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}assets/kuromatsu/base/black.webp?v=${RELEASE_SHA}" -o /tmp/live-black.webp
+          test "$(wc -c < /tmp/live-black.webp)" -gt 300000
+          python <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageStat
+          import json
+
+          root = Path('next/test-artifacts')
+          results = {}
+          for name in ('01-grow-visible.png', '03-show-visible.png'):
+              path = root / name
+              if not path.exists() or path.stat().st_size < 300_000:
+                  raise SystemExit(f'{name}: public screenshot missing or suspiciously small')
+              image = Image.open(path).convert('RGB')
+              width, height = image.size
+              crop = image.crop((0, int(height * .12), width, int(height * .78))).resize((96, 144)).convert('L')
+              stat = ImageStat.Stat(crop)
+              pixels = list(crop.getdata())
+              bright = sum(value > 45 for value in pixels) / len(pixels)
+              results[name] = {'size':[width,height], 'bytes':path.stat().st_size, 'mean':stat.mean[0], 'variance':stat.var[0], 'brightRatio':bright}
+              if stat.mean[0] < 18 or stat.var[0] < 260 or bright < .055:
+                  raise SystemExit(f'{name}: public blank central artwork {results[name]}')
+          (root / 'public-visual-audit.json').write_text(json.dumps(results, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(results, ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-react-public-final-audit
+          path: next/test-artifacts
+          if-no-files-found: error
+      - name: Record production completion audit
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+          AUDIT: ${{ job.status }}
+        with:
+          script: |
+            const passed = process.env.AUDIT === 'success';
+            const page = (process.env.PAGE_URL || 'https://shotakabahara-collab.github.io/bonsai-app/').replace(/\/$/, '') + '/';
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1,
+              title: `BONSAI React production audit: ${passed ? 'PASS' : 'FAIL'}`,
+              body: [
+                '# BONSAI React完成版・本番監査', '',
+                `- release SHA: \`${context.sha}\``,
+                '- architecture: React 19 + TypeScript + Vite',
+                '- old-save migration: verified',
+                '- irreversible part pruning persistence: verified',
+                '- local 390×844 / DPR 3 WebKit: verified',
+                '- bundled 900×1500 black-pine photograph: verified',
+                '- grow/show viewport pixel audit: verified',
+                `- public 390×844 / DPR 3 WebKit: ${process.env.AUDIT || 'not-run'}`,
+                `- Pages URL: ${page}`, '',
+                passed ? '公開中の実URLで起動、保存移行、操作、実写作品表示、大会画面まで確認しました。' : '公開後監査に未通過項目があります。'
+              ].join('\n'),
+              state: passed ? 'closed' : 'open',
+              ...(passed ? { state_reason: 'completed' } : { state_reason: 'reopened' })
+            });
+      - name: Fail when the public audit did not pass
+        if: failure()
+        run: exit 1

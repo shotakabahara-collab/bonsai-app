@@ -1,0 +1,89 @@
+name: Validate BONSAI React rebuild
+
+on:
+  push:
+    branches: [rebuild/react-v1, rebuild/react-v2]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bonsai-react-rebuild-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-webkit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+      - name: Install dependencies
+        working-directory: next
+        run: npm ci
+      - name: Typecheck and build
+        working-directory: next
+        run: npm run build
+      - name: Install WebKit and visual audit tools
+        working-directory: next
+        run: |
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+      - name: Run iPhone-sized WebKit smoke test
+        run: |
+          cd next
+          npm run preview >/tmp/bonsai-preview.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break; sleep .25; done
+          npm run test:smoke
+      - name: Verify the captured iPhone viewport is not blank
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageStat
+          import json
+
+          root = Path('next/test-artifacts')
+          results = {}
+          for name in ('01-grow-visible.png', '03-show-visible.png'):
+              path = root / name
+              if not path.exists() or path.stat().st_size < 300_000:
+                  raise SystemExit(f'{name}: screenshot is missing or suspiciously small ({path.stat().st_size if path.exists() else 0})')
+              image = Image.open(path).convert('RGB')
+              width, height = image.size
+              crop = image.crop((0, int(height * .12), width, int(height * .78))).resize((96, 144)).convert('L')
+              stat = ImageStat.Stat(crop)
+              pixels = list(crop.getdata())
+              bright_ratio = sum(value > 45 for value in pixels) / len(pixels)
+              metrics = {
+                  'size': [width, height],
+                  'bytes': path.stat().st_size,
+                  'mean': stat.mean[0],
+                  'variance': stat.var[0],
+                  'brightRatio': bright_ratio,
+              }
+              results[name] = metrics
+              if stat.mean[0] < 18 or stat.var[0] < 260 or bright_ratio < .055:
+                  raise SystemExit(f'{name}: blank/hidden central artwork detected: {metrics}')
+          (root / 'visual-audit.json').write_text(json.dumps(results, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(results, ensure_ascii=False))
+          PY
+      - name: Upload visual and migration audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-react-rebuild-audit
+          path: next/test-artifacts
+          if-no-files-found: warn
+      - name: Upload production bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-react-dist
+          path: next/dist

@@ -1,0 +1,17 @@
+{
+  "id": "/bonsai-app/",
+  "name": "BONSAI — 育てた時間が、作品になる。",
+  "short_name": "BONSAI",
+  "description": "実写状態画像を核にした盆栽作品制作シミュレーション",
+  "start_url": "/bonsai-app/",
+  "scope": "/bonsai-app/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#07100b",
+  "theme_color": "#07100b",
+  "icons": [
+    {"src":"/bonsai-app/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ],
+  "categories": ["games", "lifestyle"],
+  "lang": "ja"
+}

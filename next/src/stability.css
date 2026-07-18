@@ -1,0 +1,48 @@
+.page {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+  will-change: auto !important;
+}
+
+.bonsai-stage {
+  height: 460px !important;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(236, 231, 216, .12), transparent 48%),
+    linear-gradient(180deg, #26352b, #0b130e) !important;
+}
+
+.bonsai-photo {
+  object-fit: contain !important;
+  object-position: center center !important;
+  padding: 5px 0 !important;
+  background: rgba(4, 9, 6, .22);
+}
+
+.show-card > .bonsai-stage {
+  height: 430px !important;
+}
+
+.memorial-hero .bonsai-stage {
+  height: 420px !important;
+}
+
+.wall-mode .bonsai-stage,
+.wall-stage {
+  height: min(82vh, 920px) !important;
+}
+
+.archive-card .bonsai-stage {
+  height: 310px !important;
+}
+
+@supports (-webkit-touch-callout: none) {
+  .app-main,
+  .page,
+  .artwork-card,
+  .show-card,
+  .bonsai-stage {
+    transform: none !important;
+    -webkit-transform: none !important;
+  }
+}
