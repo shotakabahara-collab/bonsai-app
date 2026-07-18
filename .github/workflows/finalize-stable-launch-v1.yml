@@ -40,86 +40,119 @@ jobs:
           python-version: '3.12'
 
       - name: Build direct-launch stable package
+        id: build
+        continue-on-error: true
         run: |
-          python scripts/finalize_stable_launch.py
-          git checkout -- .github/workflows/pages.yml
+          {
+            python scripts/finalize_stable_launch.py
+            git checkout -- .github/workflows/pages.yml
+          } > /tmp/stable-build.log 2>&1
 
       - name: Validate syntax and launch contracts
+        id: static
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
         run: |
-          python -m py_compile scripts/finalize_stable_launch.py
-          node --check tests/stable_launch_webkit.mjs
-          node --check sw.js
-          for file in photo-assets.js tree-renderer.js advanced-care.js advanced-care-bridge.js completion-core.js judging-engine.js state-image-runtime.js; do node --check "$file"; done
-          node <<'NODE'
-          const fs=require('fs'),vm=require('vm');
-          const html=fs.readFileSync('index.html','utf8');
-          for(const token of ['stable-launch-v1-20260718','normalizeSavedState','bonsai-stable-worker','advanced-care.js','state-image-runtime.js']) if(!html.includes(token)) throw Error(`missing ${token}`);
-          if(html.includes('location.replace(\'./app.html')) throw Error('redirect launcher remains');
-          const inline=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(match=>match[1]).filter(Boolean);
-          inline.forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
-          const manifest=JSON.parse(fs.readFileSync('manifest.webmanifest','utf8'));
-          if(manifest.id!=='./stable-launch-v1'||!manifest.start_url.includes('stable-launch-v1')) throw Error('manifest launch contract invalid');
-          const worker=fs.readFileSync('sw.js','utf8');
-          if(!worker.includes("event.request.mode==='navigate'")||!worker.includes("cache:'no-store'")) throw Error('network-first navigation missing');
-          console.log('stable launch static contracts: PASS');
-          NODE
+          {
+            python -m py_compile scripts/finalize_stable_launch.py
+            node --check tests/stable_launch_webkit.mjs
+            node --check sw.js
+            for file in photo-assets.js tree-renderer.js advanced-care.js advanced-care-bridge.js completion-core.js judging-engine.js state-image-runtime.js; do node --check "$file"; done
+            node <<'NODE'
+            const fs=require('fs'),vm=require('vm');
+            const html=fs.readFileSync('index.html','utf8');
+            for(const token of ['stable-launch-v1-20260718','normalizeSavedState','bonsai-stable-worker','advanced-care.js','state-image-runtime.js']) if(!html.includes(token)) throw Error(`missing ${token}`);
+            if(html.includes('location.replace(\'./app.html')) throw Error('redirect launcher remains');
+            const inline=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(match=>match[1]).filter(Boolean);
+            inline.forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
+            const manifest=JSON.parse(fs.readFileSync('manifest.webmanifest','utf8'));
+            if(manifest.id!=='./stable-launch-v1'||!manifest.start_url.includes('stable-launch-v1')) throw Error('manifest launch contract invalid');
+            const worker=fs.readFileSync('sw.js','utf8');
+            if(!worker.includes("event.request.mode==='navigate'")||!worker.includes("cache:'no-store'")) throw Error('network-first navigation missing');
+            console.log('stable launch static contracts: PASS');
+            NODE
+          } > /tmp/stable-static.log 2>&1
 
       - name: Install iPhone WebKit tools
+        id: install
+        if: steps.static.outcome == 'success'
+        continue-on-error: true
         run: |
-          npm install --no-save playwright@1.52.0
-          npx playwright install --with-deps webkit
-          python -m pip install --disable-pip-version-check pillow
+          {
+            npm install --no-save playwright@1.52.0
+            npx playwright install --with-deps webkit
+            python -m pip install --disable-pip-version-check pillow
+          } > /tmp/stable-install.log 2>&1
 
       - name: Test legacy save migration, repair and visible launch
+        id: local
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
         run: |
-          python3 -m http.server 4173 >/tmp/bonsai-stable-http.log 2>&1 &
-          server=$!
-          trap 'kill $server' EXIT
-          BONSAI_BASE_URL=http://127.0.0.1:4173/ node tests/stable_launch_webkit.mjs
-          python3 <<'PY'
-          from pathlib import Path
-          from PIL import Image
-          for name in ['01-migrated-app.png','02-repaired-app.png']:
-              path=Path('stable-launch-artifacts')/name
-              image=Image.open(path).convert('RGB').resize((80,160))
-              pixels=list(image.getdata())
-              white=sum(1 for r,g,b in pixels if r>246 and g>246 and b>246)/len(pixels)
-              if white>.55: raise SystemExit(f'{name}: white-screen ratio {white:.3f}')
-              print(name,'white_ratio',round(white,4))
-          PY
+          {
+            python3 -m http.server 4173 >/tmp/bonsai-stable-http.log 2>&1 &
+            server=$!
+            trap 'kill $server' EXIT
+            BONSAI_BASE_URL=http://127.0.0.1:4173/ node tests/stable_launch_webkit.mjs
+            python3 <<'PY'
+            from pathlib import Path
+            from PIL import Image
+            for name in ['01-migrated-app.png','02-repaired-app.png']:
+                path=Path('stable-launch-artifacts')/name
+                image=Image.open(path).convert('RGB').resize((80,160))
+                pixels=list(image.getdata())
+                white=sum(1 for r,g,b in pixels if r>246 and g>246 and b>246)/len(pixels)
+                if white>.55: raise SystemExit(f'{name}: white-screen ratio {white:.3f}')
+                print(name,'white_ratio',round(white,4))
+            PY
+          } > /tmp/stable-local.log 2>&1
 
       - name: Commit verified stable package
         id: commit
+        if: steps.local.outcome == 'success'
+        continue-on-error: true
         run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add index.html app.html offline-app.html repair.html recovery-v4.html manifest.webmanifest sw.js release.json
-          git diff --cached --quiet || git commit -m 'BONSAIを単一画面・保存保持・network-first起動へ最終統合'
-          git push origin HEAD:main
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          {
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add index.html app.html offline-app.html repair.html recovery-v4.html manifest.webmanifest sw.js release.json
+            git diff --cached --quiet || git commit -m 'BONSAIを単一画面・保存保持・network-first起動へ最終統合'
+            git push origin HEAD:main
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          } > /tmp/stable-commit.log 2>&1
 
       - uses: actions/configure-pages@v5
         id: configure
+        if: steps.commit.outcome == 'success'
+        continue-on-error: true
 
       - uses: actions/upload-pages-artifact@v3
         id: artifact
+        if: steps.configure.outcome == 'success'
+        continue-on-error: true
         with:
           path: .
 
       - uses: actions/deploy-pages@v4
         id: deployment
+        if: steps.artifact.outcome == 'success'
+        continue-on-error: true
 
       - name: Test the deployed app in iPhone WebKit
         id: public
+        if: steps.deployment.outcome == 'success'
+        continue-on-error: true
         env:
           BONSAI_BASE_URL: ${{ steps.deployment.outputs.page_url }}
           BONSAI_PUBLIC: '1'
           RELEASE_SHA: ${{ steps.commit.outputs.sha }}
         run: |
-          node tests/stable_launch_webkit.mjs
-          base="${BONSAI_BASE_URL%/}/"
-          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}release.json?v=${RELEASE_SHA}" | grep -Fq 'stable-launch-v1-20260718'
-          curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}repair.html?v=${RELEASE_SHA}" | grep -Fq '起動キャッシュを修復'
+          {
+            node tests/stable_launch_webkit.mjs
+            base="${BONSAI_BASE_URL%/}/"
+            curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}release.json?v=${RELEASE_SHA}" | grep -Fq 'stable-launch-v1-20260718'
+            curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}repair.html?v=${RELEASE_SHA}" | grep -Fq '起動キャッシュを修復'
+          } > /tmp/stable-public.log 2>&1
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -132,12 +165,27 @@ jobs:
         if: always()
         uses: actions/github-script@v7
         env:
+          BUILD: ${{ steps.build.outcome }}
+          STATIC: ${{ steps.static.outcome }}
+          INSTALL: ${{ steps.install.outcome }}
+          LOCAL: ${{ steps.local.outcome }}
+          COMMIT: ${{ steps.commit.outcome }}
+          CONFIGURE: ${{ steps.configure.outcome }}
+          ARTIFACT: ${{ steps.artifact.outcome }}
+          DEPLOY: ${{ steps.deployment.outcome }}
           PUBLIC: ${{ steps.public.outcome }}
           RELEASE_SHA: ${{ steps.commit.outputs.sha }}
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
         with:
           script: |
-            const passed=process.env.PUBLIC==='success';
+            const fs=require('fs');
+            const names=['build','static','install','local','commit','public'];
+            const logs=names.map(name=>{
+              try{return `### ${name}\n\`\`\`text\n${fs.readFileSync(`/tmp/stable-${name}.log`,'utf8').slice(-3000)}\n\`\`\``}
+              catch{return `### ${name}\n(no log)`}
+            }).join('\n\n');
+            const values={build:process.env.BUILD,static:process.env.STATIC,install:process.env.INSTALL,local:process.env.LOCAL,commit:process.env.COMMIT,configure:process.env.CONFIGURE,artifact:process.env.ARTIFACT,deploy:process.env.DEPLOY,public:process.env.PUBLIC};
+            const passed=Object.values(values).every(value=>value==='success');
             await github.rest.issues.update({
               owner:context.repo.owner,
               repo:context.repo.repo,
@@ -146,19 +194,14 @@ jobs:
               body:[
                 '# BONSAI 安定起動・最終公開監査','',
                 `- release SHA: \`${process.env.RELEASE_SHA||'not-created'}\``,
-                '- architecture: single playable index document',
-                '- old-save normalization: enabled',
-                '- repair without deleting save data: enabled',
-                '- navigation: network-first; offline app fallback',
-                '- local iPhone WebKit migration/repair test: success',
-                `- public iPhone WebKit test: ${process.env.PUBLIC||'not-run'}`,
+                ...Object.entries(values).map(([key,value])=>`- ${key}: ${value||'not-run'}`),
                 `- Pages URL: ${process.env.PAGE_URL||'https://shotakabahara-collab.github.io/bonsai-app/'}`,'',
-                passed?'公開中の実URLでゲーム画面の起動まで確認しました。':'公開検査が完了していません。'
+                logs,'',passed?'公開中の実URLでゲーム画面の起動まで確認しました。':'失敗工程のログを上に記録しました。'
               ].join('\n'),
               state:passed?'closed':'open',
               ...(passed?{state_reason:'completed'}:{state_reason:'reopened'})
             });
 
-      - name: Fail unless public launch passes
-        if: always() && steps.public.outcome != 'success'
+      - name: Fail unless every launch stage passes
+        if: always() && (steps.build.outcome != 'success' || steps.static.outcome != 'success' || steps.install.outcome != 'success' || steps.local.outcome != 'success' || steps.commit.outcome != 'success' || steps.configure.outcome != 'success' || steps.artifact.outcome != 'success' || steps.deployment.outcome != 'success' || steps.public.outcome != 'success')
         run: exit 1
