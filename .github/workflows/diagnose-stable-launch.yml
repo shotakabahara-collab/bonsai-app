@@ -96,17 +96,13 @@ jobs:
       - name: Commit diagnostic only
         if: always()
         run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          cp STABLE_LAUNCH_DIAGNOSTIC.md /tmp/STABLE_LAUNCH_DIAGNOSTIC.md
           git reset --hard HEAD
           git clean -fd
-          # Restore the diagnostic after cleaning generated files.
-          git show HEAD:STABLE_LAUNCH_DIAGNOSTIC.md >/tmp/old-diagnostic 2>/dev/null || true
-          {
-            echo '# BONSAI stable launch diagnostic'
-            echo
-            echo '- Diagnostic workflow completed; see the Actions run if this placeholder remains.'
-          } > STABLE_LAUNCH_DIAGNOSTIC.md
+          git pull --rebase origin main
+          cp /tmp/STABLE_LAUNCH_DIAGNOSTIC.md STABLE_LAUNCH_DIAGNOSTIC.md
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add STABLE_LAUNCH_DIAGNOSTIC.md
           git diff --cached --quiet || git commit -m '安定起動最終統合の診断結果を記録'
           git push origin HEAD:main
