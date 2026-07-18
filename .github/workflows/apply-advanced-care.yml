@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'advanced-care.js'
+      - 'advanced-care-bridge.js'
       - '.github/workflows/apply-advanced-care.yml'
   workflow_dispatch:
 
@@ -25,34 +26,41 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Connect advanced-care module
+      - name: Connect advanced-care modules
         run: |
           python3 <<'PY'
           from pathlib import Path
 
           path = Path('index.html')
           text = path.read_text(encoding='utf-8')
-          tag = '<script src="advanced-care.js"></script>'
-          if tag not in text:
+          care = '<script src="advanced-care.js"></script>'
+          bridge = '<script src="advanced-care-bridge.js"></script>'
+          if care not in text:
               if '</body>' in text:
-                  text = text.replace('</body>', tag + '</body>', 1)
+                  text = text.replace('</body>', care + bridge + '</body>', 1)
               elif '</html>' in text:
-                  text = text.replace('</html>', tag + '</html>', 1)
+                  text = text.replace('</html>', care + bridge + '</html>', 1)
               else:
-                  text += tag
+                  text += care + bridge
+          elif bridge not in text:
+              text = text.replace(care, care + bridge, 1)
           path.write_text(text, encoding='utf-8')
           PY
-      - name: Validate module and irreversible actions
+      - name: Validate modules and irreversible actions
         run: |
           node --check advanced-care.js
+          node --check advanced-care-bridge.js
           node <<'NODE'
           const fs=require('fs'),vm=require('vm');
           const html=fs.readFileSync('index.html','utf8');
-          if(!html.includes('<script src="advanced-care.js"></script>')) throw Error('advanced-care.js is not connected');
+          for(const name of ['advanced-care.js','advanced-care-bridge.js']){
+            if(!html.includes(`<script src="${name}"></script>`)) throw Error(`${name} is not connected`);
+          }
           const inline=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
             .map(match=>match[1]).filter(code=>code.trim());
           inline.forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
           vm.runInThisContext(fs.readFileSync('advanced-care.js','utf8'),{filename:'advanced-care.js'});
+          vm.runInThisContext(fs.readFileSync('advanced-care-bridge.js','utf8'),{filename:'advanced-care-bridge.js'});
           const A=globalThis.BonsaiAdvancedCare;
           let s=A.migrateState({started:true,sp:'pine',born:Date.now()-1000000,last:Date.now(),water:80,vit:92,stress:0,money:5000,rep:150,stats:{water:0,prune:0,wire:0,shows:0},log:[]});
           let r=A.applyAction(s,'first_left','prune_medium'); if(!r.ok) throw Error(r.message); s=r.state;
@@ -71,13 +79,16 @@ jobs:
           trap 'kill $server' EXIT
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4173/ >/tmp/index.html && break; sleep .2; done
           grep -Fq 'advanced-care.js' /tmp/index.html
+          grep -Fq 'advanced-care-bridge.js' /tmp/index.html
           curl -fsS http://127.0.0.1:4173/advanced-care.js | grep -Fq 'BonsaiAdvancedCare'
+          curl -fsS http://127.0.0.1:4173/advanced-care-bridge.js | grep -Fq 'bonsaiAdvancedBridge'
           curl -fsS http://127.0.0.1:4173/sw.js | grep -Fq 'advanced-care.js'
+          curl -fsS http://127.0.0.1:4173/sw.js | grep -Fq 'advanced-care-bridge.js'
       - name: Commit integrated application
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add index.html
           git diff --cached --quiet && exit 0
-          git commit -m '部位別手入れをゲーム画面へ接続'
+          git commit -m '既存剪定針金を部位指定へ完全統合'
           git push origin HEAD:main
