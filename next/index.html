@@ -19,6 +19,23 @@
   </head>
   <body>
     <div id="root"><main class="boot-shell"><strong>BONSAI</strong><span>作品を読み込んでいます</span><div class="boot-line"></div></main></div>
+    <script>
+      (() => {
+        try {
+          const key = 'bonsai_live_1';
+          const raw = localStorage.getItem(key);
+          if (!raw) return;
+          const state = JSON.parse(raw);
+          const mentor = Number(state?.mentor);
+          if (!Number.isInteger(mentor) || mentor < 0 || mentor > 6) {
+            state.mentor = 0;
+            localStorage.setItem(key, JSON.stringify(state));
+          }
+        } catch (error) {
+          console.warn('[BONSAI legacy preflight]', error);
+        }
+      })();
+    </script>
     <script src="%BASE_URL%photo-assets.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
