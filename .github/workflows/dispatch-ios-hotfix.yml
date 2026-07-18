@@ -15,10 +15,10 @@ jobs:
   dispatch:
     runs-on: ubuntu-latest
     steps:
-      - name: Start the verified iPhone recovery workflow
+      - name: Start normalized-state patch before the recovery build
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          echo 'Dispatching iPhone recovery build v1'
-          gh workflow run hotfix-ios-white-screen.yml --repo "$REPOSITORY" --ref main
+          echo 'Dispatching normalized-state patch before iPhone recovery build'
+          gh workflow run patch-ios-hotfix-persistence.yml --repo "$REPOSITORY" --ref main
