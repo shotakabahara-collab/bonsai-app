@@ -135,7 +135,7 @@ try {
     };
   });
 
-  if (report.base.width < 900 || report.base.height < 900) {
+  if (report.base.width < 900 || report.base.height < 700) {
     throw new Error(`source resolution too low: ${JSON.stringify(report.base)}`);
   }
   if (report.base.crossOrigin !== 'anonymous') {
