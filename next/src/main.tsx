@@ -1,9 +1,11 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App, { RecoveryPanel } from './App';
+import { CompletionLayer } from './CompletionLayer';
 import { registerServiceWorker } from './storage';
 import './styles.css';
 import './stability.css';
+import './completion-layer.css';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error?: Error }> {
   state: { error?: Error } = {};
@@ -37,10 +39,12 @@ function resetScrollAfterTabChange(event: MouseEvent) {
 }
 
 document.addEventListener('click', resetScrollAfterTabChange, { capture: true });
+(window as Window & { BonsaiRelease?: string }).BonsaiRelease = 'bonsai-react-production-v1-20260718';
 
 createRoot(root).render(
   <ErrorBoundary>
     <App />
+    <CompletionLayer />
   </ErrorBoundary>
 );
 
