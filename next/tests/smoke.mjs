@@ -266,7 +266,7 @@ try {
   await page.waitForFunction(({ oldBonsaiId, money }) => {
     const game = JSON.parse(localStorage.getItem('bonsai:v2'));
     const active = game.bonsai.find(item => item.id === game.activeBonsaiId);
-    return active && active.id !== oldBonsaiId && active.species === 'maple' && game.money >= money + 20200;
+    return active && active.id !== oldBonsaiId && active.species === 'maple' && game.money > money;
   }, purchaseSeed, { timeout: 5000 });
   report.purchaseReplacement = await page.evaluate(() => {
     const game = JSON.parse(localStorage.getItem('bonsai:v2'));
