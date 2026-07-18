@@ -1,0 +1,78 @@
+name: Apply state image runtime
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'state-image-runtime.js'
+      - '.github/workflows/apply-state-image-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: state-image-runtime
+  cancel-in-progress: true
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Connect state image runtime
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('index.html')
+          text = path.read_text(encoding='utf-8')
+          tag = '<script src="state-image-runtime.js"></script>'
+          if tag not in text:
+              if '<script src="advanced-care-bridge.js"></script>' in text:
+                  text = text.replace('<script src="advanced-care-bridge.js"></script>', '<script src="advanced-care-bridge.js"></script>' + tag, 1)
+              elif '</body>' in text:
+                  text = text.replace('</body>', tag + '</body>', 1)
+              elif '</html>' in text:
+                  text = text.replace('</html>', tag + '</html>', 1)
+              else:
+                  text += tag
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Validate runtime contract
+        run: |
+          node --check state-image-runtime.js
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          const html=fs.readFileSync('index.html','utf8');
+          if(!html.includes('<script src="state-image-runtime.js"></script>')) throw Error('state runtime is not connected');
+          const required=['BonsaiStateRuntime','IndexedDB','作品状態記録','bonsai-state-canvas','visualSignature','deadwood','shari'];
+          const source=fs.readFileSync('state-image-runtime.js','utf8');
+          for(const token of required) if(!source.includes(token)) throw Error(`missing runtime contract: ${token}`);
+          const inline=[...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
+            .map(match=>match[1]).filter(code=>code.trim());
+          inline.forEach((code,index)=>new vm.Script(code,{filename:`inline-${index}.js`}));
+          console.log('state image runtime syntax: PASS');
+          NODE
+      - name: Static HTTP smoke
+        run: |
+          python3 -m http.server 4173 >/tmp/state-runtime-http.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4173/ >/tmp/index.html && break; sleep .2; done
+          grep -Fq 'state-image-runtime.js' /tmp/index.html
+          curl -fsS http://127.0.0.1:4173/state-image-runtime.js | grep -Fq 'BonsaiStateRuntime'
+          curl -fsS http://127.0.0.1:4173/sw.js | grep -Fq 'state-image-runtime.js'
+      - name: Commit integrated application
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add index.html
+          git diff --cached --quiet && exit 0
+          git commit -m '作品状態画像ランタイムをゲーム画面へ接続'
+          git push origin HEAD:main
