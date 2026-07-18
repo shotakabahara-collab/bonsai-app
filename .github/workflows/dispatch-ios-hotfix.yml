@@ -1,0 +1,22 @@
+name: Dispatch iPhone white-screen hotfix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/dispatch-ios-hotfix.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start the verified iPhone recovery workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: gh workflow run hotfix-ios-white-screen.yml --repo "$REPOSITORY" --ref main
