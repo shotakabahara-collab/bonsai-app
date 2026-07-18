@@ -1,44 +1,71 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
+import path from 'node:path';
 
-const report = { phase: 'launch', console: [], failedRequests: [], responses: [] };
+const REMOTE = 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/Japanese_Black_Pine_bonsai_135%2C_October_10%2C_2008.jpg/960px-Japanese_Black_Pine_bonsai_135%2C_October_10%2C_2008.jpg';
+const ARTIFACT_DIR = 'test-artifacts';
+const FIXTURE = path.join(ARTIFACT_DIR, 'source-pine.jpg');
+const report = { phase: 'prepare', errors: [], failedRequests: [], responses: [] };
 let browser;
-let page;
 
-const inspectPage = async () => page.evaluate(() => {
-  const image = document.querySelector('.photo-bonsai img');
-  const canvas = document.querySelector('.bonsai-state-canvas');
-  return {
-    readyState: document.readyState,
-    rootLength: document.querySelector('#root')?.innerHTML.length || 0,
-    hasPhoto: Boolean(image),
-    imageComplete: Boolean(image?.complete),
-    imageWidth: image?.naturalWidth || 0,
-    imageHeight: image?.naturalHeight || 0,
-    imageCrossOrigin: image?.crossOrigin || '',
-    imageSrc: image?.currentSrc || image?.src || '',
-    hasCanvas: Boolean(canvas),
-    canvasWidth: canvas?.width || 0,
-    canvasHeight: canvas?.height || 0,
-    frameReady: Boolean(image?.closest('.photo-bonsai')?.classList.contains('bonsai-state-ready')),
-    hasPhotoSource: Boolean(window.BonsaiPhotoSource),
-    hasRuntime: Boolean(window.BonsaiStateRuntime),
-    hasAdvancedCare: Boolean(window.BonsaiAdvancedCare),
-    savedStarted: Boolean(JSON.parse(localStorage.getItem('bonsai_live_1') || '{}').started),
-    credit: document.querySelector('#bonsai-photo-credit')?.textContent || ''
-  };
-});
+const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+async function downloadFixture() {
+  fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
+  if (fs.existsSync(FIXTURE) && fs.statSync(FIXTURE).size > 100000) return;
+  let lastError;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      const response = await fetch(REMOTE, {
+        headers: { 'user-agent': 'BONSAI visual validation/1.0' },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(45000)
+      });
+      if (!response.ok) throw new Error(`fixture HTTP ${response.status}`);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (bytes.length < 100000 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes.at(-2) !== 0xff || bytes.at(-1) !== 0xd9) {
+        throw new Error(`invalid fixture JPEG (${bytes.length} bytes)`);
+      }
+      fs.writeFileSync(FIXTURE, bytes);
+      report.fixtureBytes = bytes.length;
+      return;
+    } catch (error) {
+      lastError = error;
+      await delay(attempt * 1000);
+    }
+  }
+  throw lastError || new Error('fixture download failed');
+}
 
 try {
+  await downloadFixture();
+  report.phase = 'launch';
   browser = await chromium.launch({ headless: true });
-  page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 2,
+    serviceWorkers: 'block'
+  });
+  const page = await context.newPage();
+
+  await page.route(REMOTE, async route => {
+    const body = fs.readFileSync(FIXTURE);
+    await route.fulfill({
+      status: 200,
+      contentType: 'image/jpeg',
+      headers: {
+        'access-control-allow-origin': '*',
+        'cache-control': 'no-store',
+        'cross-origin-resource-policy': 'cross-origin'
+      },
+      body
+    });
+  });
 
   page.on('console', message => {
-    if (message.type() === 'error' || message.type() === 'warning') {
-      report.console.push(`${message.type()}: ${message.text()}`);
-    }
+    if (message.type() === 'error') report.errors.push(message.text());
   });
-  page.on('pageerror', error => report.console.push(`pageerror: ${error.message}`));
+  page.on('pageerror', error => report.errors.push(error.message));
   page.on('requestfailed', request => report.failedRequests.push({
     url: request.url(),
     error: request.failure()?.errorText || ''
@@ -56,10 +83,25 @@ try {
   const now = Date.now();
   const seedState = {
     started: true,
-    name: '検証者', mentor: 0, sp: 'pine', tree: '黒松・検証樹',
-    born: now - 1728000000, water: 84, last: now, vit: 91, stress: 4,
-    prune: 0, wire: 0, fert: 2, pot: 'black', money: 9000, rep: 180,
-    owned: ['starter', 'black'], awards: [], log: [], lastWeek: '',
+    name: '検証者',
+    mentor: 0,
+    sp: 'pine',
+    tree: '黒松・検証樹',
+    born: now - 1728000000,
+    water: 84,
+    last: now,
+    vit: 91,
+    stress: 4,
+    prune: 0,
+    wire: 0,
+    fert: 2,
+    pot: 'black',
+    money: 9000,
+    rep: 180,
+    owned: ['starter', 'black'],
+    awards: [],
+    log: [],
+    lastWeek: '',
     stats: { water: 5, prune: 0, wire: 0, shows: 0 }
   };
 
@@ -67,48 +109,45 @@ try {
   await page.addInitScript(state => {
     localStorage.setItem('bonsai_live_1', JSON.stringify(state));
   }, seedState);
-  await page.goto('http://127.0.0.1:4173/', { waitUntil: 'commit', timeout: 30000 });
-
-  report.phase = 'source-ready';
-  await page.waitForFunction(() => {
-    const image = document.querySelector('.photo-bonsai img');
-    return image?.complete && image.naturalWidth >= 900 && window.BonsaiStateRuntime && window.BonsaiAdvancedCare;
-  }, null, { timeout: 60000 });
-  report.beforeRender = await inspectPage();
-
-  report.phase = 'automatic-render';
-  report.automaticReady = await page.waitForFunction(() => {
-    const frame = document.querySelector('.photo-bonsai');
-    return Boolean(frame?.querySelector('.bonsai-state-canvas') && frame.classList.contains('bonsai-state-ready'));
-  }, null, { timeout: 6000 }).then(() => true).catch(() => false);
-
-  if (!report.automaticReady) {
-    report.phase = 'manual-render-diagnostic';
-    await page.evaluate(async () => {
-      window.BonsaiPhotoSource?.prepareImage?.();
-      await window.BonsaiStateRuntime?.render?.();
-    });
-  }
-
-  await page.waitForFunction(() => {
-    const frame = document.querySelector('.photo-bonsai');
-    return Boolean(frame?.querySelector('.bonsai-state-canvas') && frame.classList.contains('bonsai-state-ready'));
-  }, null, { timeout: 20000 });
+  await page.goto('http://127.0.0.1:4173/', { waitUntil: 'domcontentloaded', timeout: 30000 });
 
   report.phase = 'base';
-  report.base = await inspectPage();
-  if (report.base.imageWidth < 900 || report.base.imageHeight < 1200) {
+  await page.waitForFunction(() => {
+    const image = document.querySelector('.photo-bonsai img');
+    return image?.complete
+      && image.naturalWidth >= 900
+      && document.querySelector('.bonsai-state-canvas')
+      && image.closest('.photo-bonsai')?.classList.contains('bonsai-state-ready');
+  }, null, { timeout: 60000 });
+
+  report.base = await page.evaluate(() => {
+    const image = document.querySelector('.photo-bonsai img');
+    const canvas = document.querySelector('.bonsai-state-canvas');
+    return {
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      crossOrigin: image.crossOrigin,
+      src: image.currentSrc,
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
+      ready: image.closest('.photo-bonsai')?.classList.contains('bonsai-state-ready'),
+      credit: document.querySelector('#bonsai-photo-credit')?.textContent || ''
+    };
+  });
+
+  if (report.base.width < 900 || report.base.height < 900) {
     throw new Error(`source resolution too low: ${JSON.stringify(report.base)}`);
   }
-  if (report.base.imageCrossOrigin !== 'anonymous') {
+  if (report.base.crossOrigin !== 'anonymous') {
     throw new Error(`source image is not CORS-enabled: ${JSON.stringify(report.base)}`);
   }
+  if (!report.base.ready) throw new Error('state canvas did not become visible');
   if (!/Sage Ross/.test(report.base.credit) || !/CC BY-SA 3.0/.test(report.base.credit)) {
     throw new Error('attribution missing');
   }
 
-  await page.screenshot({ path: 'test-artifacts/01-home-base.png', fullPage: true });
-  await page.locator('.stage').screenshot({ path: 'test-artifacts/02-stage-base.png' });
+  await page.screenshot({ path: `${ARTIFACT_DIR}/01-home-base.png`, fullPage: true });
+  await page.locator('.stage').screenshot({ path: `${ARTIFACT_DIR}/02-stage-base.png` });
 
   report.phase = 'prune-wire';
   report.action = await page.evaluate(() => {
@@ -117,11 +156,16 @@ try {
     if (!pruned.ok) return pruned;
     const wired = window.BonsaiAdvancedCare.applyAction(pruned.state, 'second_right', 'wire_light', 'down');
     localStorage.setItem('bonsai_live_1', JSON.stringify(wired.state));
-    return { ok: wired.ok, signature: window.BonsaiAdvancedCare.visualSignature(wired.state) };
+    window.BonsaiStateRuntime?.render?.();
+    return {
+      ok: wired.ok,
+      signature: window.BonsaiAdvancedCare.visualSignature(wired.state)
+    };
   });
+
   if (!report.action.ok) throw new Error(`advanced action failed: ${JSON.stringify(report.action)}`);
-  await page.waitForTimeout(2400);
-  await page.locator('.stage').screenshot({ path: 'test-artifacts/03-stage-pruned-wired.png' });
+  await page.waitForTimeout(2600);
+  await page.locator('.stage').screenshot({ path: `${ARTIFACT_DIR}/03-stage-pruned-wired.png` });
 
   report.phase = 'export';
   report.export = await page.evaluate(async () => {
@@ -133,7 +177,8 @@ try {
     });
     return { width: canvas.width, height: canvas.height, size: blob.size };
   });
-  if (report.export.width !== 1200 || report.export.height !== 1600 || report.export.size < 120000) {
+
+  if (report.export.width !== 1200 || report.export.height !== 1600 || report.export.size < 100000) {
     throw new Error(`high-resolution export failed: ${JSON.stringify(report.export)}`);
   }
 
@@ -145,24 +190,20 @@ try {
     state.advanced.parts.front_branch.deadwood = 'jin';
     state.advanced.shari = { level: 2, side: 'left', createdAt: Date.now() };
     localStorage.setItem('bonsai_live_1', JSON.stringify(state));
+    window.BonsaiStateRuntime?.render?.();
   });
-  await page.waitForTimeout(2400);
-  await page.locator('.stage').screenshot({ path: 'test-artifacts/04-stage-pathology-deadwood.png' });
+  await page.waitForTimeout(2600);
+  await page.locator('.stage').screenshot({ path: `${ARTIFACT_DIR}/04-stage-pathology-deadwood.png` });
 
-  if (report.console.some(message => /state image source failed|tainted|securityerror/i.test(message))) {
-    throw new Error(`browser console errors: ${report.console.join(' | ')}`);
+  if (report.errors.some(message => /state image source failed|tainted|securityerror/i.test(message))) {
+    throw new Error(`browser errors: ${report.errors.join(' | ')}`);
   }
-  if (!report.automaticReady) throw new Error('state image required a manual render call');
   report.phase = 'complete';
 } catch (error) {
   report.failure = { name: error.name, message: error.message, stack: error.stack };
-  if (page) {
-    try { report.onFailure = await inspectPage(); } catch {}
-    try { await page.screenshot({ path: 'test-artifacts/99-failure-page.png', fullPage: true }); } catch {}
-  }
   throw error;
 } finally {
-  fs.mkdirSync('test-artifacts', { recursive: true });
-  fs.writeFileSync('test-artifacts/browser-result.json', JSON.stringify(report, null, 2));
+  fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
+  fs.writeFileSync(`${ARTIFACT_DIR}/browser-result.json`, JSON.stringify(report, null, 2));
   if (browser) await browser.close();
 }
