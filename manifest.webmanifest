@@ -1,14 +1,25 @@
 {
-  "name":"BONSAI — 育てた時間が、作品になる。",
-  "short_name":"BONSAI",
-  "description":"師匠、ライバル、週次大会、称号、銘木録を備えた盆栽育成シミュレーション",
-  "start_url":"./",
-  "scope":"./",
-  "display":"standalone",
-  "orientation":"portrait-primary",
-  "background_color":"#09100c",
-  "theme_color":"#09100c",
-  "icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}],
-  "categories":["games","lifestyle"],
-  "lang":"ja"
+  "name": "BONSAI — 育てた時間が、作品になる。",
+  "short_name": "BONSAI",
+  "description": "師匠、ライバル、週次大会、称号、銘木録を備えた盆栽育成シミュレーション",
+  "start_url": "./index.html?v=ios-recovery-v4",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#09100c",
+  "theme_color": "#09100c",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": [
+    "games",
+    "lifestyle"
+  ],
+  "lang": "ja",
+  "id": "./"
 }
