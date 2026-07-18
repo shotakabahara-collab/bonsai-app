@@ -1,0 +1,251 @@
+name: Finalize and promote photoreal kuromatsu v3
+
+on:
+  push:
+    branches:
+      - agent/photoreal-upscale-v3
+    paths:
+      - '.github/workflows/finalize-photoreal-kuromatsu-v3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: finalize-photoreal-kuromatsu-v3
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-upscale-v3
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install image pipeline
+        id: install
+        continue-on-error: true
+        run: python -m pip install --disable-pip-version-check pillow numpy opencv-contrib-python-headless==4.11.0.86 > /tmp/final-install.log 2>&1
+
+      - name: Download EDSR x4 model
+        id: model
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: |
+          mkdir -p .cache
+          curl --fail --location --retry 5 --retry-delay 2 \
+            --output .cache/EDSR_x4.pb \
+            https://raw.githubusercontent.com/Saafke/EDSR_Tensorflow/master/models/EDSR_x4.pb \
+            > /tmp/final-model.log 2>&1
+          test "$(wc -c < .cache/EDSR_x4.pb)" -gt 30000000
+
+      - name: Generate final visual assets
+        id: build
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
+        run: python scripts/build_photoreal_kuromatsu_v3.py > /tmp/final-build.log 2>&1
+
+      - name: Validate final visual assets and PWA contract
+        id: validate
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        run: |
+          {
+          python <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageChops, ImageStat
+          import json
+
+          manifest = json.loads(Path('assets/kuromatsu/manifest.json').read_text())
+          assert manifest['version'] == 'kuromatsu-photoreal-v3'
+          assert manifest['sameTreeIdentity'] is True
+          assert manifest['width'] >= 1200 and manifest['height'] >= 1500
+          expected = {'black', 'starter', 'blue', 'moon', 'old'}
+          assert set(manifest['base']) == expected
+          images = {}
+          for pot, rel in manifest['base'].items():
+              path = Path(rel)
+              assert path.exists() and path.stat().st_size > 100_000, (pot, path.stat().st_size if path.exists() else -1)
+              with Image.open(path) as image:
+                  assert image.format == 'WEBP'
+                  assert image.size == (manifest['width'], manifest['height'])
+                  images[pot] = image.convert('RGB').copy()
+          black = images['black']
+          crop = (0, int(manifest['height'] * .78), manifest['width'], manifest['height'])
+          for pot in expected - {'black'}:
+              mean = sum(ImageStat.Stat(ImageChops.difference(black.crop(crop), images[pot].crop(crop))).mean) / 3
+              assert mean > .65, (pot, mean)
+          qa = Path('assets/kuromatsu/qa/pot-variants.webp')
+          assert qa.exists() and qa.stat().st_size > 10_000
+          print('final photoreal image validation: PASS')
+          PY
+
+          node --check photo-assets.js
+          node --check state-image-runtime.js
+          node --check sw.js
+          node <<'NODE'
+          const fs=require('fs'),vm=require('vm');
+          for(const file of ['photo-assets.js','state-image-runtime.js','sw.js']) new vm.Script(fs.readFileSync(file,'utf8'),{filename:file});
+          const photo=fs.readFileSync('photo-assets.js','utf8');
+          for(const token of ['POT_IMAGES','pineForPot','sameTreeIdentity','kuromatsu-photoreal-v3']) if(!photo.includes(token)) throw Error(`photo ${token}`);
+          const runtime=fs.readFileSync('state-image-runtime.js','utf8');
+          for(const token of ['BonsaiStateRuntime','visualSignature','deadwood','shari','indexedDB']) if(!runtime.includes(token)) throw Error(`runtime ${token}`);
+          const sw=fs.readFileSync('sw.js','utf8');
+          for(const token of ['black.webp','starter.webp','blue.webp','moon.webp','old.webp','assets/kuromatsu/manifest.json']) if(!sw.includes(token)) throw Error(`offline ${token}`);
+          console.log('final JavaScript / state runtime / offline validation: PASS');
+          NODE
+
+          python -m http.server 4173 >/tmp/final-http.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4173/assets/kuromatsu/manifest.json >/tmp/final-manifest.json && break; sleep .2; done
+          grep -Fq 'kuromatsu-photoreal-v3' /tmp/final-manifest.json
+          for pot in black starter blue moon old; do
+            curl -fsS "http://127.0.0.1:4173/assets/kuromatsu/base/${pot}.webp" -o "/tmp/final-${pot}.webp"
+            test "$(wc -c < "/tmp/final-${pot}.webp")" -gt 100000
+          done
+          } > /tmp/final-validate.log 2>&1
+
+      - name: Write final candidate audit
+        id: audit
+        if: always()
+        env:
+          INSTALL: ${{ steps.install.outcome }}
+          MODEL: ${{ steps.model.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          VALIDATE: ${{ steps.validate.outcome }}
+        run: |
+          {
+            echo '# BONSAI 黒松フォトリアル v3 最終監査'
+            echo
+            echo "- trigger SHA: \`${GITHUB_SHA}\`"
+            echo "- install: ${INSTALL:-not-run}"
+            echo "- EDSR model: ${MODEL:-not-run}"
+            echo "- build: ${BUILD:-not-run}"
+            echo "- validation: ${VALIDATE:-not-run}"
+            echo
+            if [ -f assets/kuromatsu/manifest.json ]; then
+              echo '## Manifest'
+              echo '```json'
+              cat assets/kuromatsu/manifest.json
+              echo '```'
+              echo
+              echo '## Assets'
+              echo '```text'
+              find assets/kuromatsu -type f -printf '%p %s bytes\n' | sort
+              echo '```'
+            fi
+            for section in install model build validate; do
+              echo
+              echo "## ${section} log"
+              echo '```text'
+              tail -n 80 "/tmp/final-${section}.log" 2>/dev/null || true
+              echo '```'
+            done
+          } > PHOTOREAL_FINAL_AUDIT.md
+
+      - name: Commit final candidate on feature branch
+        id: commit
+        if: always()
+        env:
+          VALIDATE: ${{ steps.validate.outcome }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add PHOTOREAL_FINAL_AUDIT.md
+          if [ "$VALIDATE" = 'success' ]; then
+            git add assets/kuromatsu photo-assets.js sw.js PHOTOREAL_KUROMATSU_V3.md
+          fi
+          git diff --cached --quiet || git commit -m '黒松フォトリアルv3完成候補を検査済み資産として記録'
+          git push origin HEAD:agent/photoreal-upscale-v3
+          echo "candidate_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Switch main only after final validation
+        id: promote
+        if: steps.validate.outcome == 'success'
+        continue-on-error: true
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor origin/main HEAD
+          grep -Fq 'kuromatsu-photoreal-v3' assets/kuromatsu/manifest.json
+          git push origin HEAD:main
+
+      - name: Verify published GitHub Pages assets
+        id: public
+        if: steps.promote.outcome == 'success'
+        continue-on-error: true
+        env:
+          PUBLIC_BASE: https://shotakabahara-collab.github.io/bonsai-app
+          CANDIDATE: ${{ steps.commit.outputs.candidate_sha }}
+        run: |
+          ready=0
+          for i in $(seq 1 100); do
+            if curl -fsS --retry 2 "${PUBLIC_BASE}/photo-assets.js?v=${CANDIDATE}-${i}" -o /tmp/final-live-photo.js \
+              && grep -Fq 'kuromatsu-photoreal-v3' /tmp/final-live-photo.js; then
+              ready=1
+              break
+            fi
+            sleep 6
+          done
+          test "$ready" = 1
+          curl -fsS "${PUBLIC_BASE}/assets/kuromatsu/manifest.json?v=${CANDIDATE}" | grep -Fq 'kuromatsu-photoreal-v3'
+          for pot in black starter blue moon old; do
+            curl -fsS "${PUBLIC_BASE}/assets/kuromatsu/base/${pot}.webp?v=${CANDIDATE}" -o "/tmp/final-live-${pot}.webp"
+            test "$(wc -c < "/tmp/final-live-${pot}.webp")" -gt 100000
+          done
+          curl -fsS "${PUBLIC_BASE}/sw.js?v=${CANDIDATE}" | grep -Fq 'kuromatsu-photoreal-v3'
+
+      - name: Update release audit
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          INSTALL: ${{ steps.install.outcome }}
+          MODEL: ${{ steps.model.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          VALIDATE: ${{ steps.validate.outcome }}
+          PROMOTE: ${{ steps.promote.outcome }}
+          PUBLIC: ${{ steps.public.outcome }}
+          CANDIDATE: ${{ steps.commit.outputs.candidate_sha }}
+        with:
+          script: |
+            const passed = [process.env.INSTALL, process.env.BUILD, process.env.VALIDATE, process.env.PROMOTE, process.env.PUBLIC].every(v => v === 'success');
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1,
+              title: `BONSAI release audit: ${passed ? 'PASS' : 'FAIL'}`,
+              body: [
+                '# BONSAI 黒松フォトリアル v3 公開監査',
+                '',
+                `- trigger SHA: \`${context.sha}\``,
+                `- final candidate SHA: \`${process.env.CANDIDATE || 'not-created'}\``,
+                `- install: ${process.env.INSTALL || 'not-run'}`,
+                `- EDSR model: ${process.env.MODEL || 'not-run'}`,
+                `- build: ${process.env.BUILD || 'not-run'}`,
+                `- final validation: ${process.env.VALIDATE || 'not-run'}`,
+                `- main switch: ${process.env.PROMOTE || 'not-run'}`,
+                `- public Pages smoke: ${process.env.PUBLIC || 'not-run'}`,
+                '- resolution: 1280×1600 WebP',
+                '- states: five photoreal pot variants + part-specific pruning, wiring, disease, pest, jin and shari compositor',
+                '- memorial: high-resolution state snapshots saved on device',
+                '- Pages URL: https://shotakabahara-collab.github.io/bonsai-app/',
+                '',
+                passed ? '完成候補の全検査後にmainへ切り替え、公開ファイルまで確認しました。' : '完成条件を満たしていないため、切替または公開確認は未完了です。PHOTOREAL_FINAL_AUDIT.md を確認してください。'
+              ].join('\n'),
+              state: passed ? 'closed' : 'open',
+              ...(passed ? {state_reason: 'completed'} : {})
+            });
+
+      - name: Fail unless the complete promotion contract passed
+        if: always() && (steps.install.outcome != 'success' || steps.build.outcome != 'success' || steps.validate.outcome != 'success' || steps.promote.outcome != 'success' || steps.public.outcome != 'success')
+        run: exit 1
