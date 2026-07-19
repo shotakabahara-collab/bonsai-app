@@ -52,15 +52,16 @@ jobs:
         working-directory: next
         run: npm run build
 
-      - name: Install iPhone WebKit and pixel-audit tools
+      - name: Install iPhone WebKit and audit tools
         working-directory: next
         run: |
           npx playwright install --with-deps webkit
           python -m pip install --disable-pip-version-check pillow
 
-      - name: Run v4 regressions and Branch Topology v5 on 390x844 DPR3 WebKit
+      - name: Run each 390x844 DPR3 WebKit regression with retained logs
         working-directory: next
         run: |
+          mkdir -p test-artifacts
           npm run preview >/tmp/bonsai-v5-preview.log 2>&1 &
           server=$!
           trap 'kill $server' EXIT
@@ -68,9 +69,22 @@ jobs:
             curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break
             sleep .25
           done
-          npm run test:smoke
-          node tests/seasonal-v4.mjs
-          npm run test:topology
+          set +e
+          npm run test:smoke >test-artifacts/smoke.log 2>&1
+          smoke=$?
+          node tests/seasonal-v4.mjs >test-artifacts/seasonal-v4.log 2>&1
+          seasonal=$?
+          npm run test:topology >test-artifacts/branch-topology-v5.log 2>&1
+          topology=$?
+          set -e
+          printf '{"smoke":%s,"seasonal":%s,"topology":%s}\n' "$smoke" "$seasonal" "$topology" | tee test-artifacts/webkit-command-status.json
+          for log in test-artifacts/smoke.log test-artifacts/seasonal-v4.log test-artifacts/branch-topology-v5.log; do
+            echo "===== $log ====="
+            tail -n 160 "$log"
+          done
+          test "$smoke" -eq 0
+          test "$seasonal" -eq 0
+          test "$topology" -eq 0
 
       - name: Reject blank captures and verify a real artwork-state delta
         working-directory: next
@@ -81,12 +95,7 @@ jobs:
           import json
 
           root = Path('test-artifacts')
-          names = (
-              '01-grow-visible.png',
-              '03-show-visible.png',
-              'topology-v5-before.png',
-              'topology-v5-after.png',
-          )
+          names = ('01-grow-visible.png', '03-show-visible.png', 'topology-v5-before.png', 'topology-v5-after.png')
           report = {}
           images = {}
           for name in names:
@@ -102,14 +111,7 @@ jobs:
               pixels = list(gray.getdata())
               bright = sum(value > 45 for value in pixels) / len(pixels)
               near_white = sum(value > 247 for value in pixels) / len(pixels)
-              report[name] = {
-                  'size': [width, height],
-                  'bytes': path.stat().st_size,
-                  'mean': stat.mean[0],
-                  'variance': stat.var[0],
-                  'brightRatio': bright,
-                  'nearWhiteRatio': near_white,
-              }
+              report[name] = {'size': [width, height], 'bytes': path.stat().st_size, 'mean': stat.mean[0], 'variance': stat.var[0], 'brightRatio': bright, 'nearWhiteRatio': near_white}
               if width < 390 or height < 700 or stat.mean[0] < 16 or stat.var[0] < 220 or bright < .05:
                   raise SystemExit(f'{name}: blank or hidden artwork {report[name]}')
 
@@ -125,10 +127,7 @@ jobs:
           report['topologyDelta'] = {'mean': delta, 'changedRatio': changed}
           if delta < .18 or changed < .002:
               raise SystemExit(f'pruning produced no visible artwork delta: {report["topologyDelta"]}')
-
-          (root / 'branch-topology-v5-visual-audit.json').write_text(
-              json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8'
-          )
+          (root / 'branch-topology-v5-visual-audit.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
           print(json.dumps(report, ensure_ascii=False))
           PY
 
