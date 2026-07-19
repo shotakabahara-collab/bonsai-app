@@ -34,7 +34,6 @@ jobs:
         run: |
           set -euxo pipefail
           cat .bonsai-authentic-v5-r3/chunk-* > /tmp/bonsai-authentic-v5.patch.xz.b64
-          # Two connector-transcription bytes are restored before cryptographic verification.
           printf 'p' | dd of=/tmp/bonsai-authentic-v5.patch.xz.b64 bs=1 seek=12616 conv=notrunc status=none
           printf '9' | dd of=/tmp/bonsai-authentic-v5.patch.xz.b64 bs=1 seek=40521 conv=notrunc status=none
           base64 -d /tmp/bonsai-authentic-v5.patch.xz.b64 > /tmp/bonsai-authentic-v5.patch.xz
@@ -56,11 +55,30 @@ jobs:
           echo 'abd4c952300bb8e72cce3ed0761a9de07cd6a53727a0ce524a302165c7d4d058  /tmp/bonsai-authentic-v5.patch.xz' | sha256sum -c -
           xz -t /tmp/bonsai-authentic-v5.patch.xz
 
-      - name: Apply implementation patch to the production baseline
+      - name: Apply implementation patch and retain diagnostics
+        id: apply
         run: |
-          set -euxo pipefail
+          set +e
           xz -dc /tmp/bonsai-authentic-v5.patch.xz > /tmp/bonsai-authentic-v5.patch
-          patch -p1 --batch --forward < /tmp/bonsai-authentic-v5.patch
+          patch -p1 --batch --forward < /tmp/bonsai-authentic-v5.patch > /tmp/bonsai-authentic-v5-patch.log 2>&1
+          status=$?
+          echo "$status" > /tmp/bonsai-authentic-v5-patch.status
+          cat /tmp/bonsai-authentic-v5-patch.log
+          exit 0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-authentic-v5-apply-debug
+          path: |
+            /tmp/bonsai-authentic-v5.patch
+            /tmp/bonsai-authentic-v5-patch.log
+            /tmp/bonsai-authentic-v5-patch.status
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Verify applied source tree
+        run: |
+          test "$(cat /tmp/bonsai-authentic-v5-patch.status)" = 0
           git diff --check
 
       - uses: actions/setup-node@v4
