@@ -37,6 +37,8 @@ const legacy = {
 try {
   report.phase = 'seed and launch';
   await page.addInitScript(value => {
+    if (sessionStorage.getItem('bonsai:seasonal-v4-seeded') === '1') return;
+    sessionStorage.setItem('bonsai:seasonal-v4-seeded', '1');
     localStorage.setItem('bonsai_live_1', JSON.stringify(value));
     localStorage.removeItem('bonsai:v2');
     for (const key of Object.keys(localStorage)) {
