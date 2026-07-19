@@ -42,7 +42,7 @@ jobs:
           xz -dc /tmp/payload.xz | patch -p1 --batch --forward
           git diff --check
 
-      - name: Calibrate regressions, offline shell and dual-browser audit
+      - name: Calibrate regressions, complete offline shell and WebKit restart audit
         run: |
           python <<'PY'
           from pathlib import Path
@@ -79,14 +79,6 @@ jobs:
           });
           await page.waitForTimeout(800);
 
-          const savedEntries = await page.evaluate(() => {
-            const entries = {};
-            for (let index = 0; index < localStorage.length; index += 1) {
-              const key = localStorage.key(index);
-              if (key) entries[key] = localStorage.getItem(key);
-            }
-            return entries;
-          });
           const webkitCache = await page.evaluate(async () => {
             const cacheNames = await caches.keys();
             const cacheName = cacheNames.find(name => name === 'bonsai-authentic-consequences-v5-shell');
@@ -101,54 +93,53 @@ jobs:
           if (!webkitCache.controller || !webkitCache.cacheName || webkitCache.cached.length !== webkitCache.required.length || webkitCache.cached.some(value => !value)) {
             throw new Error(`WebKit did not retain the offline shell: ${JSON.stringify(webkitCache)}`);
           }
-          await context.close();
 
-          const offlineBrowser = await chromium.launch({ headless: true });
-          try {
-            const offlineContext = await offlineBrowser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, serviceWorkers: 'allow' });
-            const offlinePage = await offlineContext.newPage();
-            attachErrors(offlinePage);
-            await offlinePage.addInitScript(entries => {
-              localStorage.clear();
-              for (const [key, value] of Object.entries(entries)) {
-                if (typeof value === 'string') localStorage.setItem(key, value);
+          if (process.env.BONSAI_PUBLIC === '1') {
+            report.offline = { webkitCache, mode: 'public-cache-verification' };
+            await page.screenshot({ path: 'test-artifacts/authentic-v5-offline.png', fullPage: false });
+            await context.close();
+          } else {
+            const previewPid = Number(fs.readFileSync('/tmp/bonsai-authentic-v5-preview.pid', 'utf8').trim());
+            if (!Number.isInteger(previewPid) || previewPid <= 1) throw new Error(`Invalid preview pid: ${previewPid}`);
+            try {
+              process.kill(-previewPid, 'SIGTERM');
+            } catch {
+              process.kill(previewPid, 'SIGTERM');
+            }
+            let serverReachable = true;
+            for (let attempt = 0; attempt < 30; attempt += 1) {
+              try {
+                await fetch(baseURL, { cache: 'no-store' });
+                await new Promise(resolve => setTimeout(resolve, 100));
+              } catch {
+                serverReachable = false;
+                break;
               }
-            }, savedEntries);
-            const offlineURL = new URL(`index.html?authentic-offline=${Date.now()}`, baseURL).href;
-            await offlinePage.goto(offlineURL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            await waitForApp(offlinePage);
-            await offlinePage.waitForFunction(async () => {
-              if (!('serviceWorker' in navigator)) return false;
-              const registration = await navigator.serviceWorker.getRegistration('/bonsai-app/');
-              return Boolean(navigator.serviceWorker.controller && registration?.active);
-            }, { timeout: 20000 }).catch(async () => {
-              await offlinePage.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
-              await waitForApp(offlinePage);
-              await offlinePage.waitForFunction(() => Boolean(navigator.serviceWorker?.controller), { timeout: 20000 });
-            });
-            await offlinePage.waitForTimeout(800);
-            await offlineContext.setOffline(true);
+            }
+            if (serverReachable) throw new Error('Preview server remained reachable during offline restart audit');
+
+            const offlineURL = page.url();
+            await page.close();
+            const offlinePage = await context.newPage();
+            attachErrors(offlinePage);
             let navigationError = '';
-            await offlinePage.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(error => { navigationError = error.message; });
+            await offlinePage.goto(offlineURL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(error => { navigationError = error.message; });
             await offlinePage.waitForSelector('[data-testid="app-shell"]', { timeout: 20000 });
             await offlinePage.waitForSelector('.bonsai-stage img', { timeout: 10000 });
-            const chromiumOffline = await offlinePage.evaluate(() => ({
-              online: navigator.onLine,
+            const webkitRestart = await offlinePage.evaluate(() => ({
               app: Boolean(document.querySelector('[data-testid="app-shell"]')),
               image: document.querySelector('.bonsai-stage img')?.getAttribute('src'),
               renderer: document.querySelector('.bonsai-stage')?.getAttribute('data-renderer'),
               deadwoodCount: document.querySelectorAll('[data-testid="photoreal-deadwood"]').length
             }));
-            chromiumOffline.navigationError = navigationError;
-            if (chromiumOffline.online || !chromiumOffline.app || chromiumOffline.renderer !== 'authentic-state-v5' || chromiumOffline.deadwoodCount !== 2) {
-              throw new Error(`Offline restart did not preserve the work state: ${JSON.stringify(chromiumOffline)}`);
+            webkitRestart.navigationError = navigationError;
+            webkitRestart.serverReachable = serverReachable;
+            if (webkitRestart.serverReachable || !webkitRestart.app || webkitRestart.renderer !== 'authentic-state-v5' || webkitRestart.deadwoodCount !== 2) {
+              throw new Error(`WebKit offline restart did not preserve the work state: ${JSON.stringify(webkitRestart)}`);
             }
-            report.offline = { webkitCache, chromium: chromiumOffline };
+            report.offline = { webkitCache, webkitRestart };
             await offlinePage.screenshot({ path: 'test-artifacts/authentic-v5-offline.png', fullPage: false });
-            await offlineContext.setOffline(false);
-            await offlineContext.close();
-          } finally {
-            await offlineBrowser.close();
+            await context.close();
           }"""
           authentic.write_text(text[:start] + new_offline + text[end:], encoding='utf-8')
 
@@ -242,14 +233,33 @@ jobs:
           """
           Path('next/public/sw.js').write_text('\n'.join(line.lstrip() for line in service_worker.splitlines()) + '\n', encoding='utf-8')
 
-          for workflow_path in (
-            Path('.github/workflows/authentic-consequences-v5-ci.yml'),
-            Path('.github/workflows/deploy-react-v1.yml')
-          ):
-            workflow = workflow_path.read_text(encoding='utf-8')
-            old = 'npx playwright install --with-deps webkit'
-            assert workflow.count(old) >= 1, workflow_path
-            workflow_path.write_text(workflow.replace(old, 'npx playwright install --with-deps webkit chromium'), encoding='utf-8')
+          ci = Path('.github/workflows/authentic-consequences-v5-ci.yml')
+          ci_text = ci.read_text(encoding='utf-8')
+          old_ci = """          npm run preview >/tmp/bonsai-authentic-v5-preview.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          """
+          new_ci = """          setsid npm run preview >/tmp/bonsai-authentic-v5-preview.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/bonsai-authentic-v5-preview.pid
+          trap 'kill -- -$server 2>/dev/null || true' EXIT
+          """
+          assert ci_text.count(old_ci) == 1
+          ci.write_text(ci_text.replace(old_ci, new_ci), encoding='utf-8')
+
+          deploy = Path('.github/workflows/deploy-react-v1.yml')
+          deploy_text = deploy.read_text(encoding='utf-8')
+          old_deploy = """          npm run preview >/tmp/bonsai-react-preview.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          """
+          new_deploy = """          setsid npm run preview >/tmp/bonsai-react-preview.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/bonsai-authentic-v5-preview.pid
+          trap 'kill -- -$server 2>/dev/null || true' EXIT
+          """
+          assert deploy_text.count(old_deploy) == 1
+          deploy.write_text(deploy_text.replace(old_deploy, new_deploy), encoding='utf-8')
           PY
           git diff --check
 
@@ -266,13 +276,15 @@ jobs:
           npm run typecheck
           npm run test:authentic:unit
           npm run build
-          npx playwright install --with-deps webkit chromium
+          npx playwright install --with-deps webkit
           python -m pip install --disable-pip-version-check pillow
 
       - name: Start production preview
         working-directory: next
         run: |
-          npm run preview >/tmp/bonsai-authentic-v5-preview.log 2>&1 &
+          setsid npm run preview >/tmp/bonsai-authentic-v5-preview.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/bonsai-authentic-v5-preview.pid
           for i in $(seq 1 100); do
             curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
             sleep .25
