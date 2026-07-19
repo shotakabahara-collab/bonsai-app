@@ -1,0 +1,50 @@
+name: Authentic bonsai craft v3 PR audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'next/**'
+      - '.github/workflows/authentic-craft-v3-pr.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: authentic-craft-v3-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-webkit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+      - name: Install exact dependencies
+        working-directory: next
+        run: npm ci
+      - name: TypeScript and production build
+        working-directory: next
+        run: npm run build
+      - name: Install WebKit
+        working-directory: next
+        run: npx playwright install --with-deps webkit
+      - name: iPhone-sized smoke test
+        working-directory: next
+        run: |
+          npm run preview >/tmp/bonsai-v3-preview.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for i in $(seq 1 80); do curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break; sleep .25; done
+          npm run test:smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: authentic-craft-v3-pr-audit
+          path: next/test-artifacts
+          if-no-files-found: warn
