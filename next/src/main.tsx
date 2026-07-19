@@ -9,6 +9,7 @@ import './stability.css';
 import './completion-layer.css';
 import './quality-v2.css';
 import './authentic-craft-v3.css';
+import './craft-visual-v3.css';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error?: Error }> {
   state: { error?: Error } = {};
