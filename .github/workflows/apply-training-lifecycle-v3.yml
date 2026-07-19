@@ -58,6 +58,13 @@ jobs:
       - name: Typecheck and production build
         working-directory: next
         run: npm run build
+      - name: Commit typechecked feature source for direct inspection
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add next scripts/apply_training_lifecycle_v3.py scripts/fix_training_v3_test.py scripts/fix_training_v3_normalization.py scripts/fix_training_v3_state_sync.py scripts/fix_training_v3_event_sync.py scripts/fix_training_v3_tab_sync.py scripts/fix_training_v3_persist_return.py scripts/fix_training_v3_wire_wait.py scripts/fix_training_v3_show_wait.py scripts/fix_training_v3_visual_audit.py .github/workflows/apply-training-lifecycle-v3.yml
+          git diff --cached --quiet || git commit -m '精密制作v3の型検査済みソースを固定'
+          git push origin HEAD:feature/training-lifecycle-v3
       - name: Install iPhone WebKit and image audit tools
         working-directory: next
         run: |
@@ -103,14 +110,6 @@ jobs:
           grep -Fq 'data-total-sites' next/src/CraftPanels.tsx
           grep -Fq '針金を装着中' next/src/craft-v3.ts
           grep -Fq '風化完成していない' next/src/craft-v3.ts
-      - name: Commit verified implementation
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add next scripts/apply_training_lifecycle_v3.py scripts/fix_training_v3_test.py scripts/fix_training_v3_normalization.py scripts/fix_training_v3_state_sync.py scripts/fix_training_v3_event_sync.py scripts/fix_training_v3_tab_sync.py scripts/fix_training_v3_persist_return.py scripts/fix_training_v3_wire_wait.py scripts/fix_training_v3_show_wait.py scripts/fix_training_v3_visual_audit.py .github/workflows/apply-training-lifecycle-v3.yml
-          git diff --cached --quiet && exit 0
-          git commit -m '剪定26箇所・針金養成・神舎利工程を統合'
-          git push origin HEAD:feature/training-lifecycle-v3
       - uses: actions/upload-artifact@v4
         if: always()
         with:
