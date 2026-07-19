@@ -2,11 +2,13 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App, { RecoveryPanel } from './App';
 import { CompletionLayer } from './CompletionLayer';
+import { AuthenticCraftLayer } from './AuthenticCraftLayer';
 import { registerServiceWorker } from './storage';
 import './styles.css';
 import './stability.css';
 import './completion-layer.css';
 import './quality-v2.css';
+import './authentic-craft-v3.css';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error?: Error }> {
   state: { error?: Error } = {};
@@ -40,12 +42,13 @@ function resetScrollAfterTabChange(event: MouseEvent) {
 }
 
 document.addEventListener('click', resetScrollAfterTabChange, { capture: true });
-(window as Window & { BonsaiRelease?: string }).BonsaiRelease = 'bonsai-react-production-v2-20260719';
+(window as Window & { BonsaiRelease?: string }).BonsaiRelease = 'bonsai-authentic-craft-v3-20260719';
 
 createRoot(root).render(
   <ErrorBoundary>
     <App />
     <CompletionLayer />
+    <AuthenticCraftLayer />
   </ErrorBoundary>
 );
 
