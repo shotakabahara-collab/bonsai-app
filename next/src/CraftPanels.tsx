@@ -144,12 +144,14 @@ function techniqueAllowed(role: string, technique: PruningTechnique): boolean {
   return true;
 }
 
-export function DeadwoodLifecycleSheet({ bonsai, onClose, onStartJin, onStartShari, onAdvance }: {
+export function DeadwoodLifecycleSheet({ bonsai, onClose, onStartJin, onStartShari, onAdvance, onPause, onResume }: {
   bonsai: BonsaiState;
   onClose: () => void;
   onStartJin: (partId: PartId) => void;
   onStartShari: (side: 'left' | 'right') => void;
   onAdvance: (projectId: string) => void;
+  onPause: (projectId: string) => void;
+  onResume: (projectId: string) => void;
 }) {
   const branchParts = PARTS.filter(part => !['trunk', 'roots'].includes(part.id));
   const [targetPart, setTargetPart] = useState<PartId>('thirdLeft');
@@ -173,7 +175,7 @@ export function DeadwoodLifecycleSheet({ bonsai, onClose, onStartJin, onStartSha
 
         <div className="deadwood-project-list">
           {projects.length === 0 && <p className="completion-empty">進行中・完成済みの神／舎利はありません。</p>}
-          {projects.map(project => <DeadwoodProjectCard key={project.id} project={project} onAdvance={onAdvance} />)}
+          {projects.map(project => <DeadwoodProjectCard key={project.id} project={project} onAdvance={onAdvance} onPause={onPause} onResume={onResume} />)}
         </div>
 
         <section className="deadwood-start-panel">
@@ -188,7 +190,7 @@ export function DeadwoodLifecycleSheet({ bonsai, onClose, onStartJin, onStartSha
           <button
             className="primary-button"
             type="button"
-            disabled={bonsai.vitality < 60 || activeJinParts.has(targetPart)}
+            disabled={bonsai.lifeStatus === 'dead' || bonsai.vitality < 60 || activeJinParts.has(targetPart)}
             onClick={() => {
               if (!window.confirm(`${PARTS.find(item => item.id === targetPart)?.name}で神の工程を始めます。枝葉を失い、元には戻せません。`)) return;
               onStartJin(targetPart);
@@ -203,8 +205,8 @@ export function DeadwoodLifecycleSheet({ bonsai, onClose, onStartJin, onStartSha
           <div className="eyebrow">新しい舎利を始める</div>
           <p>生き筋を残し、最初は細い面積から始めます。完成後、次年度工程として段階的に広げます。</p>
           <div className="two-buttons">
-            <button type="button" disabled={bonsai.vitality < 70 || activeShari} onClick={() => onStartShari('left')}>左側から始める</button>
-            <button type="button" disabled={bonsai.vitality < 70 || activeShari} onClick={() => onStartShari('right')}>右側から始める</button>
+            <button type="button" disabled={bonsai.lifeStatus === 'dead' || bonsai.vitality < 70 || activeShari} onClick={() => onStartShari('left')}>左側から始める</button>
+            <button type="button" disabled={bonsai.lifeStatus === 'dead' || bonsai.vitality < 70 || activeShari} onClick={() => onStartShari('right')}>右側から始める</button>
           </div>
           {bonsai.vitality < 70 && <small>樹勢70以上が必要です。</small>}
         </section>
@@ -213,21 +215,34 @@ export function DeadwoodLifecycleSheet({ bonsai, onClose, onStartJin, onStartSha
   );
 }
 
-function DeadwoodProjectCard({ project, onAdvance }: { project: DeadwoodProject; onAdvance: (id: string) => void }) {
+function DeadwoodProjectCard({ project, onAdvance, onPause, onResume }: {
+  project: DeadwoodProject;
+  onAdvance: (id: string) => void;
+  onPause: (id: string) => void;
+  onResume: (id: string) => void;
+}) {
   const status = deadwoodStatus(project);
   const title = project.kind === 'jin' ? `${PARTS.find(item => item.id === project.targetPartId)?.name}の神` : `主幹${project.side === 'right' ? '右' : '左'}側の舎利・第${project.level}段階`;
   return (
-    <article className={`deadwood-project deadwood-stage-${project.stage}`}>
+    <article className={`deadwood-project deadwood-stage-${project.stage} ${status.paused ? 'paused' : ''}`} data-project-paused={status.paused ? 'true' : 'false'}>
       <header><div><small>{project.kind === 'jin' ? 'JIN' : 'SHARI'}</small><b>{title}</b></div><em>{status.label}</em></header>
       <ol>
         {['fresh', 'drying', 'carving', 'preserving', 'weathering', 'mature'].map(stage => (
           <li key={stage} className={project.stage === stage ? 'current' : stageCompleted(project.stage, stage) ? 'done' : ''}>{stageShort(stage)}</li>
         ))}
       </ol>
-      {project.stage === 'mature' ? <p>風化完成。展示前には周囲の生き筋と木部の調和を確認します。</p> : (
+      {project.stage === 'mature' ? <p>風化完成。展示前には周囲の生き筋と木部の調和を確認します。</p> : status.paused ? (
+        <>
+          <p>工程は中断中です。加工済みの木部は残り、待機時間は停止しています。未完成のため品評会へは出展できません。</p>
+          <button type="button" className="primary-button" onClick={() => onResume(project.id)}>この工程を再開する</button>
+        </>
+      ) : (
         <>
           <p>{status.ready ? `次の作業「${status.nextAction}」を行えます。` : `次の確認までゲーム内約${Math.ceil(status.remainingInGameDays)}日。`}</p>
-          <button type="button" disabled={!status.ready} onClick={() => onAdvance(project.id)}>{status.nextAction}</button>
+          <div className="deadwood-project-actions">
+            <button type="button" disabled={!status.ready} onClick={() => onAdvance(project.id)}>{status.nextAction}</button>
+            <button type="button" className="ghost-button" onClick={() => onPause(project.id)}>この工程を中断する</button>
+          </div>
         </>
       )}
     </article>

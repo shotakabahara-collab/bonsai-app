@@ -41,7 +41,11 @@ export function PrecisionPruningV4({ bonsai, onClose, onApply }: {
   const apply = () => {
     if (!selected || selected.blocked || selected.state.removed || suitability?.status === 'blocked') return;
     const label = PRUNING_TECHNIQUES.find(item => item.id === technique)?.label ?? technique;
-    const caution = suitability?.status === 'caution' ? '\n\nこの作業は「条件付き」です。適期より回復と芽吹きが不安定になる可能性があります。' : '';
+    const caution = suitability?.status === 'danger'
+      ? `\n\n師匠は強く反対しています。危険度${suitability.risk.score}。枯れ込み、病害虫、枯死を含む結果を取り消せません。`
+      : suitability?.status === 'caution'
+        ? `\n\n注意が必要です。危険度${suitability.risk.score}。回復と芽吹きが不安定になる可能性があります。`
+        : '';
     const warning = technique === 'removeBranch'
       ? `${selected.label}を枝系統ごと除去します。先にある枝葉と芽もすべて失い、元に戻せません。${caution}`
       : `${selected.label}へ「${label}」を行います。失った枝葉や芽は取り消せません。結果は後日の芽吹き・回復で現れます。${caution}`;
@@ -60,7 +64,7 @@ export function PrecisionPruningV4({ bonsai, onClose, onApply }: {
         <section className="seasonal-banner" data-testid="seasonal-banner">
           <div><span>{overview.climate}</span><b>ゲーム内 {overview.month}・{overview.phase}</b></div>
           <em>現実の約10倍速</em>
-          <p>適期は標準温帯の目安です。樹勢・局所健康・前回作業からの間隔も同時に判定します。</p>
+          <p>適期・樹勢・局所健康は実行禁止ではなく、作業後の結果へ反映します。成立しない部位・技法だけ実行できません。</p>
         </section>
 
         <div className="precision-stage-wrap">
@@ -137,9 +141,20 @@ export function PrecisionPruningV4({ bonsai, onClose, onApply }: {
         </div>
 
         {suitability && (
-          <section className={`suitability-card ${suitability.status}`} data-testid="suitability-card">
-            <header><span>現在の判断</span><b>{suitability.label}</b></header>
+          <section className={`suitability-card ${suitability.status}`} data-testid="suitability-card" data-risk-score={suitability.risk.score}>
+            <header><span>師匠の判断</span><b>{suitability.label}</b></header>
+            <blockquote data-testid="mentor-pruning-advice">「{suitability.mentorAdvice}」</blockquote>
             {suitability.reasons.map(reason => <p key={reason}>{reason}</p>)}
+            {suitability.status !== 'blocked' && (
+              <div className="risk-forecast" aria-label="作業後リスク">
+                <span>危険度<b>{suitability.risk.score}</b></span>
+                <span>病気<b>{suitability.risk.diseaseChance}%</b></span>
+                <span>害虫<b>{suitability.risk.pestChance}%</b></span>
+                <span>枯れ込み<b>{suitability.risk.diebackChance}%</b></span>
+                <span>枯死<b>{suitability.risk.deathChance}%</b></span>
+                <span>生育抑制<b>{suitability.risk.growthPenalty}%</b></span>
+              </div>
+            )}
           </section>
         )}
 
@@ -167,7 +182,7 @@ export function PrecisionPruningV4({ bonsai, onClose, onApply }: {
           disabled={!selected || selected.blocked || selected.state.removed || suitability?.status === 'blocked'}
           onClick={apply}
         >
-          {suitability?.status === 'blocked' ? '現在は実行できません' : 'この箇所へ確定する'}
+          {suitability?.status === 'blocked' ? 'この作業は成立しません' : suitability?.status === 'danger' ? '強い反対を理解して実行する' : 'この箇所へ確定する'}
         </button>
       </section>
     </div>

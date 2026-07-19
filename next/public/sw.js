@@ -1,12 +1,10 @@
-const VERSION = 'bonsai-seasonal-response-v4';
+const VERSION = 'bonsai-authentic-consequences-v5';
 const CACHE = `${VERSION}-shell`;
+const INDEX = '/bonsai-app/index.html';
 const CORE = [
-  '/bonsai-app/',
-  '/bonsai-app/index.html',
-  '/bonsai-app/manifest.webmanifest',
-  '/bonsai-app/icon.svg',
-  '/bonsai-app/photo-assets.js',
-  '/bonsai-app/IMAGE_LICENSES.md',
+  '/bonsai-app/', INDEX,
+  '/bonsai-app/manifest.webmanifest', '/bonsai-app/icon.svg',
+  '/bonsai-app/photo-assets.js', '/bonsai-app/IMAGE_LICENSES.md',
   '/bonsai-app/assets/kuromatsu/manifest.json',
   '/bonsai-app/assets/kuromatsu/base/black.webp',
   '/bonsai-app/assets/kuromatsu/base/starter.webp',
@@ -15,13 +13,31 @@ const CORE = [
   '/bonsai-app/assets/kuromatsu/base/old.webp'
 ];
 
+async function fetchAndCache(cache, url, options = {}) {
+  const response = await fetch(url, options);
+  if (response.ok) await cache.put(url, response.clone());
+  return response;
+}
+
+async function cacheBuiltAssets(cache, indexResponse) {
+  if (!indexResponse?.ok) return;
+  const html = await indexResponse.clone().text();
+  const urls = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
+    .map(match => new URL(match[1], self.location.origin))
+    .filter(url => url.origin === self.location.origin && url.pathname.startsWith('/bonsai-app/assets/'));
+  const unique = [...new Set(urls.map(url => url.href))];
+  await Promise.allSettled(unique.map(async url => {
+    const response = await fetch(url, { cache: 'reload' });
+    if (response.ok) await cache.put(url, response.clone());
+  }));
+}
+
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    await Promise.allSettled(CORE.map(async url => {
-      const response = await fetch(url, { cache: 'reload' });
-      if (response.ok) await cache.put(url, response.clone());
-    }));
+    const indexResponse = await fetchAndCache(cache, INDEX, { cache: 'reload' });
+    await cacheBuiltAssets(cache, indexResponse);
+    await Promise.allSettled(CORE.filter(url => url !== INDEX).map(url => fetchAndCache(cache, url, { cache: 'reload' })));
     await self.skipWaiting();
   })());
 });
@@ -39,11 +55,33 @@ self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
   if (event.request.mode === 'navigate') {
-    event.respondWith(fetch(event.request, { cache: 'no-store' }).catch(() => caches.match('/bonsai-app/index.html')));
+    event.respondWith((async () => {
+      try {
+        const response = await fetch(event.request, { cache: 'no-store' });
+        if (response.ok) {
+          const cache = await caches.open(CACHE);
+          await cache.put(event.request, response.clone());
+          await cacheBuiltAssets(cache, response);
+        }
+        return response;
+      } catch {
+        return (await caches.match(event.request, { ignoreSearch: true })) || (await caches.match(INDEX)) || Response.error();
+      }
+    })());
     return;
   }
-  event.respondWith(caches.match(event.request).then(hit => hit || fetch(event.request).then(response => {
-    if (response.ok) caches.open(CACHE).then(cache => cache.put(event.request, response.clone()));
-    return response;
-  })));
+  event.respondWith((async () => {
+    const hit = await caches.match(event.request, { ignoreSearch: true });
+    if (hit) return hit;
+    try {
+      const response = await fetch(event.request);
+      if (response.ok) {
+        const cache = await caches.open(CACHE);
+        await cache.put(event.request, response.clone());
+      }
+      return response;
+    } catch {
+      return Response.error();
+    }
+  })());
 });

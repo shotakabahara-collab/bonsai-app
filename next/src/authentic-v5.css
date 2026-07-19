@@ -1,0 +1,179 @@
+/* Authentic work/consequences v5 — final overrides for photographed state work. */
+.authentic-state-v5 { isolation: isolate; }
+.authentic-work-layer { z-index: 5; opacity: 1; overflow: visible; }
+.authentic-work-layer.wire-layer-viewing,
+.authentic-work-layer.wire-layer-editing { opacity: 1; }
+
+.wire-turn-back,
+.wire-turn-front,
+.wire-turn-glint {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.wire-turn-back { stroke-width: 3.8; opacity: .72; }
+.wire-turn-front.wire-coil-metal {
+  stroke-width: 3.9;
+  opacity: .98;
+  filter: drop-shadow(.8px 1.2px .65px rgba(15, 7, 3, .72));
+}
+.wire-turn-glint {
+  stroke: rgba(255, 224, 178, .64);
+  stroke-width: .85;
+  opacity: .72;
+}
+.wire-group-strong .wire-turn-back { stroke-width: 5.25; }
+.wire-group-strong .wire-turn-front.wire-coil-metal { stroke-width: 5.45; }
+.wire-group-strong .wire-turn-glint { stroke-width: 1.05; opacity: .8; }
+.wire-branch-occlusion { opacity: .985; pointer-events: none; }
+
+.deadwood-effect {
+  pointer-events: none;
+  isolation: isolate;
+}
+.deadwood-shari-outline,
+.deadwood-jin-outline,
+.deadwood-jin-core,
+.deadwood-shari-live-edge,
+.deadwood-jin-live-edge,
+.deadwood-grain {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.deadwood-shari-outline {
+  stroke: rgba(31, 19, 12, .64);
+  stroke-width: 1.15;
+  opacity: .42;
+  filter: drop-shadow(.8px 1.2px .8px rgba(0, 0, 0, .45));
+}
+.deadwood-jin-outline {
+  stroke: rgba(31, 19, 12, .72);
+  opacity: .76;
+  filter: drop-shadow(.75px 1.1px .8px rgba(0, 0, 0, .48));
+}
+.deadwood-shari-fill {
+  stroke: none;
+  opacity: .72;
+  mix-blend-mode: normal;
+}
+.deadwood-jin-core { opacity: .92; }
+.deadwood-photo-texture {
+  mix-blend-mode: luminosity;
+  pointer-events: none;
+}
+.deadwood-shari-live-edge,
+.deadwood-jin-live-edge {
+  stroke: rgba(77, 43, 27, .72);
+  stroke-width: 1.45;
+  opacity: .68;
+  filter: drop-shadow(.3px .55px .35px rgba(0, 0, 0, .42));
+}
+.deadwood-grain {
+  stroke: rgba(69, 55, 39, .5);
+  stroke-dasharray: 31 5 16 4;
+  opacity: .58;
+}
+.deadwood-grain-b {
+  stroke: rgba(245, 236, 211, .38);
+  stroke-dasharray: 10 7 34 5;
+  opacity: .5;
+}
+.deadwood-effect.stage-fresh .deadwood-shari-fill,
+.deadwood-effect.stage-fresh .deadwood-jin-core { opacity: .9; }
+.deadwood-effect.stage-fresh .deadwood-shari-live-edge,
+.deadwood-effect.stage-fresh .deadwood-jin-live-edge {
+  stroke: rgba(133, 54, 36, .8);
+  opacity: .78;
+}
+.deadwood-effect.stage-fresh .deadwood-grain { opacity: .22; }
+.deadwood-effect.stage-drying .deadwood-grain { opacity: .36; }
+.deadwood-effect.stage-carving .deadwood-grain,
+.deadwood-effect.stage-preserving .deadwood-grain { opacity: .62; }
+.deadwood-effect.stage-weathering .deadwood-grain,
+.deadwood-effect.stage-mature .deadwood-grain { opacity: .74; }
+.jin-torn-end {
+  stroke: rgba(54, 37, 25, .7);
+  stroke-width: 1.45;
+  filter: drop-shadow(.5px .8px .5px rgba(0, 0, 0, .44));
+}
+
+.authentic-prune-veil {
+  fill: rgba(4, 12, 7, .56);
+  mix-blend-mode: multiply;
+}
+.precision-cut-ring {
+  fill: rgba(191, 139, 88, .88);
+  stroke: rgba(54, 30, 18, .84);
+  stroke-width: 1.4;
+}
+.authentic-leaf-loss {
+  background: radial-gradient(ellipse, rgba(5, 13, 8, .58), rgba(5, 13, 8, .16) 48%, transparent 72%);
+  filter: blur(4px);
+}
+
+.suitability-card.danger {
+  border-color: rgba(181, 75, 56, .62);
+  background: linear-gradient(145deg, rgba(106, 36, 27, .32), rgba(40, 19, 16, .2));
+}
+.suitability-card.danger header b { color: #f0a89b; }
+.suitability-card blockquote {
+  margin: 8px 0 10px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--gold);
+  background: rgba(255,255,255,.035);
+  color: #e8ddc8;
+  font: 12px/1.7 Georgia, serif;
+}
+.risk-forecast {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+.risk-forecast span {
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 11px;
+  background: rgba(0,0,0,.16);
+  padding: 8px 5px;
+  color: var(--muted);
+  font-size: 8px;
+  text-align: center;
+}
+.risk-forecast b { color: #f2dfbc; font-size: 13px; }
+.suitability-card.danger + .pruning-forecast { border-color: rgba(181, 75, 56, .28); }
+
+.deadwood-project.paused {
+  border-color: rgba(214,183,119,.48);
+  background: rgba(214,183,119,.07);
+}
+.deadwood-project-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.deadwood-project-actions .ghost-button { margin: 0; }
+.deadwood-project.paused > header em { color: #e7c98e; }
+
+.dead-tree-status-tag {
+  position: absolute;
+  z-index: 10;
+  left: 12px;
+  top: 12px;
+  max-width: calc(100% - 24px);
+  border: 1px solid rgba(206, 197, 181, .36);
+  border-radius: 999px;
+  background: rgba(27, 26, 24, .82);
+  color: #ddd3c4;
+  padding: 7px 10px;
+  font-size: 9px;
+  backdrop-filter: blur(7px);
+}
+.bonsai-dead .stage-vignette {
+  background: radial-gradient(circle at 50% 40%, transparent 20%, rgba(22,20,17,.28) 66%, rgba(4,4,3,.78) 100%);
+}
+
+@media (max-width: 520px) {
+  .risk-forecast { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .deadwood-project-actions { grid-template-columns: 1fr; }
+}

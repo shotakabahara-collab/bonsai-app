@@ -86,7 +86,7 @@ try {
     };
   });
   if (!afterApply.responses?.length) throw new Error('Delayed seasonal response was not persisted');
-  if (!String(afterApply.log).includes('後の芽吹き')) throw new Error(`Delayed response log is missing: ${afterApply.log}`);
+  if (!String(afterApply.log).includes('結果はゲーム内約')) throw new Error(`Delayed response log is missing: ${afterApply.log}`);
   report.seasonal = afterApply;
 
   report.phase = 'mature delayed response';
@@ -111,7 +111,7 @@ try {
   }, afterApply.treeId);
   if (!afterMature.completedAt) throw new Error('Delayed response was not completed on reload');
   if (afterMature.budCount <= afterApply.budCount) throw new Error(`Bud response did not appear: ${afterApply.budCount} -> ${afterMature.budCount}`);
-  if (!String(afterMature.log).includes('結果が現れた')) throw new Error(`Completion log is missing: ${afterMature.log}`);
+  if (!String(afterMature.log).includes('芽吹きと回復が予定どおり現れた')) throw new Error(`Completion log is missing: ${afterMature.log}`);
   report.response = afterMature;
   await page.screenshot({ path: 'test-artifacts/seasonal-v4-after.png', fullPage: false });
 

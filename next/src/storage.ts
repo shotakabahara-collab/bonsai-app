@@ -99,12 +99,17 @@ function mirrorLegacy(game: GameState): void {
         health: part.health,
         pruneLevel: part.pruneLevel,
         wire: part.wire,
+        wireHistory: part.wireHistory,
         disease: part.disease,
         pest: part.pest,
         deadwood: part.deadwood,
         scar: part.scar
       }])),
       shari: bonsai.shari,
+      lifeStatus: bonsai.lifeStatus,
+      diedAt: bonsai.diedAt,
+      deathCause: bonsai.deathCause,
+      aftercareRisks: bonsai.aftercareRisks,
       craft: bonsai.craft
     }
   };
