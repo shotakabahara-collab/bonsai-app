@@ -42,7 +42,7 @@ jobs:
           xz -dc /tmp/payload.xz | patch -p1 --batch --forward
           git diff --check
 
-      - name: Calibrate regressions and dual-browser offline audit
+      - name: Calibrate regressions, offline shell and dual-browser audit
         run: |
           python <<'PY'
           from pathlib import Path
@@ -90,7 +90,10 @@ jobs:
           const webkitCache = await page.evaluate(async () => {
             const cacheNames = await caches.keys();
             const cacheName = cacheNames.find(name => name === 'bonsai-authentic-consequences-v5-shell');
-            const required = ['/bonsai-app/index.html', '/bonsai-app/assets/kuromatsu/base/black.webp'];
+            const dynamicAssets = [...document.querySelectorAll('script[src],link[rel="stylesheet"][href]')]
+              .map(node => new URL(node.getAttribute('src') || node.getAttribute('href'), location.href).pathname)
+              .filter(pathname => pathname.startsWith('/bonsai-app/assets/'));
+            const required = [...new Set(['/bonsai-app/index.html', '/bonsai-app/assets/kuromatsu/base/black.webp', ...dynamicAssets])];
             const cache = cacheName ? await caches.open(cacheName) : null;
             const cached = cache ? await Promise.all(required.map(async url => Boolean(await cache.match(url)))) : [];
             return { controller: Boolean(navigator.serviceWorker.controller), cacheName, required, cached };
@@ -148,6 +151,96 @@ jobs:
             await offlineBrowser.close();
           }"""
           authentic.write_text(text[:start] + new_offline + text[end:], encoding='utf-8')
+
+          service_worker = r"""const VERSION = 'bonsai-authentic-consequences-v5';
+          const CACHE = `${VERSION}-shell`;
+          const INDEX = '/bonsai-app/index.html';
+          const CORE = [
+            '/bonsai-app/', INDEX,
+            '/bonsai-app/manifest.webmanifest', '/bonsai-app/icon.svg',
+            '/bonsai-app/photo-assets.js', '/bonsai-app/IMAGE_LICENSES.md',
+            '/bonsai-app/assets/kuromatsu/manifest.json',
+            '/bonsai-app/assets/kuromatsu/base/black.webp',
+            '/bonsai-app/assets/kuromatsu/base/starter.webp',
+            '/bonsai-app/assets/kuromatsu/base/blue.webp',
+            '/bonsai-app/assets/kuromatsu/base/moon.webp',
+            '/bonsai-app/assets/kuromatsu/base/old.webp'
+          ];
+
+          async function fetchAndCache(cache, url, options = {}) {
+            const response = await fetch(url, options);
+            if (response.ok) await cache.put(url, response.clone());
+            return response;
+          }
+
+          async function cacheBuiltAssets(cache, indexResponse) {
+            if (!indexResponse?.ok) return;
+            const html = await indexResponse.clone().text();
+            const urls = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
+              .map(match => new URL(match[1], self.location.origin))
+              .filter(url => url.origin === self.location.origin && url.pathname.startsWith('/bonsai-app/assets/'));
+            const unique = [...new Set(urls.map(url => url.href))];
+            await Promise.allSettled(unique.map(async url => {
+              const response = await fetch(url, { cache: 'reload' });
+              if (response.ok) await cache.put(url, response.clone());
+            }));
+          }
+
+          self.addEventListener('install', event => {
+            event.waitUntil((async () => {
+              const cache = await caches.open(CACHE);
+              const indexResponse = await fetchAndCache(cache, INDEX, { cache: 'reload' });
+              await cacheBuiltAssets(cache, indexResponse);
+              await Promise.allSettled(CORE.filter(url => url !== INDEX).map(url => fetchAndCache(cache, url, { cache: 'reload' })));
+              await self.skipWaiting();
+            })());
+          });
+
+          self.addEventListener('activate', event => {
+            event.waitUntil((async () => {
+              const keys = await caches.keys();
+              await Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)));
+              await self.clients.claim();
+            })());
+          });
+
+          self.addEventListener('fetch', event => {
+            if (event.request.method !== 'GET') return;
+            const url = new URL(event.request.url);
+            if (url.origin !== self.location.origin) return;
+            if (event.request.mode === 'navigate') {
+              event.respondWith((async () => {
+                try {
+                  const response = await fetch(event.request, { cache: 'no-store' });
+                  if (response.ok) {
+                    const cache = await caches.open(CACHE);
+                    await cache.put(event.request, response.clone());
+                    await cacheBuiltAssets(cache, response);
+                  }
+                  return response;
+                } catch {
+                  return (await caches.match(event.request, { ignoreSearch: true })) || (await caches.match(INDEX)) || Response.error();
+                }
+              })());
+              return;
+            }
+            event.respondWith((async () => {
+              const hit = await caches.match(event.request, { ignoreSearch: true });
+              if (hit) return hit;
+              try {
+                const response = await fetch(event.request);
+                if (response.ok) {
+                  const cache = await caches.open(CACHE);
+                  await cache.put(event.request, response.clone());
+                }
+                return response;
+              } catch {
+                return Response.error();
+              }
+            })());
+          });
+          """
+          Path('next/public/sw.js').write_text('\n'.join(line.lstrip() for line in service_worker.splitlines()) + '\n', encoding='utf-8')
 
           for workflow_path in (
             Path('.github/workflows/authentic-consequences-v5-ci.yml'),
