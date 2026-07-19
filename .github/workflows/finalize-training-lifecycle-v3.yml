@@ -1,0 +1,106 @@
+name: Finalize authentic bonsai craft v3
+
+on:
+  push:
+    branches: [feature/training-lifecycle-v3]
+    paths:
+      - 'scripts/finalize_training_v3_audit.py'
+      - '.github/workflows/finalize-training-lifecycle-v3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-authentic-bonsai-craft-v3
+  cancel-in-progress: true
+
+jobs:
+  verify-and-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/training-lifecycle-v3
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+      - name: Correct exhibition preparation audit
+        run: python scripts/finalize_training_v3_audit.py
+      - name: Install exact dependencies and build
+        working-directory: next
+        run: |
+          npm ci
+          npm run build
+      - name: Install iPhone WebKit and image tools
+        working-directory: next
+        run: |
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+      - name: Run complete iPhone-sized craft audit
+        run: |
+          cd next
+          npm run preview >/tmp/bonsai-v3-final-preview.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for i in $(seq 1 80); do curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break; sleep .25; done
+          npm run test:smoke
+      - name: Verify captured work screens
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageStat
+          import json
+
+          root = Path('next/test-artifacts')
+          names = [
+              '01-grow-visible.png',
+              '02b-wire-coils.png',
+              '03-show-visible.png',
+              '05-asynchronous-field.png',
+              '06-rental-offer.png',
+              '07-visual-archive.png',
+              '08-purchase-offer.png',
+          ]
+          report = {}
+          for name in names:
+              path = root / name
+              if not path.exists() or path.stat().st_size < 220_000:
+                  raise SystemExit(f'{name}: missing or suspiciously small')
+              image = Image.open(path).convert('RGB')
+              crop = image.crop((0, int(image.height * .08), image.width, int(image.height * .88))).resize((96, 160)).convert('L')
+              stat = ImageStat.Stat(crop)
+              values = list(crop.getdata())
+              bright = sum(value > 40 for value in values) / len(values)
+              report[name] = {'size': image.size, 'bytes': path.stat().st_size, 'mean': stat.mean[0], 'variance': stat.var[0], 'brightRatio': bright}
+              if stat.mean[0] < 15 or stat.var[0] < 190 or bright < .045:
+                  raise SystemExit(f'{name}: blank or hidden screen {report[name]}')
+          (root / 'final-craft-v3-visual-audit.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(report, ensure_ascii=False))
+          PY
+      - name: Verify authentic craft contracts
+        run: |
+          ! grep -R --line-number --exclude='package-lock.json' '施肥' next/src next/dist
+          ! grep -R --line-number --exclude='package-lock.json' 'fertilizer:' next/src next/dist
+          grep -Fq 'data-total-sites' next/src/CraftPanels.tsx
+          grep -Fq 'fresh' next/src/craft-v3.ts
+          grep -Fq 'weathering' next/src/craft-v3.ts
+          grep -Fq '針金を装着中' next/src/craft-v3.ts
+          grep -Fq '風化完成していない' next/src/craft-v3.ts
+      - name: Commit the verified audit correction
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add next/tests/smoke.mjs scripts/finalize_training_v3_audit.py .github/workflows/finalize-training-lifecycle-v3.yml
+          git diff --cached --quiet || git commit -m '精密制作v3を正しい針金養成手順で最終検証'
+          git push origin HEAD:feature/training-lifecycle-v3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: authentic-bonsai-craft-v3-final-audit
+          path: next/test-artifacts
+          if-no-files-found: warn
