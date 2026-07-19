@@ -7,6 +7,9 @@ old = """      persistGame(value);
       return value;
 """
 new = """      persistGame(value);
+      // React must render the same normalized state that was written to storage.
+      // Otherwise an already-removed wire can remain visible and keep the
+      // exhibition gate closed until the next full reload.
       return loadGame();
 """
 if old not in text:
