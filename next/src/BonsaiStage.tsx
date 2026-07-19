@@ -5,16 +5,39 @@ import {
   pestName,
   type BonsaiState,
   type PartId,
-  type SpeciesId
+  type SpeciesId,
+  type WireDirection
 } from './model';
 
-const WIRES: Partial<Record<PartId, string>> = {
-  apex: 'M50,62 C48,50 53,35 50,20',
-  firstLeft: 'M50,63 C43,58 36,50 26,45',
-  secondRight: 'M50,58 C58,51 64,45 75,39',
-  thirdLeft: 'M50,67 C42,66 36,65 28,66',
-  back: 'M50,58 C55,55 61,54 65,51',
-  front: 'M50,62 C53,64 54,68 54,73'
+type Coil = readonly [x: number, y: number, angle: number, length: number];
+
+// Coordinates are calibrated to the bundled 900×1500 black-pine photograph.
+// Each short diagonal segment represents one visible turn around a real branch;
+// no continuous guide line is rendered over the artwork.
+const WIRE_COILS: Partial<Record<PartId, readonly Coil[]>> = {
+  apex: [
+    [468, 610, 48, 34], [448, 575, 50, 32], [427, 540, 52, 31],
+    [405, 505, 54, 30], [383, 470, 56, 28], [360, 435, 58, 27]
+  ],
+  firstLeft: [
+    [420, 535, -18, 33], [382, 525, -16, 31], [344, 514, -15, 29],
+    [307, 502, -14, 28], [270, 490, -12, 26], [233, 479, -10, 24]
+  ],
+  secondRight: [
+    [492, 596, 55, 34], [530, 571, 58, 33], [569, 548, 61, 31],
+    [610, 528, 65, 30], [651, 515, 70, 28], [692, 510, 76, 26]
+  ],
+  thirdLeft: [
+    [408, 786, -24, 35], [372, 772, -22, 33], [336, 758, -20, 31],
+    [300, 744, -18, 29], [264, 730, -16, 27]
+  ],
+  back: [
+    [482, 676, 68, 31], [520, 681, 72, 30], [558, 687, 76, 28], [596, 694, 80, 26]
+  ],
+  front: [
+    [448, 748, 54, 35], [485, 765, 58, 34], [523, 782, 62, 32],
+    [561, 798, 66, 30], [600, 812, 70, 28]
+  ]
 };
 
 const FALLBACK: Record<SpeciesId, string> = {
@@ -45,6 +68,7 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
   const saturation = .68 + vitalityFilter * .42;
   const brightness = .65 + waterFilter * .3;
   const livingParts = PARTS.filter(part => !['trunk', 'roots'].includes(part.id));
+  const wiredCount = livingParts.filter(part => bonsai.parts[part.id]?.wire).length;
 
   return (
     <figure className={`bonsai-stage ${className}`} aria-label={`${bonsai.name}の現在の姿`}>
@@ -72,21 +96,40 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
         );
       })}
 
-      <svg className="wire-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      <svg
+        className={`wire-layer wire-layer-coils ${interactive ? 'wire-layer-editing' : 'wire-layer-viewing'}`}
+        viewBox="0 0 900 1500"
+        preserveAspectRatio="xMidYMid meet"
+        aria-hidden="true"
+      >
         {livingParts.map(({ id }) => {
           const wire = bonsai.parts[id]?.wire;
-          const path = WIRES[id];
-          if (!wire || !path) return null;
-          const transform = wire.direction === 'left' ? 'translate(-2 0)' : wire.direction === 'right' ? 'translate(2 0)' : wire.direction === 'up' ? 'translate(0 -2)' : wire.direction === 'down' ? 'translate(0 2)' : '';
-          return <path key={id} d={path} transform={transform} className={`wire-path wire-${wire.intensity}`} />;
+          const coils = WIRE_COILS[id];
+          if (!wire || !coils) return null;
+          const [dx, dy] = wireOffset(wire.direction);
+          return (
+            <g key={id} className={`wire-coil-group wire-group-${wire.intensity}`} transform={`translate(${dx} ${dy})`}>
+              {coils.map(([x, y, angle, length], index) => (
+                <g key={`${id}-${index}`} transform={`translate(${x} ${y}) rotate(${angle})`}>
+                  <line className="wire-coil-shadow" x1={-length / 2} y1="0" x2={length / 2} y2="0" />
+                  <line className="wire-coil-metal" x1={-length / 2} y1="0" x2={length / 2} y2="0" />
+                  <circle className="wire-coil-highlight" cx={-length * .14} cy="-1.1" r="1.35" />
+                </g>
+              ))}
+            </g>
+          );
         })}
         {bonsai.shari && (
           <path
-            d={bonsai.shari.side === 'left' ? 'M48 78 C45 67 47 55 49 43 C51 33 49 27 50 21' : 'M53 78 C56 66 53 55 52 44 C50 34 52 27 51 21'}
+            d={bonsai.shari.side === 'left'
+              ? 'M365 1260 C338 1110 359 974 405 830 C441 714 470 607 478 474'
+              : 'M398 1260 C429 1110 413 978 435 840 C459 716 490 610 492 475'}
             className={`shari-path shari-${bonsai.shari.level}`}
           />
         )}
       </svg>
+
+      {!interactive && wiredCount > 0 && <span className="wire-status-tag">整姿中 {wiredCount}枝</span>}
 
       {interactive && PARTS.map(part => (
         <button
@@ -102,6 +145,12 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
       ))}
     </figure>
   );
+}
+
+function wireOffset(direction: WireDirection): readonly [number, number] {
+  return ({
+    down: [0, 8], up: [0, -8], left: [-10, 0], right: [10, 0], front: [5, 5], back: [-4, -4]
+  } as Record<WireDirection, readonly [number, number]>)[direction];
 }
 
 function resolvePhoto(bonsai: BonsaiState): string {

@@ -288,7 +288,7 @@ export function migrateLegacy(raw: unknown): GameState {
     water: clamp(finite(source.water, 80)),
     vitality: clamp(finite(source.vit ?? source.vitality, 84)),
     stress: clamp(finite(source.stress, 2), 0, 1000),
-    fertilizer: clamp(finite(source.fert ?? source.fertilizer, 0), 0, 100),
+    fertilizer: 0,
     potId,
     parts: migrateParts(advanced.parts),
     shari: asObject(advanced.shari).level
@@ -372,7 +372,7 @@ function normalizeBonsai(input: BonsaiState): BonsaiState {
     water: clamp(finite(input?.water, 80)),
     vitality: clamp(finite(input?.vitality, 84)),
     stress: clamp(finite(input?.stress, 2), 0, 1000),
-    fertilizer: clamp(finite(input?.fertilizer, 0), 0, 100),
+    fertilizer: 0,
     potId: input?.potId in POTS ? input.potId : 'starter',
     parts: migrateParts(input?.parts),
     awards: Array.isArray(input?.awards) ? input.awards : [],
@@ -432,28 +432,130 @@ export function weekKey(date = new Date()): string {
   return `${date.getFullYear()}-${Math.ceil((day + first.getDay() + 1) / 7)}`;
 }
 
-export function exhibitionScore(bonsai: BonsaiState): { score: number; notes: string[] } {
-  const m = metrics(bonsai);
-  const pot = POTS[bonsai.potId];
-  const season = SPECIES[bonsai.species].seasonAffinity[seasonIndex(bonsai)];
-  const parts = PARTS.map(part => bonsai.parts[part.id]);
-  const diseaseCount = parts.filter(part => part.disease).length;
-  const pestCount = parts.filter(part => part.pest).length;
-  const visibleWire = parts.filter(part => part.wire).length;
-  const scarring = parts.reduce((sum, part) => sum + part.scar, 0) / parts.length;
-  const deadwood = parts.filter(part => part.deadwood).length + (bonsai.shari ? 1 : 0);
-  const foliageValues = PARTS.filter(part => !['trunk', 'roots'].includes(part.id)).map(part => bonsai.parts[part.id].foliage);
-  const balance = 100 - (Math.max(...foliageValues) - Math.min(...foliageValues));
-  const raw = m.vitality * .19 + m.health * .15 + m.artistry * .25 + pot.prestige * .17 + season * .12 + balance * .12
-    - diseaseCount * 8 - pestCount * 6 - visibleWire * 2.5 - scarring * .04 + Math.min(deadwood, 2) * 2;
-  const score = Math.round(clamp(raw, 20, 99));
-  const notes = [
-    diseaseCount || pestCount ? '病害虫が作品の清潔感を下げた。' : '葉色と清潔感は良好。',
-    visibleWire ? '展示時に針金が残り、完成度を損ねた。' : '整姿の痕跡を見せずにまとめた。',
-    pot.prestige >= 95 ? '鉢との格調が作品を押し上げた。' : '鉢合わせには伸びしろがある。',
-    balance >= 80 ? '左右の葉量と余白が安定している。' : '葉棚の重心に偏りがある。'
+const NATIONAL_POT_COMPATIBILITY: Record<SpeciesId, Record<PotId, number>> = {
+  pine: { starter: 72, blue: 58, black: 98, moon: 54, old: 95 },
+  maple: { starter: 74, blue: 94, black: 68, moon: 92, old: 84 },
+  azalea: { starter: 72, blue: 96, black: 62, moon: 94, old: 80 }
+};
+
+const average = (values: number[]): number => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+
+export function exhibitionScore(bonsai: BonsaiState): {
+  score: number;
+  notes: string[];
+  standard: string;
+  breakdown: Array<{ id: string; label: string; weight: number; score: number }>;
+  panels: Array<{ name: string; score: number }>;
+  penalties: string[];
+} {
+  const livingIds = PARTS.filter(part => !['trunk', 'roots'].includes(part.id)).map(part => part.id);
+  const living = livingIds.map(id => bonsai.parts[id]);
+  const allParts = PARTS.map(part => bonsai.parts[part.id]);
+  const health = average(living.map(part => part.health));
+  const foliage = average(living.map(part => part.foliage));
+  const foliageValues = living.map(part => part.foliage);
+  const spread = Math.max(...foliageValues) - Math.min(...foliageValues);
+  const pruning = average(living.map(part => part.pruneLevel));
+  const age = inGameAgeYears(bonsai);
+  const diseaseCount = allParts.filter(part => part.disease).length;
+  const pestCount = allParts.filter(part => part.pest).length;
+  const rootRot = bonsai.parts.roots.disease === 'rootRot' ? 1 : 0;
+  const visibleWire = living.filter(part => part.wire).length;
+  const averageScar = average(allParts.map(part => part.scar));
+  const heavyCuts = living.filter(part => part.pruneLevel === 3).length;
+  const bareLivingBranches = living.filter(part => !part.deadwood && part.foliage < 18).length;
+  const deadwood = living.filter(part => part.deadwood).length + (bonsai.shari ? 1 : 0);
+  const activeBranches = living.filter(part => part.foliage >= 24 || part.deadwood).length;
+  const waterReadiness = clamp(100 - Math.abs(78 - bonsai.water) * 2.15);
+  const cleanliness = clamp(100 - diseaseCount * 24 - pestCount * 17 - rootRot * 20);
+
+  const structure = clamp(
+    92
+      - spread * 1.08
+      - Math.abs(58 - foliage) * .68
+      + Math.min(10, activeBranches * 1.45)
+      + Math.min(8, pruning * 4)
+      - heavyCuts * 7
+      - bareLivingBranches * 10
+  );
+  const cultivation = clamp(
+    bonsai.vitality * .36
+      + health * .34
+      + waterReadiness * .18
+      + cleanliness * .12
+  );
+  const maturity = clamp(
+    40
+      + Math.min(29, age * 4.6)
+      + bonsai.parts.roots.health * .08
+      + bonsai.parts.trunk.health * .08
+      + Math.min(9, deadwood * 3.5)
+      - averageScar * .16
+  );
+  const finish = clamp(
+    98
+      - visibleWire * 13
+      - averageScar * .45
+      - diseaseCount * 12
+      - pestCount * 8
+      - heavyCuts * 6
+      - Math.max(0, bonsai.stress - 35) * .22
+  );
+  const potHarmony = clamp(
+    NATIONAL_POT_COMPATIBILITY[bonsai.species][bonsai.potId] * .72
+      + POTS[bonsai.potId].prestige * .28
+  );
+  const seasonalImpression = clamp(
+    SPECIES[bonsai.species].seasonAffinity[seasonIndex(bonsai)] * .48
+      + structure * .24
+      + cultivation * .18
+      + maturity * .10
+  );
+
+  const breakdown = [
+    { id: 'maturity', label: '樹格・成熟度', weight: 20, score: Math.round(maturity) },
+    { id: 'structure', label: '樹形・枝配り', weight: 25, score: Math.round(structure) },
+    { id: 'cultivation', label: '培養・健康', weight: 20, score: Math.round(cultivation) },
+    { id: 'finish', label: '手入れ・仕上げ', weight: 15, score: Math.round(finish) },
+    { id: 'pot', label: '鉢合わせ・展示調和', weight: 15, score: Math.round(potHarmony) },
+    { id: 'season', label: '季節感・感銘', weight: 5, score: Math.round(seasonalImpression) }
   ];
-  return { score, notes };
+
+  const penalties: string[] = [];
+  let explicitPenalty = 0;
+  if (rootRot) { explicitPenalty += 10; penalties.push('根腐れ兆候 −10'); }
+  if (diseaseCount - rootRot > 0) { const value = (diseaseCount - rootRot) * 5; explicitPenalty += value; penalties.push(`病徴 ${diseaseCount - rootRot}部位 −${value}`); }
+  if (pestCount > 0) { const value = pestCount * 3; explicitPenalty += value; penalties.push(`害虫 ${pestCount}部位 −${value}`); }
+  if (visibleWire > 0) { const value = visibleWire * 2; explicitPenalty += value; penalties.push(`展示中の露出針金 ${visibleWire}部位 −${value}`); }
+  if (bareLivingBranches > 0) { const value = bareLivingBranches * 3; explicitPenalty += value; penalties.push(`過度な枝抜き ${bareLivingBranches}部位 −${value}`); }
+  if (bonsai.stress > 70) { explicitPenalty += 4; penalties.push('作業直後の強いストレス −4'); }
+
+  const subtotal = breakdown.reduce((sum, item) => sum + item.score * item.weight / 100, 0);
+  const score = Math.round(clamp(subtotal - explicitPenalty, 20, 99));
+  const panels = [
+    { name: '造形審査', score: Math.round(structure * .58 + maturity * .42) },
+    { name: '培養審査', score: Math.round(cultivation * .70 + finish * .30) },
+    { name: '展示審査', score: Math.round(potHarmony * .65 + seasonalImpression * .35) }
+  ];
+
+  const strongest = [...breakdown].sort((a, b) => b.score - a.score)[0];
+  const weakest = [...breakdown].sort((a, b) => a.score - b.score)[0];
+  const notes = [
+    `主査所見：最も評価できるのは「${strongest.label}」${strongest.score}点。`,
+    `改善優先：最も低い「${weakest.label}」${weakest.score}点を整えると総合点が伸びる。`,
+    visibleWire ? '展示作品としては針金を外し、整姿の痕跡を見せないことが望ましい。' : '針金を見せず、展示前の仕上げは整っている。',
+    diseaseCount || pestCount ? '病害虫が確認されるため、出展より培養の回復を優先すべき状態。' : '病害虫による減点はなく、清潔感を保っている。',
+    potHarmony >= 90 ? '樹種の性格と鉢の格・色調が高い水準で調和している。' : '鉢の形・色・格に再考の余地がある。'
+  ];
+
+  return {
+    score,
+    notes,
+    standard: '国風賞の公表項目を参考にした六軸合議制',
+    breakdown,
+    panels,
+    penalties
+  };
 }
 
 export function advanceTime(game: GameState, now = Date.now()): GameState {
@@ -464,7 +566,7 @@ export function advanceTime(game: GameState, now = Date.now()): GameState {
     bonsai.water = clamp(bonsai.water - elapsedHours * SPECIES[bonsai.species].waterDecayPerHour);
     const dryPenalty = bonsai.water < 35 ? (35 - bonsai.water) * .035 * elapsedHours : 0;
     const stressPenalty = Math.max(0, bonsai.stress - 20) * .005 * elapsedHours;
-    bonsai.vitality = clamp(bonsai.vitality - dryPenalty - stressPenalty + Math.min(2, bonsai.fertilizer * .006 * elapsedHours));
+    bonsai.vitality = clamp(bonsai.vitality - dryPenalty - stressPenalty);
     bonsai.stress = Math.max(0, bonsai.stress - elapsedHours * .14);
     bonsai.lastUpdatedAt = now;
     maybeTriggerEvent(bonsai, now);
@@ -516,15 +618,11 @@ export function waterBonsai(game: GameState): GameState {
   });
 }
 
+/** @deprecated 施肥要素は作品状態から廃止済みです。旧呼び出しとの互換性だけを保ちます。 */
 export function fertilizeBonsai(game: GameState): GameState {
   const copy = structuredClone(game);
-  if (copy.money < 120) return copy;
-  copy.money -= 120;
   const bonsai = activeBonsai(copy);
-  if (!bonsai) return copy;
-  bonsai.fertilizer = clamp(bonsai.fertilizer + 12);
-  bonsai.stress = clamp(bonsai.stress + 2, 0, 1000);
-  bonsai.logs.unshift({ id: uuid(), at: Date.now(), text: '樹勢を見ながら控えめに施肥した。' });
+  if (bonsai) bonsai.fertilizer = 0;
   return copy;
 }
 

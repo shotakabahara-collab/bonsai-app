@@ -1,0 +1,121 @@
+.action-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+.wire-layer-coils {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.wire-layer-viewing { opacity: .68; }
+.wire-layer-editing { opacity: .96; }
+.wire-coil-shadow {
+  stroke: rgba(24, 12, 6, .62);
+  stroke-width: 10;
+  stroke-linecap: round;
+  filter: blur(.45px);
+}
+.wire-coil-metal {
+  stroke: #9b6642;
+  stroke-width: 5.2;
+  stroke-linecap: round;
+  filter: drop-shadow(0 1px .8px rgba(0, 0, 0, .75));
+}
+.wire-coil-highlight { fill: rgba(244, 193, 133, .72); }
+.wire-group-strong .wire-coil-shadow { stroke-width: 12.5; }
+.wire-group-strong .wire-coil-metal { stroke-width: 7; stroke: #865332; }
+.wire-group-strong .wire-coil-highlight { r: 1.7; }
+.wire-status-tag {
+  position: absolute;
+  z-index: 7;
+  top: 11px;
+  right: 11px;
+  border: 1px solid rgba(202, 145, 91, .38);
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(9, 13, 10, .76);
+  color: #d6ad7d;
+  font-size: 9px;
+  letter-spacing: .04em;
+  backdrop-filter: blur(8px);
+}
+
+.judging-standard {
+  margin: 7px 12px 13px;
+  border: 1px solid rgba(214, 183, 119, .2);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(214, 183, 119, .065), rgba(4, 10, 6, .24));
+  padding: 13px;
+}
+.judging-standard > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 11px;
+}
+.judging-standard > header span,
+.criterion-card span,
+.judge-panel-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 8px;
+}
+.judging-standard > header b { display: block; margin-top: 3px; font-size: 11px; }
+.judging-standard > header em {
+  flex: 0 0 auto;
+  border: 1px solid rgba(214, 183, 119, .3);
+  border-radius: 999px;
+  padding: 4px 7px;
+  color: var(--gold);
+  font: normal 8px sans-serif;
+}
+.judge-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 9px;
+}
+.judge-panel-grid > div {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .025);
+  padding: 8px;
+  text-align: center;
+}
+.judge-panel-grid b { display: block; margin-top: 3px; font: 20px Georgia, serif; color: var(--gold); }
+.criterion-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.criterion-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: rgba(4, 10, 6, .46);
+  padding: 9px;
+}
+.criterion-card > div { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; }
+.criterion-card > div b { font-size: 9px; }
+.criterion-card strong { display: block; margin: 5px 0 7px; font: 22px Georgia, serif; }
+.criterion-card i { display: block; height: 2px; border-radius: 99px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+.criterion-card i span { display: block; height: 100%; background: var(--gold); }
+.judging-penalties {
+  display: grid;
+  gap: 4px;
+  margin-top: 9px;
+  border-left: 2px solid var(--danger);
+  border-radius: 3px 11px 11px 3px;
+  background: rgba(166, 81, 70, .09);
+  padding: 8px 10px;
+}
+.judging-penalties b { font-size: 9px; color: #e1b4ad; }
+.judging-penalties span { color: #c59d96; font-size: 8px; }
+.judge-notes { margin-top: 10px !important; }
+
+@media (max-width: 360px) {
+  .criterion-grid { grid-template-columns: 1fr; }
+}

@@ -12,6 +12,8 @@ const report = {
   consoleErrors: [],
   migrated: null,
   afterPrune: null,
+  wireVisual: null,
+  judgingCriteria: 0,
   growVisual: null,
   showVisual: null,
   asyncFieldCount: 0,
@@ -163,6 +165,8 @@ try {
     throw new Error(`Legacy migration failed: ${JSON.stringify(migrated).slice(0, 500)}`);
   }
   if (migrated.mentorId !== 'gensai') throw new Error(`Mentor migration failed: ${migrated.mentorId}`);
+  if (migrated.bonsai[0].fertilizer !== 0) throw new Error(`Fertilizer state was not removed: ${migrated.bonsai[0].fertilizer}`);
+  if (await page.getByRole('button', { name: /施肥|堆肥/ }).count()) throw new Error('Fertilizer action is still visible');
 
   const bodyBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   if (/255, 255, 255/.test(bodyBackground)) throw new Error(`White screen background: ${bodyBackground}`);
@@ -188,6 +192,23 @@ try {
     throw new Error(`Pruning was not persisted: ${JSON.stringify(active.parts.firstLeft)}`);
   }
 
+  report.phase = 'realistic branch wiring';
+  await page.getByRole('button', { name: '部位針金' }).click();
+  await page.getByRole('button', { name: '第二枝を選択' }).click();
+  await page.getByRole('button', { name: '右へ' }).click();
+  await page.getByRole('button', { name: 'この部位へかける' }).click();
+  await page.waitForSelector('.wire-coil-metal');
+  report.wireVisual = await page.evaluate(() => ({
+    coils: document.querySelectorAll('.wire-coil-metal').length,
+    continuousLines: document.querySelectorAll('.wire-path').length,
+    status: document.querySelector('.wire-status-tag')?.textContent ?? '',
+    wire: JSON.parse(localStorage.getItem('bonsai:v2')).bonsai.find(item => item.id === JSON.parse(localStorage.getItem('bonsai:v2')).activeBonsaiId).parts.secondRight.wire
+  }));
+  if (report.wireVisual.coils < 5 || report.wireVisual.continuousLines !== 0 || !report.wireVisual.status.includes('整姿中') || report.wireVisual.wire?.direction !== 'right') {
+    throw new Error(`Wire rendering is not branch-coil based: ${JSON.stringify(report.wireVisual)}`);
+  }
+  await page.screenshot({ path: 'test-artifacts/02b-wire-coils.png', fullPage: false });
+
   report.phase = 'show page';
   await page.getByRole('button', { name: /大会/ }).click();
   await page.waitForSelector('.show-card');
@@ -201,7 +222,13 @@ try {
 
   report.showVisual = await inspectVisibleArtwork('.show-card');
   assertVisibleArtwork(report.showVisual, 'show page');
-  if (!report.showVisual.text.includes('現在の予想評価')) throw new Error(`show card content is missing: ${report.showVisual.text}`);
+  if (!report.showVisual.text.includes('三部門合議による予想評価')) throw new Error(`show card content is missing: ${report.showVisual.text}`);
+  await page.waitForSelector('.judging-standard');
+  report.judgingCriteria = await page.locator('.criterion-card').count();
+  const judgingText = await page.locator('.judging-standard').innerText();
+  if (report.judgingCriteria !== 6 || !judgingText.includes('国風賞') || !judgingText.includes('樹格・成熟度') || !judgingText.includes('培養・健康')) {
+    throw new Error(`Published judging rubric is incomplete: ${report.judgingCriteria} / ${judgingText}`);
+  }
   await page.screenshot({ path: 'test-artifacts/03-show-visible.png', fullPage: false });
   await page.locator('.show-card').screenshot({ path: 'test-artifacts/04-show-artwork.png' });
 
@@ -262,7 +289,7 @@ try {
   await page.getByRole('button', { name: /オファー/ }).click();
   await page.waitForSelector('.offer-purchase');
   await page.screenshot({ path: 'test-artifacts/08-purchase-offer.png', fullPage: false });
-  await page.getByRole('button', { name: /売却して山もみじへ買替/ }).click();
+  await page.locator('.offer-purchase:visible').last().getByRole('button', { name: /売却して山もみじへ買替/ }).click();
   await page.waitForFunction(({ oldBonsaiId, money }) => {
     const game = JSON.parse(localStorage.getItem('bonsai:v2'));
     const active = game.bonsai.find(item => item.id === game.activeBonsaiId);

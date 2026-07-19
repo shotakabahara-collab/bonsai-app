@@ -63,7 +63,7 @@ function mirrorLegacy(game: GameState): void {
     stress: bonsai.stress,
     prune: Object.values(bonsai.parts).reduce((sum, part) => sum + part.pruneLevel, 0),
     wire: Object.values(bonsai.parts).filter(part => part.wire).length,
-    fert: bonsai.fertilizer,
+    fert: 0,
     pot: bonsai.potId,
     money: game.money,
     rep: game.reputation,

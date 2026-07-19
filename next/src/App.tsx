@@ -16,7 +16,6 @@ import {
   diseaseName,
   enterWeeklyShow,
   exhibitionScore,
-  fertilizeBonsai,
   inGameAgeYears,
   metrics,
   pestName,
@@ -132,7 +131,6 @@ export default function App() {
             mentorTip={mentorTip(bonsai)}
             onSelectBonsai={id => commit(current => ({ ...current, activeBonsaiId: id }))}
             onWater={() => commit(current => waterBonsai(current), '水やりを記録しました')}
-            onFertilize={() => commit(current => fertilizeBonsai(current), '施肥を記録しました')}
             onOpenCare={mode => { setCareMode(mode); setSelectedPart(mode === 'deadwood' ? 'trunk' : 'apex'); }}
             onWall={() => setWallMode(true)}
             onAddTree={() => setNewTreeSpecies('pine')}
@@ -332,7 +330,7 @@ function Onboarding({ onStart }: { onStart: (player: string, mentor: string, spe
   );
 }
 
-function GrowPage({ game, bonsai, alerts, mentorName, mentorTip, onSelectBonsai, onWater, onFertilize, onOpenCare, onWall, onAddTree }: {
+function GrowPage({ game, bonsai, alerts, mentorName, mentorTip, onSelectBonsai, onWater, onOpenCare, onWall, onAddTree }: {
   game: GameState;
   bonsai: NonNullable<ReturnType<typeof activeBonsai>>;
   alerts: string[];
@@ -340,7 +338,6 @@ function GrowPage({ game, bonsai, alerts, mentorName, mentorTip, onSelectBonsai,
   mentorTip: string;
   onSelectBonsai: (id: string) => void;
   onWater: () => void;
-  onFertilize: () => void;
   onOpenCare: (mode: CareMode) => void;
   onWall: () => void;
   onAddTree: () => void;
@@ -368,7 +365,6 @@ function GrowPage({ game, bonsai, alerts, mentorName, mentorTip, onSelectBonsai,
           <ActionButton icon="💧" label="水やり" onClick={onWater} />
           <ActionButton icon="✂️" label="部位剪定" onClick={() => onOpenCare('prune')} />
           <ActionButton icon="🪢" label="部位針金" onClick={() => onOpenCare('wire')} />
-          <ActionButton icon="🌿" label="施肥" onClick={onFertilize} />
         </div>
       </article>
       {alerts.length > 0 && <div className="alert-card"><b>作品に異変があります</b>{alerts.map(alert => <span key={alert}>{alert}</span>)}<button type="button" onClick={() => onOpenCare('health')}>診断と処置</button></div>}
@@ -393,7 +389,38 @@ function PotsPage({ game, activePot, onSelect }: { game: GameState; activePot: P
 function ShowPage({ game, bonsai, onEnter }: { game: GameState; bonsai: NonNullable<ReturnType<typeof activeBonsai>>; onEnter: () => void }) {
   const evaluation = exhibitionScore(bonsai);
   const latest = bonsai.awards[0];
-  return <section className="page"><div className="page-heading"><div className="eyebrow">週に一度の非同期大会</div><h1>全国樹藝評論会</h1><p>同時ログインしていないプレイヤー作品も、同じ会場の出展作として登場します。</p></div><article className="show-card"><BonsaiStage bonsai={bonsai} /><div className="show-score"><small>現在の予想評価</small><b>{evaluation.score}<span>点</span></b></div><ul>{evaluation.notes.map(note => <li key={note}>{note}</li>)}</ul><button className="primary-button" type="button" onClick={onEnter}>今週の展覧会へ出展</button></article>{latest && <article className="latest-award"><span>{latest.rank === 1 ? '🥇' : latest.rank <= 3 ? '🏅' : '🎖️'}</span><div><small>直近の成績</small><b>{latest.title}・{latest.score}点</b><p>{new Date(latest.at).toLocaleString('ja-JP')}／{latest.fieldSize}作品中{latest.rank}位</p></div></article>}</section>;
+  return (
+    <section className="page">
+      <div className="page-heading">
+        <div className="eyebrow">公開審査基準・週に一度の非同期大会</div>
+        <h1>全国樹藝品評会</h1>
+        <p>国風賞で公表されている「総合美・風格・鉢等との調和・培養状態」を参考に、ゲーム内で再現できる六つの審査軸へ定量化しています。審査は作品の状態だけを見て行い、名声や所持金は採点に加えません。</p>
+      </div>
+      <article className="show-card">
+        <BonsaiStage bonsai={bonsai} />
+        <div className="show-score"><small>三部門合議による予想評価</small><b>{evaluation.score}<span>点</span></b></div>
+        <section className="judging-standard" aria-label="品評会の公開審査基準">
+          <header><div><span>審査基準</span><b>{evaluation.standard}</b></div><em>100点満点</em></header>
+          <div className="judge-panel-grid">
+            {evaluation.panels.map(panel => <div key={panel.name}><span>{panel.name}</span><b>{panel.score}</b></div>)}
+          </div>
+          <div className="criterion-grid">
+            {evaluation.breakdown.map(item => (
+              <article className="criterion-card" key={item.id}>
+                <div><b>{item.label}</b><span>配点 {item.weight}</span></div>
+                <strong>{item.score}</strong>
+                <i><span style={{ width: `${item.score}%` }} /></i>
+              </article>
+            ))}
+          </div>
+          {evaluation.penalties.length > 0 && <div className="judging-penalties"><b>明示減点</b>{evaluation.penalties.map(item => <span key={item}>{item}</span>)}</div>}
+        </section>
+        <ul className="judge-notes">{evaluation.notes.map(note => <li key={note}>{note}</li>)}</ul>
+        <button className="primary-button" type="button" onClick={onEnter}>今週の展覧会へ出展</button>
+      </article>
+      {latest && <article className="latest-award"><span>{latest.rank === 1 ? '🥇' : latest.rank <= 3 ? '🏅' : '🎖️'}</span><div><small>直近の成績</small><b>{latest.title}・{latest.score}点</b><p>{new Date(latest.at).toLocaleString('ja-JP')}／{latest.fieldSize}作品中{latest.rank}位</p></div></article>}
+    </section>
+  );
 }
 
 function PeoplePage({ mentorId }: { mentorId: string }) {

@@ -6,6 +6,7 @@ import { registerServiceWorker } from './storage';
 import './styles.css';
 import './stability.css';
 import './completion-layer.css';
+import './quality-v2.css';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error?: Error }> {
   state: { error?: Error } = {};
@@ -39,7 +40,7 @@ function resetScrollAfterTabChange(event: MouseEvent) {
 }
 
 document.addEventListener('click', resetScrollAfterTabChange, { capture: true });
-(window as Window & { BonsaiRelease?: string }).BonsaiRelease = 'bonsai-react-production-v1-20260718';
+(window as Window & { BonsaiRelease?: string }).BonsaiRelease = 'bonsai-react-production-v2-20260719';
 
 createRoot(root).render(
   <ErrorBoundary>
