@@ -1,3 +1,17 @@
+import {
+  advanceCraftLifecycle,
+  applyWireTraining,
+  craftSignature,
+  createCraftState,
+  exhibitionEligibility as craftExhibitionEligibility,
+  normalizeCraftState,
+  precisionStructureScore,
+  removeWireTraining,
+  startJinProjectInGame,
+  startShariProjectInGame
+} from './craft-v3';
+import type { CraftState, WireTrainingStatus } from './craft-v3';
+
 export type SpeciesId = 'pine' | 'maple' | 'azalea';
 export type PotId = 'starter' | 'blue' | 'black' | 'moon' | 'old';
 export type PartId = 'apex' | 'firstLeft' | 'secondRight' | 'thirdLeft' | 'back' | 'front' | 'trunk' | 'roots';
@@ -36,6 +50,10 @@ export interface WireState {
   intensity: 'light' | 'strong';
   direction: WireDirection;
   appliedAt: number;
+  readyAt?: number;
+  progress?: number;
+  status?: WireTrainingStatus;
+  lastRiskAt?: number;
 }
 
 export interface PartState {
@@ -44,6 +62,9 @@ export interface PartState {
   health: number;
   pruneLevel: 0 | 1 | 2 | 3;
   wire?: WireState;
+  trainedDirection?: WireDirection;
+  shapeRetention?: number;
+  wireRemovedAt?: number;
   disease?: DiseaseId;
   pest?: PestId;
   deadwood?: boolean;
@@ -84,9 +105,9 @@ export interface BonsaiState {
   water: number;
   vitality: number;
   stress: number;
-  fertilizer: number;
   potId: PotId;
   parts: Record<PartId, PartState>;
+  craft: CraftState;
   shari?: { side: 'left' | 'right'; level: 1 | 2 | 3; createdAt: number };
   awards: AwardRecord[];
   memorials: MemorialRecord[];
@@ -186,9 +207,9 @@ export function createBonsai(species: SpeciesId, name?: string): BonsaiState {
     water: 82,
     vitality: 88,
     stress: 2,
-    fertilizer: 0,
     potId: 'starter',
     parts: createParts(),
+    craft: createCraftState(),
     awards: [],
     memorials: [],
     logs: [{ id: uuid(), at: now, text: `${SPECIES[species].name}を迎えた。` }],
@@ -224,13 +245,20 @@ function migrateParts(raw: unknown): Record<PartId, PartState> {
       health: clamp(finite(legacy.health, defaults[part.id].health)),
       pruneLevel: clamp(Math.round(finite(legacy.pruneLevel ?? legacy.prune, 0)), 0, 3) as 0 | 1 | 2 | 3,
       scar: clamp(finite(legacy.scar, 0)),
+      trainedDirection: isWireDirection(legacy.trainedDirection) ? legacy.trainedDirection : undefined,
+      shapeRetention: legacy.shapeRetention === undefined ? undefined : clamp(finite(legacy.shapeRetention, 0)),
+      wireRemovedAt: finite(legacy.wireRemovedAt, 0) || undefined,
       wire: typeof legacy.wire === 'string'
         ? { intensity: legacy.wire === 'strong' ? 'strong' : 'light', direction: 'down', appliedAt: Date.now() }
         : wireSource.intensity
           ? {
               intensity: wireSource.intensity === 'strong' ? 'strong' : 'light',
               direction: isWireDirection(wireSource.direction) ? wireSource.direction : 'down',
-              appliedAt: finite(wireSource.appliedAt, Date.now())
+              appliedAt: finite(wireSource.appliedAt, Date.now()),
+              readyAt: finite(wireSource.readyAt, 0) || undefined,
+              progress: wireSource.progress === undefined ? undefined : clamp(finite(wireSource.progress, 0)),
+              status: ['training', 'ready', 'overdue'].includes(String(wireSource.status)) ? wireSource.status as WireTrainingStatus : undefined,
+              lastRiskAt: finite(wireSource.lastRiskAt, 0) || undefined
             }
           : undefined,
       disease: isDisease(legacy.disease) ? legacy.disease : mapLegacyDisease(legacy.disease),
@@ -288,9 +316,9 @@ export function migrateLegacy(raw: unknown): GameState {
     water: clamp(finite(source.water, 80)),
     vitality: clamp(finite(source.vit ?? source.vitality, 84)),
     stress: clamp(finite(source.stress, 2), 0, 1000),
-    fertilizer: 0,
     potId,
     parts: migrateParts(advanced.parts),
+    craft: normalizeCraftState(advanced.craft, migrateParts(advanced.parts), advanced.shari),
     shari: asObject(advanced.shari).level
       ? {
           side: asObject(advanced.shari).side === 'right' ? 'right' : 'left',
@@ -372,9 +400,9 @@ function normalizeBonsai(input: BonsaiState): BonsaiState {
     water: clamp(finite(input?.water, 80)),
     vitality: clamp(finite(input?.vitality, 84)),
     stress: clamp(finite(input?.stress, 2), 0, 1000),
-    fertilizer: 0,
     potId: input?.potId in POTS ? input.potId : 'starter',
     parts: migrateParts(input?.parts),
+    craft: normalizeCraftState(input?.craft, migrateParts(input?.parts), input?.shari),
     awards: Array.isArray(input?.awards) ? input.awards : [],
     memorials: Array.isArray(input?.memorials) ? input.memorials : [],
     logs: Array.isArray(input?.logs) ? input.logs : [],
@@ -413,8 +441,9 @@ export function metrics(bonsai: BonsaiState): { water: number; vitality: number;
   const health = livingParts.reduce((sum, part) => sum + bonsai.parts[part.id].health, 0) / livingParts.length;
   const foliage = livingParts.reduce((sum, part) => sum + bonsai.parts[part.id].foliage, 0) / livingParts.length;
   const pruning = livingParts.reduce((sum, part) => sum + bonsai.parts[part.id].pruneLevel, 0) / livingParts.length;
-  const wire = livingParts.filter(part => bonsai.parts[part.id].wire).length;
-  const artistry = clamp(20 + pruning * 15 + wire * 3 + Math.min(18, inGameAgeYears(bonsai) * 3) + (72 - Math.abs(58 - foliage)) * .25);
+  const retainedShape = livingParts.map(part => bonsai.parts[part.id].shapeRetention ?? 0).reduce((sum, value) => sum + value, 0) / livingParts.length;
+  const precision = precisionStructureScore(bonsai);
+  const artistry = clamp(precision * .68 + pruning * 6 + retainedShape * .12 + Math.min(12, inGameAgeYears(bonsai) * 2));
   return { water: clamp(bonsai.water), vitality: clamp(bonsai.vitality), artistry, health: clamp(health) };
 }
 
@@ -423,7 +452,7 @@ export function visualSignature(bonsai: BonsaiState): string {
     const part = bonsai.parts[id];
     return `${id}:${part.foliage.toFixed(0)}:${part.health.toFixed(0)}:${part.pruneLevel}:${part.wire?.intensity ?? '-'}:${part.wire?.direction ?? '-'}:${part.disease ?? '-'}:${part.pest ?? '-'}:${part.deadwood ? 'jin' : '-'}`;
   }).join('|');
-  return `${bonsai.species}:${bonsai.potId}:${bonsai.water.toFixed(0)}:${bonsai.vitality.toFixed(0)}:${bonsai.shari?.side ?? '-'}:${bonsai.shari?.level ?? 0}|${parts}`;
+  return `${bonsai.species}:${bonsai.potId}:${bonsai.water.toFixed(0)}:${bonsai.vitality.toFixed(0)}:${bonsai.shari?.side ?? '-'}:${bonsai.shari?.level ?? 0}|${parts}|craft:${craftSignature(bonsai)}`;
 }
 
 export function weekKey(date = new Date()): string {
@@ -468,9 +497,10 @@ export function exhibitionScore(bonsai: BonsaiState): {
   const activeBranches = living.filter(part => part.foliage >= 24 || part.deadwood).length;
   const waterReadiness = clamp(100 - Math.abs(78 - bonsai.water) * 2.15);
   const cleanliness = clamp(100 - diseaseCount * 24 - pestCount * 17 - rootRot * 20);
+  const precisionStructure = precisionStructureScore(bonsai);
 
   const structure = clamp(
-    92
+    64 + precisionStructure * .31
       - spread * 1.08
       - Math.abs(58 - foliage) * .68
       + Math.min(10, activeBranches * 1.45)
@@ -568,6 +598,7 @@ export function advanceTime(game: GameState, now = Date.now()): GameState {
     const stressPenalty = Math.max(0, bonsai.stress - 20) * .005 * elapsedHours;
     bonsai.vitality = clamp(bonsai.vitality - dryPenalty - stressPenalty);
     bonsai.stress = Math.max(0, bonsai.stress - elapsedHours * .14);
+    advanceCraftLifecycle(bonsai, now);
     bonsai.lastUpdatedAt = now;
     maybeTriggerEvent(bonsai, now);
   }
@@ -618,14 +649,6 @@ export function waterBonsai(game: GameState): GameState {
   });
 }
 
-/** @deprecated 施肥要素は作品状態から廃止済みです。旧呼び出しとの互換性だけを保ちます。 */
-export function fertilizeBonsai(game: GameState): GameState {
-  const copy = structuredClone(game);
-  const bonsai = activeBonsai(copy);
-  if (bonsai) bonsai.fertilizer = 0;
-  return copy;
-}
-
 export function prunePart(game: GameState, partId: PartId, level: 1 | 2 | 3): GameState {
   return updateActiveBonsai(game, bonsai => {
     const part = bonsai.parts[partId];
@@ -642,25 +665,11 @@ export function prunePart(game: GameState, partId: PartId, level: 1 | 2 | 3): Ga
 }
 
 export function wirePart(game: GameState, partId: PartId, intensity: 'light' | 'strong', direction: WireDirection): GameState {
-  return updateActiveBonsai(game, bonsai => {
-    const part = bonsai.parts[partId];
-    if (!part || ['trunk', 'roots'].includes(partId)) return;
-    part.wire = { intensity, direction, appliedAt: Date.now() };
-    bonsai.stress = clamp(bonsai.stress + (intensity === 'strong' ? 9 : 5), 0, 1000);
-    part.health = clamp(part.health - (intensity === 'strong' ? 3 : 1));
-    bonsai.logs.unshift({ id: uuid(), at: Date.now(), text: `${PARTS.find(item => item.id === partId)?.name}へ${intensity === 'strong' ? '強い' : '軽い'}針金をかけ、${wireDirectionName(direction)}へ流した。` });
-  });
+  return updateActiveBonsai(game, bonsai => applyWireTraining(bonsai, partId, intensity, direction));
 }
 
 export function removeWire(game: GameState, partId: PartId): GameState {
-  return updateActiveBonsai(game, bonsai => {
-    const part = bonsai.parts[partId];
-    if (!part?.wire) return;
-    const days = (Date.now() - part.wire.appliedAt) / 86_400_000;
-    if (days > 14) part.scar = clamp(part.scar + Math.min(25, days - 14));
-    delete part.wire;
-    bonsai.logs.unshift({ id: uuid(), at: Date.now(), text: `${PARTS.find(item => item.id === partId)?.name}の針金を外した。` });
-  });
+  return updateActiveBonsai(game, bonsai => removeWireTraining(bonsai, partId));
 }
 
 function wireDirectionName(direction: WireDirection): string {
@@ -686,26 +695,11 @@ export function treatPart(game: GameState, partId: PartId): GameState {
 }
 
 export function createJin(game: GameState, partId: PartId): GameState {
-  return updateActiveBonsai(game, bonsai => {
-    const part = bonsai.parts[partId];
-    if (!part || ['trunk', 'roots'].includes(partId) || part.deadwood || bonsai.vitality < 60) return;
-    part.deadwood = true;
-    part.foliage = 0;
-    part.health = 0;
-    delete part.wire;
-    bonsai.stress = clamp(bonsai.stress + 18, 0, 1000);
-    bonsai.logs.unshift({ id: uuid(), at: Date.now(), text: `${PARTS.find(item => item.id === partId)?.name}を神にした。生きた枝には戻らない。` });
-  });
+  return startJinProjectInGame(game, partId);
 }
 
 export function createShari(game: GameState, side: 'left' | 'right'): GameState {
-  return updateActiveBonsai(game, bonsai => {
-    if (bonsai.vitality < 70) return;
-    const next = Math.min(3, (bonsai.shari?.level ?? 0) + 1) as 1 | 2 | 3;
-    bonsai.shari = { side, level: next, createdAt: bonsai.shari?.createdAt ?? Date.now() };
-    bonsai.stress = clamp(bonsai.stress + 14, 0, 1000);
-    bonsai.logs.unshift({ id: uuid(), at: Date.now(), text: `主幹の${side === 'left' ? '左' : '右'}側へ舎利を入れた。` });
-  });
+  return startShariProjectInGame(game, side);
 }
 
 export function buyOrSelectPot(game: GameState, potId: PotId): GameState {
@@ -729,6 +723,8 @@ export function enterWeeklyShow(game: GameState): { game: GameState; award?: Awa
   const copy = structuredClone(game);
   const bonsai = activeBonsai(copy);
   if (!bonsai) return { game: copy, notes: ['出展できる盆栽がありません。'] };
+  const eligibility = craftExhibitionEligibility(bonsai);
+  if (!eligibility.eligible) return { game: copy, notes: eligibility.reasons };
   const evaluation = exhibitionScore(bonsai);
   const seed = hash(`${weekKey()}:${copy.playerName}`);
   const rivals = [

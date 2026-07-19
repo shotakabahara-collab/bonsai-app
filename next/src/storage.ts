@@ -26,7 +26,7 @@ export function loadGame(): GameState {
   return createGame();
 }
 
-export function persistGame(game: GameState): void {
+export function persistGame(game: GameState): GameState {
   const normalized = normalizeGame(game);
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
@@ -35,6 +35,7 @@ export function persistGame(game: GameState): void {
   } catch (error) {
     console.error('[BONSAI save]', error);
   }
+  return normalized;
 }
 
 function backupCorrupt(key: string, error: unknown): void {
@@ -63,7 +64,6 @@ function mirrorLegacy(game: GameState): void {
     stress: bonsai.stress,
     prune: Object.values(bonsai.parts).reduce((sum, part) => sum + part.pruneLevel, 0),
     wire: Object.values(bonsai.parts).filter(part => part.wire).length,
-    fert: 0,
     pot: bonsai.potId,
     money: game.money,
     rep: game.reputation,
@@ -88,7 +88,8 @@ function mirrorLegacy(game: GameState): void {
         deadwood: part.deadwood,
         scar: part.scar
       }])),
-      shari: bonsai.shari
+      shari: bonsai.shari,
+      craft: bonsai.craft
     }
   };
   localStorage.setItem(LEGACY_KEY, JSON.stringify(legacy));

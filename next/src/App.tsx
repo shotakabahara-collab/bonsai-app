@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BonsaiStage } from './BonsaiStage';
+import { DeadwoodLifecycleSheet, PrecisionPruningSheet, WireLifecycleStatus } from './CraftPanels';
+import {
+  advanceDeadwoodProjectInGame,
+  applyPrecisionPruningToGame,
+  exhibitionEligibility,
+  startJinProjectInGame,
+  startShariProjectInGame
+} from './craft-v3';
 import {
   PARTS,
   PEOPLE,
@@ -11,8 +19,6 @@ import {
   buyOrSelectPot,
   createBonsai,
   createGame,
-  createJin,
-  createShari,
   diseaseName,
   enterWeeklyShow,
   exhibitionScore,
@@ -67,8 +73,7 @@ export default function App() {
   const commit = useCallback((next: GameState | ((current: GameState) => GameState), message?: string) => {
     setGame(current => {
       const value = typeof next === 'function' ? next(current) : next;
-      persistGame(value);
-      return value;
+      return persistGame(value);
     });
     if (message) {
       setToast(message);
@@ -78,14 +83,28 @@ export default function App() {
 
   useEffect(() => {
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        const fresh = loadGame();
-        setGame(fresh);
-      }
+      if (document.visibilityState === 'visible') setGame(loadGame());
+    };
+    const onPersistedGame = (event: Event) => {
+      const detail = (event as CustomEvent<GameState>).detail;
+      // persistGame dispatches synchronously. Defer the render update so the
+      // current React state transaction can finish before adopting its normalized result.
+      queueMicrotask(() => setGame(detail ?? loadGame()));
     };
     document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
+    window.addEventListener('bonsai:game-updated', onPersistedGame);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('bonsai:game-updated', onPersistedGame);
+    };
   }, []);
+
+  useEffect(() => {
+    // Every screen transition adopts the canonical saved work state. This is
+    // especially important after removing wire, because exhibition eligibility
+    // must never be calculated from the previous rendered branch state.
+    setGame(loadGame());
+  }, [tab]);
 
   if (!game.started || !bonsai) {
     return <Onboarding onStart={(playerName, mentorId, species, treeName) => {
@@ -181,25 +200,48 @@ export default function App() {
         ))}
       </nav>
 
-      {careMode && (
+      {careMode === 'prune' && (
+        <PrecisionPruningSheet
+          bonsai={bonsai}
+          onClose={() => setCareMode(null)}
+          onApply={(siteId, technique) => {
+            commit(current => applyPrecisionPruningToGame(current, siteId, technique), '精密剪定を不可逆で確定しました');
+            setCareMode(null);
+          }}
+        />
+      )}
+
+      {careMode === 'deadwood' && (
+        <DeadwoodLifecycleSheet
+          bonsai={bonsai}
+          onClose={() => setCareMode(null)}
+          onStartJin={partId => {
+            commit(current => startJinProjectInGame(current, partId), '神の工程を開始しました');
+            setCareMode(null);
+          }}
+          onStartShari={side => {
+            if (!window.confirm('生き筋を残して細い舎利の工程を始めます。加工は元に戻せません。')) return;
+            commit(current => startShariProjectInGame(current, side), '舎利の工程を開始しました');
+            setCareMode(null);
+          }}
+          onAdvance={projectId => commit(current => advanceDeadwoodProjectInGame(current, projectId), '神・舎利を次の工程へ進めました')}
+        />
+      )}
+
+      {careMode && careMode !== 'prune' && careMode !== 'deadwood' && (
         <CareSheet
           mode={careMode}
           bonsai={bonsai}
           selectedPart={selectedPart}
           onSelectPart={setSelectedPart}
           onClose={() => setCareMode(null)}
-          onPrune={level => {
-            if (['trunk', 'roots'].includes(selectedPart)) return;
-            if (!window.confirm(`${PARTS.find(item => item.id === selectedPart)?.name}を剪定します。切った枝葉は元に戻せません。`)) return;
-            commit(current => prunePart(current, selectedPart, level), '不可逆の剪定を確定しました');
-            setCareMode(null);
-          }}
+          onPrune={() => undefined}
           onWire={(intensity, direction) => {
-            commit(current => wirePart(current, selectedPart, intensity, direction), '部位と方向を指定して針金をかけました');
+            commit(current => wirePart(current, selectedPart, intensity, direction), '部位と方向を指定して針金養成を始めました');
             setCareMode(null);
           }}
           onRemoveWire={() => {
-            commit(current => removeWire(current, selectedPart), '針金を外しました');
+            commit(current => removeWire(current, selectedPart), '針金を外し、枝姿の定着結果を記録しました');
             setCareMode(null);
           }}
           onTreat={() => {
@@ -207,16 +249,8 @@ export default function App() {
             commit(current => treatPart(current, selectedPart), '病害虫へ対処しました');
             setCareMode(null);
           }}
-          onJin={() => {
-            if (!window.confirm('この枝を神にします。生きた枝には戻せません。')) return;
-            commit(current => createJin(current, selectedPart), '神を作成しました');
-            setCareMode(null);
-          }}
-          onShari={side => {
-            if (!window.confirm('主幹へ舎利を入れます。元の樹皮には戻せません。')) return;
-            commit(current => createShari(current, side), '舎利を作成しました');
-            setCareMode(null);
-          }}
+          onJin={() => undefined}
+          onShari={() => undefined}
         />
       )}
 
@@ -388,6 +422,7 @@ function PotsPage({ game, activePot, onSelect }: { game: GameState; activePot: P
 
 function ShowPage({ game, bonsai, onEnter }: { game: GameState; bonsai: NonNullable<ReturnType<typeof activeBonsai>>; onEnter: () => void }) {
   const evaluation = exhibitionScore(bonsai);
+  const eligibility = exhibitionEligibility(bonsai);
   const latest = bonsai.awards[0];
   return (
     <section className="page">
@@ -416,7 +451,8 @@ function ShowPage({ game, bonsai, onEnter }: { game: GameState; bonsai: NonNulla
           {evaluation.penalties.length > 0 && <div className="judging-penalties"><b>明示減点</b>{evaluation.penalties.map(item => <span key={item}>{item}</span>)}</div>}
         </section>
         <ul className="judge-notes">{evaluation.notes.map(note => <li key={note}>{note}</li>)}</ul>
-        <button className="primary-button" type="button" onClick={onEnter}>今週の展覧会へ出展</button>
+        {!eligibility.eligible && <div className="show-eligibility-blocker"><b>現在は出展できません</b>{eligibility.reasons.map(reason => <span key={reason}>{reason}</span>)}</div>}
+        <button className="primary-button" type="button" disabled={!eligibility.eligible} onClick={onEnter}>今週の展覧会へ出展</button>
       </article>
       {latest && <article className="latest-award"><span>{latest.rank === 1 ? '🥇' : latest.rank <= 3 ? '🏅' : '🎖️'}</span><div><small>直近の成績</small><b>{latest.title}・{latest.score}点</b><p>{new Date(latest.at).toLocaleString('ja-JP')}／{latest.fieldSize}作品中{latest.rank}位</p></div></article>}
     </section>
@@ -453,7 +489,7 @@ function CareSheet({ mode, bonsai, selectedPart, onSelectPart, onClose, onPrune,
   const [wireIntensity, setWireIntensity] = useState<'light' | 'strong'>('light');
   const [direction, setDirection] = useState<WireDirection>('down');
   const title = { prune: '部位別剪定', wire: '部位別針金', health: '病害虫・健康', deadwood: '神・舎利' }[mode];
-  return <div className="care-overlay" role="dialog" aria-modal="true"><section className="care-sheet"><header><div><div className="eyebrow">作品上の場所を指定する</div><h2>{title}</h2></div><button type="button" onClick={onClose}>✕</button></header><BonsaiStage bonsai={bonsai} interactive selectedPart={selectedPart} onSelectPart={onSelectPart} className="care-stage" /><div className="part-summary"><b>{PARTS.find(item => item.id === selectedPart)?.name}</b><span>葉量 {Math.round(part.foliage)}／健康 {Math.round(part.health)}／剪定 {part.pruneLevel}</span>{part.disease && <em>{diseaseName(part.disease)}</em>}{part.pest && <em>{pestName(part.pest)}</em>}{part.deadwood && <em>神</em>}</div>{mode === 'prune' && <div className="care-options"><p>剪定は確定後に取り消せません。対象部位だけの葉量と骨格が変わります。</p><div className="three-buttons"><button type="button" onClick={() => onPrune(1)}>軽剪定<small>葉量 −14</small></button><button type="button" onClick={() => onPrune(2)}>中剪定<small>葉量 −28</small></button><button className="danger-option" type="button" onClick={() => onPrune(3)}>強剪定<small>葉量 −45</small></button></div></div>}{mode === 'wire' && <div className="care-options"><div className="segmented"><button className={wireIntensity === 'light' ? 'active' : ''} type="button" onClick={() => setWireIntensity('light')}>軽針金</button><button className={wireIntensity === 'strong' ? 'active' : ''} type="button" onClick={() => setWireIntensity('strong')}>強針金</button></div><div className="direction-grid">{([['down','下げる'],['up','上げる'],['left','左へ'],['right','右へ'],['front','手前へ'],['back','奥へ']] as Array<[WireDirection,string]>).map(([id,label]) => <button key={id} className={direction === id ? 'active' : ''} type="button" onClick={() => setDirection(id)}>{label}</button>)}</div><button className="primary-button" type="button" disabled={['trunk','roots'].includes(selectedPart)} onClick={() => onWire(wireIntensity, direction)}>この部位へかける</button>{part.wire && <button className="ghost-button" type="button" onClick={onRemoveWire}>現在の針金を外す</button>}</div>}{mode === 'health' && <div className="care-options"><p>{part.disease ? `${diseaseName(part.disease)}が見つかっています。` : part.pest ? `${pestName(part.pest)}が発生しています。` : 'この部位に目立った病害虫はありません。'}</p><button className="primary-button" type="button" disabled={!part.disease && !part.pest} onClick={onTreat}>診断に応じて処置する</button></div>}{mode === 'deadwood' && <div className="care-options"><p>神・舎利は古木感を生む上級技法です。加工した部分は元に戻りません。</p>{selectedPart === 'trunk' ? <div className="two-buttons"><button type="button" onClick={() => onShari('left')}>左側へ舎利</button><button type="button" onClick={() => onShari('right')}>右側へ舎利</button></div> : <button className="primary-button" type="button" disabled={selectedPart === 'roots' || part.deadwood || bonsai.vitality < 60} onClick={onJin}>この枝を神にする</button>}</div>}</section></div>;
+  return <div className="care-overlay" role="dialog" aria-modal="true"><section className="care-sheet"><header><div><div className="eyebrow">作品上の場所を指定する</div><h2>{title}</h2></div><button type="button" onClick={onClose}>✕</button></header><BonsaiStage bonsai={bonsai} interactive selectedPart={selectedPart} onSelectPart={onSelectPart} className="care-stage" /><div className="part-summary"><b>{PARTS.find(item => item.id === selectedPart)?.name}</b><span>葉量 {Math.round(part.foliage)}／健康 {Math.round(part.health)}／剪定 {part.pruneLevel}</span>{part.disease && <em>{diseaseName(part.disease)}</em>}{part.pest && <em>{pestName(part.pest)}</em>}{part.deadwood && <em>神</em>}</div>{mode === 'prune' && <div className="care-options"><p>剪定は確定後に取り消せません。対象部位だけの葉量と骨格が変わります。</p><div className="three-buttons"><button type="button" onClick={() => onPrune(1)}>軽剪定<small>葉量 −14</small></button><button type="button" onClick={() => onPrune(2)}>中剪定<small>葉量 −28</small></button><button className="danger-option" type="button" onClick={() => onPrune(3)}>強剪定<small>葉量 −45</small></button></div></div>}{mode === 'wire' && <div className="care-options"><div className="segmented"><button className={wireIntensity === 'light' ? 'active' : ''} type="button" onClick={() => setWireIntensity('light')}>軽針金</button><button className={wireIntensity === 'strong' ? 'active' : ''} type="button" onClick={() => setWireIntensity('strong')}>強針金</button></div><div className="direction-grid">{([['down','下げる'],['up','上げる'],['left','左へ'],['right','右へ'],['front','手前へ'],['back','奥へ']] as Array<[WireDirection,string]>).map(([id,label]) => <button key={id} className={direction === id ? 'active' : ''} type="button" onClick={() => setDirection(id)}>{label}</button>)}</div><button className="primary-button" type="button" disabled={['trunk','roots'].includes(selectedPart) || Boolean(part.wire)} onClick={() => onWire(wireIntensity, direction)}>この部位へかける</button>{part.wire && <WireLifecycleStatus wire={part.wire} species={bonsai.species} />}{part.wire && <button className="ghost-button" type="button" onClick={onRemoveWire}>{part.wire.status === 'ready' ? '適期に針金を外す' : part.wire.status === 'overdue' ? '食い込み前にすぐ外す' : '定着前に外す'}</button>}</div>}{mode === 'health' && <div className="care-options"><p>{part.disease ? `${diseaseName(part.disease)}が見つかっています。` : part.pest ? `${pestName(part.pest)}が発生しています。` : 'この部位に目立った病害虫はありません。'}</p><button className="primary-button" type="button" disabled={!part.disease && !part.pest} onClick={onTreat}>診断に応じて処置する</button></div>}{mode === 'deadwood' && <div className="care-options"><p>神・舎利は古木感を生む上級技法です。加工した部分は元に戻りません。</p>{selectedPart === 'trunk' ? <div className="two-buttons"><button type="button" onClick={() => onShari('left')}>左側へ舎利</button><button type="button" onClick={() => onShari('right')}>右側へ舎利</button></div> : <button className="primary-button" type="button" disabled={selectedPart === 'roots' || part.deadwood || bonsai.vitality < 60} onClick={onJin}>この枝を神にする</button>}</div>}</section></div>;
 }
 
 function mentorTip(bonsai: NonNullable<ReturnType<typeof activeBonsai>>): string {

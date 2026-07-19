@@ -8,6 +8,7 @@ import {
   type SpeciesId,
   type WireDirection
 } from './model';
+import { activeDeadwoodProjects, deadwoodStageLabel, precisionVisualSites } from './craft-v3';
 
 type Coil = readonly [x: number, y: number, angle: number, length: number];
 
@@ -40,6 +41,20 @@ const WIRE_COILS: Partial<Record<PartId, readonly Coil[]>> = {
   ]
 };
 
+const JIN_PATHS: Partial<Record<PartId, string>> = {
+  apex: 'M485 650 C452 598 423 548 392 490 C372 452 352 422 329 395',
+  firstLeft: 'M456 642 C405 618 352 593 298 566 C252 544 216 525 183 505',
+  secondRight: 'M476 650 C530 620 581 590 634 559 C681 532 721 516 760 503',
+  thirdLeft: 'M447 785 C399 772 351 755 302 739 C266 727 232 717 203 706',
+  back: 'M477 690 C526 685 570 688 616 699 C650 707 680 714 710 724',
+  front: 'M449 772 C489 795 527 820 566 845 C596 864 625 881 654 897'
+};
+
+const SHARI_PATHS = {
+  left: 'M365 1260 C340 1120 352 990 397 842 C430 733 461 620 475 482',
+  right: 'M401 1260 C425 1120 416 988 438 847 C459 730 488 620 492 485'
+} as const;
+
 const FALLBACK: Record<SpeciesId, string> = {
   pine: makeFallback('#294c35', '#6d4935', 'pine'),
   maple: makeFallback('#6d8d5b', '#6e4730', 'maple'),
@@ -69,6 +84,9 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
   const brightness = .65 + waterFilter * .3;
   const livingParts = PARTS.filter(part => !['trunk', 'roots'].includes(part.id));
   const wiredCount = livingParts.filter(part => bonsai.parts[part.id]?.wire).length;
+  const precisionSites = precisionVisualSites(bonsai);
+  const deadwoodProjects = bonsai.craft.deadwoodProjects;
+  const unfinishedDeadwood = activeDeadwoodProjects(bonsai);
 
   return (
     <figure className={`bonsai-stage ${className}`} aria-label={`${bonsai.name}の現在の姿`}>
@@ -91,10 +109,19 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
             {pruneOpacity > .05 && <span className="prune-mask" style={{ opacity: Math.min(.58, pruneOpacity) }} />}
             {part.disease && <span className={`condition condition-${part.disease}`} title={diseaseName(part.disease)} />}
             {part.pest && <span className={`condition pest condition-${part.pest}`} title={pestName(part.pest)} />}
-            {part.deadwood && <span className="deadwood-mark" />}
           </div>
         );
       })}
+
+
+      <svg className="precision-prune-svg" viewBox="0 0 900 1500" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        {precisionSites.map(site => (
+          <g key={site.id}>
+            <ellipse className="precision-prune-veil" cx={site.x * 9} cy={site.y * 15} rx={site.role === 'foliagePad' ? 62 : 45} ry={site.role === 'foliagePad' ? 42 : 30} opacity={site.opacity} />
+            {site.removed && <circle className="precision-cut-scar" cx={site.x * 9} cy={site.y * 15} r="7" />}
+          </g>
+        ))}
+      </svg>
 
       <svg
         className={`wire-layer wire-layer-coils ${interactive ? 'wire-layer-editing' : 'wire-layer-viewing'}`}
@@ -102,6 +129,17 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
         preserveAspectRatio="xMidYMid meet"
         aria-hidden="true"
       >
+
+        {deadwoodProjects.map(project => {
+          const path = project.kind === 'jin' ? JIN_PATHS[project.targetPartId] : SHARI_PATHS[project.side === 'right' ? 'right' : 'left'];
+          if (!path) return null;
+          return (
+            <g key={project.id}>
+              <path d={path} className={`deadwood-svg-path stage-${project.stage}`} />
+              <path d={path} className="deadwood-fiber" transform={project.kind === 'jin' ? 'translate(2 -2)' : 'translate(3 0)'} />
+            </g>
+          );
+        })}
         {livingParts.map(({ id }) => {
           const wire = bonsai.parts[id]?.wire;
           const coils = WIRE_COILS[id];
@@ -119,7 +157,7 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
             </g>
           );
         })}
-        {bonsai.shari && (
+        {bonsai.shari && !deadwoodProjects.some(project => project.kind === 'shari') && (
           <path
             d={bonsai.shari.side === 'left'
               ? 'M365 1260 C338 1110 359 974 405 830 C441 714 470 607 478 474'
@@ -130,6 +168,7 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
       </svg>
 
       {!interactive && wiredCount > 0 && <span className="wire-status-tag">整姿中 {wiredCount}枝</span>}
+      {!interactive && unfinishedDeadwood.length > 0 && <span className="deadwood-status-tag">古木技法：{deadwoodStageLabel(unfinishedDeadwood[0].stage)}</span>}
 
       {interactive && PARTS.map(part => (
         <button
