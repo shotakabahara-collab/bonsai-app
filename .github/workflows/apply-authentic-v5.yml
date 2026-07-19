@@ -111,6 +111,9 @@ jobs:
           for old_line, new_line in replacements.items():
             assert text.count(old_line) == 1, old_line
             text = text.replace(old_line, new_line)
+          old_healthy = "includes('結果')"
+          assert text.count(old_healthy) == 1
+          text = text.replace(old_healthy, "includes('芽吹きと回復が予定どおり現れた')")
           authentic.write_text(text, encoding='utf-8')
           PY
           git diff --check
