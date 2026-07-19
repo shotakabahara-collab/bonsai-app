@@ -30,12 +30,22 @@ jobs:
           ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 0
 
-      - name: Reassemble, verify and apply implementation patch
+      - name: Reassemble and verify implementation payload
         run: |
+          set -euxo pipefail
           cat .bonsai-authentic-v5-r3/chunk-* > /tmp/bonsai-authentic-v5.patch.xz.b64
+          test "$(wc -c < /tmp/bonsai-authentic-v5.patch.xz.b64)" -eq 48576
           base64 -d /tmp/bonsai-authentic-v5.patch.xz.b64 > /tmp/bonsai-authentic-v5.patch.xz
-          echo 'abd4c952300bb8e72cce3ed0761a9de07cd6a53727a0ce524a302165c7d4d058  /tmp/bonsai-authentic-v5.patch.xz' | sha256sum -c -
-          xz -dc /tmp/bonsai-authentic-v5.patch.xz | patch -p1 --batch
+          actual="$(sha256sum /tmp/bonsai-authentic-v5.patch.xz | cut -d' ' -f1)"
+          echo "payload sha256: ${actual}"
+          test "${actual}" = 'abd4c952300bb8e72cce3ed0761a9de07cd6a53727a0ce524a302165c7d4d058'
+          xz -t /tmp/bonsai-authentic-v5.patch.xz
+
+      - name: Apply implementation patch to the production baseline
+        run: |
+          set -euxo pipefail
+          xz -dc /tmp/bonsai-authentic-v5.patch.xz > /tmp/bonsai-authentic-v5.patch
+          patch -p1 --batch --forward < /tmp/bonsai-authentic-v5.patch
           git diff --check
 
       - uses: actions/setup-node@v4
