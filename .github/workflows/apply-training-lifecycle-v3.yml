@@ -8,6 +8,7 @@ on:
       - 'scripts/fix_training_v3_test.py'
       - 'scripts/fix_training_v3_normalization.py'
       - 'scripts/fix_training_v3_state_sync.py'
+      - 'scripts/fix_training_v3_visual_audit.py'
       - '.github/workflows/apply-training-lifecycle-v3.yml'
   pull_request:
     branches: [main]
@@ -40,15 +41,18 @@ jobs:
           python scripts/fix_training_v3_normalization.py
           python scripts/fix_training_v3_state_sync.py
           python scripts/fix_training_v3_test.py
+          python scripts/fix_training_v3_visual_audit.py
       - name: Install exact dependencies
         working-directory: next
         run: npm ci
       - name: Typecheck and production build
         working-directory: next
         run: npm run build
-      - name: Install iPhone WebKit
+      - name: Install iPhone WebKit and image audit tools
         working-directory: next
-        run: npx playwright install --with-deps webkit
+        run: |
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
       - name: Run full iPhone-sized interaction audit
         run: |
           cd next
@@ -57,6 +61,31 @@ jobs:
           trap 'kill $server' EXIT
           for i in $(seq 1 80); do curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break; sleep .25; done
           npm run test:smoke
+      - name: Verify visible iPhone screenshots are not blank
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageStat
+          import json
+
+          root = Path('next/test-artifacts')
+          checked = {}
+          for name in ('01-grow-visible.png', '02b-wire-coils.png', '03-show-visible.png'):
+              path = root / name
+              if not path.exists() or path.stat().st_size < 250_000:
+                  raise SystemExit(f'{name}: missing or suspiciously small')
+              image = Image.open(path).convert('RGB')
+              width, height = image.size
+              crop = image.crop((0, int(height * .10), width, int(height * .82))).resize((96, 160)).convert('L')
+              stat = ImageStat.Stat(crop)
+              pixels = list(crop.getdata())
+              bright = sum(value > 42 for value in pixels) / len(pixels)
+              checked[name] = {'size':[width,height], 'bytes':path.stat().st_size, 'mean':stat.mean[0], 'variance':stat.var[0], 'brightRatio':bright}
+              if stat.mean[0] < 16 or stat.var[0] < 220 or bright < .05:
+                  raise SystemExit(f'{name}: blank/hidden artwork {checked[name]}')
+          (root / 'craft-v3-visual-audit.json').write_text(json.dumps(checked, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(checked, ensure_ascii=False))
+          PY
       - name: Verify fertilizer removal and craft contracts
         run: |
           ! grep -R --line-number --exclude='package-lock.json' '施肥' next/src next/dist
@@ -68,7 +97,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add next scripts/apply_training_lifecycle_v3.py scripts/fix_training_v3_test.py scripts/fix_training_v3_normalization.py scripts/fix_training_v3_state_sync.py .github/workflows/apply-training-lifecycle-v3.yml
+          git add next scripts/apply_training_lifecycle_v3.py scripts/fix_training_v3_test.py scripts/fix_training_v3_normalization.py scripts/fix_training_v3_state_sync.py scripts/fix_training_v3_visual_audit.py .github/workflows/apply-training-lifecycle-v3.yml
           git diff --cached --quiet && exit 0
           git commit -m '剪定26箇所・針金養成・神舎利工程を統合'
           git push origin HEAD:feature/training-lifecycle-v3
