@@ -1,0 +1,71 @@
+name: Dispatch seasonal response v4
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/dispatch-seasonal-response-v4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: seasonal-response-v4
+  cancel-in-progress: true
+
+jobs:
+  validate-and-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/seasonal-response-v4
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+      - name: Connect seasonal craft layer
+        run: python scripts/apply_seasonal_response_v4.py
+      - name: Install exact dependencies
+        working-directory: next
+        run: npm ci
+      - name: Typecheck and production build
+        working-directory: next
+        run: npm run build
+      - name: Install iPhone WebKit
+        working-directory: next
+        run: npx playwright install --with-deps webkit
+      - name: Run existing complete interaction audit
+        run: |
+          cd next
+          npm run preview >/tmp/bonsai-seasonal-v4-preview.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for i in $(seq 1 80); do curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break; sleep .25; done
+          npm run test:smoke
+          node tests/seasonal-v4.mjs
+      - name: Verify seasonal contracts
+        run: |
+          grep -Fq "PrecisionPruningV4" next/src/App.tsx
+          grep -Fq "advanceSeasonalGame" next/src/storage.ts
+          grep -Fq "bonsai-seasonal-response-v4" next/public/sw.js
+          grep -Fq "標準温帯設定" next/src/seasonal-craft-v4.ts
+          test -s next/test-artifacts/seasonal-v4-before.png
+          test -s next/test-artifacts/seasonal-v4-after.png
+      - name: Commit verified candidate
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add next scripts/apply_seasonal_response_v4.py
+          git diff --cached --quiet && exit 0
+          git commit -m '季節適期と剪定後の芽吹き・回復応答を実装'
+          git push origin HEAD:feature/seasonal-response-v4
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-seasonal-response-v4-audit
+          path: next/test-artifacts
+          if-no-files-found: warn
