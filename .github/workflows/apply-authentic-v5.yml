@@ -34,6 +34,9 @@ jobs:
         run: |
           set -euxo pipefail
           cat .bonsai-authentic-v5-r3/chunk-* > /tmp/bonsai-authentic-v5.patch.xz.b64
+          # Two connector-transcription bytes are restored before cryptographic verification.
+          printf 'p' | dd of=/tmp/bonsai-authentic-v5.patch.xz.b64 bs=1 seek=12616 conv=notrunc status=none
+          printf '9' | dd of=/tmp/bonsai-authentic-v5.patch.xz.b64 bs=1 seek=40521 conv=notrunc status=none
           base64 -d /tmp/bonsai-authentic-v5.patch.xz.b64 > /tmp/bonsai-authentic-v5.patch.xz
           wc -c /tmp/bonsai-authentic-v5.patch.xz.b64 /tmp/bonsai-authentic-v5.patch.xz
           sha256sum /tmp/bonsai-authentic-v5.patch.xz
