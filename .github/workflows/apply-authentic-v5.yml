@@ -5,6 +5,10 @@ on:
     branches: [agent/authentic-work-consequences-v5]
     paths:
       - '.bonsai-authentic-v5-r3/ready'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.bonsai-authentic-v5-r3/ready'
   workflow_dispatch:
 
 permissions:
@@ -18,9 +22,12 @@ jobs:
   apply-and-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 50
+    env:
+      TARGET_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 0
 
       - name: Reassemble, verify and apply implementation patch
@@ -107,4 +114,4 @@ jobs:
           git add -A -- next .github/workflows .bonsai-authentic-v5 .bonsai-authentic-v5-r2 .bonsai-authentic-v5-r3
           git status --short
           git commit -m '実写加工と剪定リスク結果v5を実装'
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin "HEAD:${TARGET_BRANCH}"
