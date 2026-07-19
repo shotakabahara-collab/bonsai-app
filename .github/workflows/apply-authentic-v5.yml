@@ -4,7 +4,7 @@ on:
   push:
     branches: [agent/authentic-work-consequences-v5]
     paths:
-      - '.bonsai-authentic-v5/ready'
+      - '.bonsai-authentic-v5-r3/ready'
   workflow_dispatch:
 
 permissions:
@@ -17,18 +17,18 @@ concurrency:
 jobs:
   apply-and-audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Reassemble and verify implementation payload
+      - name: Reassemble, verify and apply implementation patch
         run: |
-          cat .bonsai-authentic-v5/chunk-* > /tmp/bonsai-authentic-v5.b64
-          base64 -d /tmp/bonsai-authentic-v5.b64 > /tmp/bonsai-authentic-v5.tar.gz
-          echo 'dd8eab191996b7d371942be919cd5b44a7c90b7b7a510910509a5f3ef2f3876d  /tmp/bonsai-authentic-v5.tar.gz' | sha256sum -c -
-          tar -xzf /tmp/bonsai-authentic-v5.tar.gz
+          cat .bonsai-authentic-v5-r3/chunk-* > /tmp/bonsai-authentic-v5.patch.xz.b64
+          base64 -d /tmp/bonsai-authentic-v5.patch.xz.b64 > /tmp/bonsai-authentic-v5.patch.xz
+          echo 'abd4c952300bb8e72cce3ed0761a9de07cd6a53727a0ce524a302165c7d4d058  /tmp/bonsai-authentic-v5.patch.xz' | sha256sum -c -
+          xz -dc /tmp/bonsai-authentic-v5.patch.xz | patch -p1 --batch
           git diff --check
 
       - uses: actions/setup-node@v4
@@ -54,21 +54,33 @@ jobs:
           npx playwright install --with-deps webkit
           python -m pip install --disable-pip-version-check pillow
 
-      - name: Run 390x844 DPR3 WebKit regression, consequences and offline audits
+      - name: Start verified production preview
         working-directory: next
         run: |
           npm run preview >/tmp/bonsai-authentic-v5-preview.log 2>&1 &
-          server=$!
-          trap 'kill $server' EXIT
+          echo $! >/tmp/bonsai-authentic-v5-preview.pid
           for i in $(seq 1 100); do
-            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break
+            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
             sleep .25
           done
-          curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null
-          npm run test:smoke
-          node tests/seasonal-v4.mjs
-          npm run test:authentic
-          python scripts/visual-audit-v5.py --output authentic-v5-preflight-visual-audit.json
+          cat /tmp/bonsai-authentic-v5-preview.log
+          exit 1
+
+      - name: Run existing 390x844 DPR3 WebKit regression
+        working-directory: next
+        run: npm run test:smoke
+
+      - name: Run seasonal v4 persistence regression
+        working-directory: next
+        run: node tests/seasonal-v4.mjs
+
+      - name: Run pruning consequences, interruption and offline audit
+        working-directory: next
+        run: npm run test:authentic
+
+      - name: Reject blank, banded or straight-line artwork overlays
+        working-directory: next
+        run: python scripts/visual-audit-v5.py --output authentic-v5-preflight-visual-audit.json
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -80,14 +92,19 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Commit only the audited application and final workflows
+      - name: Stop preview
+        if: always()
         run: |
-          rm -rf .bonsai-authentic-v5
+          test -f /tmp/bonsai-authentic-v5-preview.pid && kill "$(cat /tmp/bonsai-authentic-v5-preview.pid)" 2>/dev/null || true
+
+      - name: Commit only audited application and final workflows
+        run: |
+          rm -rf .bonsai-authentic-v5 .bonsai-authentic-v5-r2 .bonsai-authentic-v5-r3
           rm -f .github/workflows/apply-authentic-v5.yml
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A -- next .github/workflows .bonsai-authentic-v5
+          git add -A -- next .github/workflows .bonsai-authentic-v5 .bonsai-authentic-v5-r2 .bonsai-authentic-v5-r3
           git status --short
           git commit -m '実写加工と剪定リスク結果v5を実装'
           git push origin "HEAD:${GITHUB_REF_NAME}"
