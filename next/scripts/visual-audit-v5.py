@@ -25,13 +25,13 @@ def viewport_artwork_box(image: Image.Image) -> tuple[int, int, int, int]:
 
 
 def stage_artwork_box(image: Image.Image) -> tuple[int, int, int, int]:
-    """Trim only the rounded frame/status chips from a stage-element capture."""
+    """Trim frame labels/status chips and inspect the photographed tree itself."""
     width, height = image.size
     return (
-        int(width * 0.015),
-        int(height * 0.015),
-        int(width * 0.985),
-        int(height * 0.965),
+        int(width * 0.02),
+        int(height * 0.15),
+        int(width * 0.98),
+        int(height * 0.90),
     )
 
 
@@ -74,17 +74,26 @@ def compare_state(base: Image.Image, changed: Image.Image, label: str) -> dict[s
     box = stage_artwork_box(base)
     delta = ImageChops.difference(base.crop(box), changed.crop(box)).resize((150, 220)).convert('L')
     values = list(delta.getdata())
+    width, height = delta.size
+    changed_mask = [value > 5 for value in values]
+    severe_mask = [value > 48 for value in values]
+    row_ratios = [sum(changed_mask[y * width:(y + 1) * width]) / width for y in range(height)]
+    column_ratios = [sum(changed_mask[y * width + x] for y in range(height)) / height for x in range(width)]
     result = {
         'mean': ImageStat.Stat(delta).mean[0],
-        'changedRatio': sum(value > 5 for value in values) / len(values),
-        'severeRatio': sum(value > 48 for value in values) / len(values),
+        'changedRatio': sum(changed_mask) / len(changed_mask),
+        'severeRatio': sum(severe_mask) / len(severe_mask),
+        'maxRowRatio': max(row_ratios),
+        'maxColumnRatio': max(column_ratios),
     }
     if result['mean'] < 0.12 or result['changedRatio'] < 0.0015:
         raise SystemExit(f'{label}: work produced no visible state change {result}')
-    # The compared images are element captures of the exact same photographic stage,
-    # so broad deltas now indicate a real full-image tint/band rather than scroll drift.
-    if result['changedRatio'] > 0.24 or result['severeRatio'] > 0.11:
+    # Only the central photographed tree is compared. A broad delta here is a real tint,
+    # white band, dark ellipse or pasted panel rather than scroll-position drift.
+    if result['changedRatio'] > 0.12 or result['severeRatio'] > 0.06:
         raise SystemExit(f'{label}: effect is implausibly broad, likely a pasted overlay {result}')
+    if result['maxRowRatio'] > 0.55 or result['maxColumnRatio'] > 0.55:
+        raise SystemExit(f'{label}: detected a straight band crossing the photographed tree {result}')
     return result
 
 
@@ -112,11 +121,9 @@ def main() -> None:
     ]
 
     report: dict[str, object] = {}
-    viewport_images: dict[str, Image.Image] = {}
     stage_images: dict[str, Image.Image] = {}
     for name in viewport_required:
-        image, result = inspect_capture(root / name)
-        viewport_images[name] = image
+        _, result = inspect_capture(root / name)
         report[name] = result
     for name in stage_required:
         image, result = inspect_capture(root / name, stage_only=True)
@@ -137,9 +144,20 @@ def main() -> None:
     pause_mean = ImageStat.Stat(pause_delta).mean[0]
     pause_changed = sum(value > 5 for value in pause_values) / len(pause_values)
     report['pauseAppearanceDelta'] = {'mean': pause_mean, 'changedRatio': pause_changed}
-    # Pausing is not undo; only a small status-chip difference is allowed.
-    if pause_mean > 4.0 or pause_changed > 0.08:
+    # Pausing is not undo; the photographed wood itself must remain unchanged.
+    if pause_mean > 1.0 or pause_changed > 0.02:
         raise SystemExit(f'pausing deadwood changed the physical artwork too much: {report["pauseAppearanceDelta"]}')
+
+    offline = stage_images['authentic-v5-offline-artwork.png']
+    if fresh.size != offline.size:
+        raise SystemExit('offlineAppearanceDelta: photographed stage changed size')
+    offline_delta = ImageChops.difference(fresh.crop(box), offline.crop(box)).resize((150, 220)).convert('L')
+    offline_values = list(offline_delta.getdata())
+    offline_mean = ImageStat.Stat(offline_delta).mean[0]
+    offline_changed = sum(value > 5 for value in offline_values) / len(offline_values)
+    report['offlineAppearanceDelta'] = {'mean': offline_mean, 'changedRatio': offline_changed}
+    if offline_mean > 1.0 or offline_changed > 0.02:
+        raise SystemExit(f'offline restart changed the saved physical artwork: {report["offlineAppearanceDelta"]}')
 
     output = root / args.output
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
