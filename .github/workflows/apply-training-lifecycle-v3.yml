@@ -9,7 +9,9 @@ on:
       - 'scripts/fix_training_v3_normalization.py'
       - 'scripts/fix_training_v3_state_sync.py'
       - 'scripts/fix_training_v3_event_sync.py'
+      - 'scripts/fix_training_v3_tab_sync.py'
       - 'scripts/fix_training_v3_wire_wait.py'
+      - 'scripts/fix_training_v3_show_wait.py'
       - 'scripts/fix_training_v3_visual_audit.py'
       - '.github/workflows/apply-training-lifecycle-v3.yml'
   pull_request:
@@ -43,8 +45,10 @@ jobs:
           python scripts/fix_training_v3_normalization.py
           python scripts/fix_training_v3_state_sync.py
           python scripts/fix_training_v3_event_sync.py
+          python scripts/fix_training_v3_tab_sync.py
           python scripts/fix_training_v3_test.py
           python scripts/fix_training_v3_wire_wait.py
+          python scripts/fix_training_v3_show_wait.py
           python scripts/fix_training_v3_visual_audit.py
       - name: Install exact dependencies
         working-directory: next
@@ -101,7 +105,7 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add next scripts/apply_training_lifecycle_v3.py scripts/fix_training_v3_test.py scripts/fix_training_v3_normalization.py scripts/fix_training_v3_state_sync.py scripts/fix_training_v3_event_sync.py scripts/fix_training_v3_wire_wait.py scripts/fix_training_v3_visual_audit.py .github/workflows/apply-training-lifecycle-v3.yml
+          git add next scripts/apply_training_lifecycle_v3.py scripts/fix_training_v3_test.py scripts/fix_training_v3_normalization.py scripts/fix_training_v3_state_sync.py scripts/fix_training_v3_event_sync.py scripts/fix_training_v3_tab_sync.py scripts/fix_training_v3_wire_wait.py scripts/fix_training_v3_show_wait.py scripts/fix_training_v3_visual_audit.py .github/workflows/apply-training-lifecycle-v3.yml
           git diff --cached --quiet && exit 0
           git commit -m '剪定26箇所・針金養成・神舎利工程を統合'
           git push origin HEAD:feature/training-lifecycle-v3
