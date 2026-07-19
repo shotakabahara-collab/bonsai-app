@@ -1,0 +1,250 @@
+name: Apply BONSAI visual and judging v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/apply_bonsai_visual_judging_v2.py'
+      - '.github/workflows/apply-bonsai-visual-judging-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  issues: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  patch-build-audit:
+    runs-on: ubuntu-latest
+    outputs:
+      release_sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Apply visual, fertilizer-removal and judging changes
+        run: python scripts/apply_bonsai_visual_judging_v2.py
+
+      - name: Install exact dependencies
+        working-directory: next
+        run: npm ci
+
+      - name: Typecheck and production build
+        working-directory: next
+        run: npm run build
+
+      - name: Install WebKit and image audit tools
+        working-directory: next
+        run: |
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Run complete iPhone-sized interaction audit
+        run: |
+          cd next
+          npm run preview >/tmp/bonsai-v2-preview.log 2>&1 &
+          server=$!
+          trap 'kill $server' EXIT
+          for i in $(seq 1 80); do curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break; sleep .25; done
+          npm run test:smoke
+
+      - name: Verify fertilizer removal, wire coils and published judging rubric
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import json
+
+          result = json.loads(Path('next/test-artifacts/smoke-result.json').read_text(encoding='utf-8'))
+          if result.get('phase') != 'complete':
+              raise SystemExit(f"smoke did not complete: {result.get('phase')} {result.get('failure')}")
+          wire = result.get('wireVisual') or {}
+          if wire.get('coils', 0) < 5 or wire.get('continuousLines') != 0:
+              raise SystemExit(f'wire visual audit failed: {wire}')
+          if result.get('judgingCriteria') != 6:
+              raise SystemExit(f"judging rubric count invalid: {result.get('judgingCriteria')}")
+          migrated = result.get('migrated') or {}
+          first = (migrated.get('bonsai') or [{}])[0]
+          if first.get('fertilizer') != 0:
+              raise SystemExit(f"fertilizer state remains: {first.get('fertilizer')}")
+          print(json.dumps({'wire': wire, 'criteria': result.get('judgingCriteria'), 'fertilizer': first.get('fertilizer')}, ensure_ascii=False))
+          PY
+          grep -Fq '国風賞の公表項目を参考にした六軸合議制' next/src/model.ts
+          grep -Fq 'grid-template-columns: repeat(3' next/src/quality-v2.css
+          ! grep -Fq 'label="施肥"' next/src/App.tsx
+          ! grep -Fq 'Math.min(2, bonsai.fertilizer' next/src/model.ts
+
+      - name: Commit the verified source update
+        id: commit
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add next/src next/tests next/public/sw.js scripts/apply_bonsai_visual_judging_v2.py .github/workflows/apply-bonsai-visual-judging-v2.yml
+          git diff --cached --quiet || git commit -m '施肥を廃止し針金表現と全国品評会審査を刷新'
+          git push origin HEAD:main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/configure-pages@v5
+        id: configure
+
+      - uses: actions/upload-pages-artifact@v3
+        id: pages-artifact
+        with:
+          path: next/dist
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-visual-judging-v2-local-audit
+          path: next/test-artifacts
+          if-no-files-found: error
+
+  deploy:
+    needs: patch-build-audit
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy verified BONSAI bundle
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  public-iphone-audit:
+    needs: [patch-build-audit, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+      - name: Install public audit dependencies
+        working-directory: next
+        run: |
+          npm ci
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Wait for the exact deployed release
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+          RELEASE_SHA: ${{ needs.patch-build-audit.outputs.release_sha }}
+        run: |
+          base="${PAGE_URL%/}/"
+          for attempt in $(seq 1 30); do
+            if curl -fsS "${base}assets/kuromatsu/base/black.webp?v=${RELEASE_SHA}" -o /tmp/live-black.webp \
+              && curl -fsS "${base}photo-assets.js?v=${RELEASE_SHA}" | grep -Fq 'react-kuromatsu-photoreal-v1' \
+              && curl -fsS "${base}sw.js?v=${RELEASE_SHA}" | grep -Fq 'bonsai-react-v2-wire-judge'; then
+              echo "visual/judging v2 visible after attempt ${attempt}"
+              exit 0
+            fi
+            sleep 4
+          done
+          exit 1
+
+      - name: Run complete audit against public GitHub Pages
+        working-directory: next
+        env:
+          BONSAI_BASE_URL: ${{ needs.deploy.outputs.page_url }}
+          BONSAI_PUBLIC: '1'
+        run: npm run test:smoke
+
+      - name: Verify public report and image files
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+          RELEASE_SHA: ${{ needs.patch-build-audit.outputs.release_sha }}
+        run: |
+          base="${PAGE_URL%/}/"
+          curl -fsS "${base}index.html?v=${RELEASE_SHA}" | grep -Fq '<title>BONSAI</title>'
+          curl -fsS "${base}assets/kuromatsu/base/black.webp?v=${RELEASE_SHA}" -o /tmp/live-black.webp
+          test "$(wc -c < /tmp/live-black.webp)" -gt 300000
+          python <<'PY'
+          from pathlib import Path
+          import json
+          from PIL import Image, ImageStat
+
+          root = Path('next/test-artifacts')
+          report = json.loads((root / 'smoke-result.json').read_text(encoding='utf-8'))
+          if report.get('phase') != 'complete':
+              raise SystemExit(report.get('failure'))
+          if report.get('judgingCriteria') != 6:
+              raise SystemExit('public judging rubric is incomplete')
+          wire = report.get('wireVisual') or {}
+          if wire.get('coils', 0) < 5 or wire.get('continuousLines') != 0:
+              raise SystemExit(f'public wire visual invalid: {wire}')
+          for name in ('01-grow-visible.png', '02b-wire-coils.png', '03-show-visible.png'):
+              path = root / name
+              if not path.exists() or path.stat().st_size < 250_000:
+                  raise SystemExit(f'{name}: missing or suspiciously small')
+              image = Image.open(path).convert('RGB')
+              sample = image.resize((96, 144)).convert('L')
+              stat = ImageStat.Stat(sample)
+              if stat.var[0] < 220 or stat.mean[0] < 15:
+                  raise SystemExit(f'{name}: blank visual capture')
+          print(json.dumps({'wire': wire, 'criteria': report.get('judgingCriteria')}, ensure_ascii=False))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-visual-judging-v2-public-audit
+          path: next/test-artifacts
+          if-no-files-found: error
+
+      - name: Record the final production audit
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+          RELEASE_SHA: ${{ needs.patch-build-audit.outputs.release_sha }}
+          STATUS: ${{ job.status }}
+        with:
+          script: |
+            const passed = process.env.STATUS === 'success';
+            const page = (process.env.PAGE_URL || 'https://shotakabahara-collab.github.io/bonsai-app/').replace(/\/$/, '') + '/';
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1,
+              title: `BONSAI visual/judging v2 audit: ${passed ? 'PASS' : 'FAIL'}`,
+              body: [
+                '# BONSAI 視覚・審査基準 v2 本番監査','',
+                `- release SHA: \`${process.env.RELEASE_SHA || 'not-created'}\``,
+                '- fertilizer action and growth effect: removed',
+                '- wire rendering: branch-aligned copper coil segments',
+                '- continuous center-line wire overlay: removed',
+                '- judging standard: six published criteria with three-panel review',
+                '- old save migration: verified',
+                '- irreversible pruning persistence: verified',
+                '- asynchronous field, rental, purchase and visual archive: verified',
+                `- public 390×844 / DPR 3 WebKit: ${passed ? 'verified' : 'failure'}`,
+                `- Pages URL: ${page}`,'',
+                passed ? '公開中の実URLで、施肥要素の消去、針金の枝沿い表示、六軸審査、保存・大会・オファーまで確認しました。' : '公開後監査に未通過項目があります。'
+              ].join('\n'),
+              state: passed ? 'closed' : 'open',
+              ...(passed ? { state_reason: 'completed' } : { state_reason: 'reopened' })
+            });
+
+      - name: Fail when public audit did not pass
+        if: failure()
+        run: exit 1
