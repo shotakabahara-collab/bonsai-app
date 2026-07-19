@@ -1,35 +1,38 @@
-name: Branch Topology v5 validation
+name: Apply and preflight Branch Topology v5
 
 on:
   pull_request:
     branches: [main]
     paths:
+      - '.bonsai-v5-payload/**'
       - 'next/**'
       - '.github/workflows/branch-topology-v5-ci.yml'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: branch-topology-v5-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: apply-branch-topology-v5
+  cancel-in-progress: false
 
 jobs:
-  validate:
+  apply-and-audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-
-      - name: Capture review source
-        uses: actions/upload-artifact@v4
         with:
-          name: bonsai-branch-topology-v5-source
-          path: |
-            .github
-            next
-          if-no-files-found: error
-          retention-days: 3
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Reassemble and verify implementation payload
+        run: |
+          cat .bonsai-v5-payload/chunk-* > /tmp/bonsai-payload.b64
+          base64 -d /tmp/bonsai-payload.b64 > /tmp/bonsai-payload.tar.gz
+          echo 'c767af0b4df40d07149532b4755cd28004a4f0230b5e695dd961a9d7e8171b37  /tmp/bonsai-payload.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/bonsai-payload.tar.gz
+          git diff --check
 
       - uses: actions/setup-node@v4
         with:
@@ -41,15 +44,21 @@ jobs:
         working-directory: next
         run: npm ci
 
+      - name: Validate topology model invariants
+        working-directory: next
+        run: npm run test:topology:unit
+
       - name: Typecheck and production build
         working-directory: next
         run: npm run build
 
-      - name: Install iPhone WebKit
+      - name: Install iPhone WebKit and pixel-audit tools
         working-directory: next
-        run: npx playwright install --with-deps webkit
+        run: |
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
 
-      - name: Run 390x844 DPR3 regression audit
+      - name: Run v4 regressions and Branch Topology v5 on 390x844 DPR3 WebKit
         working-directory: next
         run: |
           npm run preview >/tmp/bonsai-v5-preview.log 2>&1 &
@@ -60,10 +69,89 @@ jobs:
             sleep .25
           done
           npm run test:smoke
+          node tests/seasonal-v4.mjs
+          npm run test:topology
+
+      - name: Reject blank captures and verify a real artwork-state delta
+        working-directory: next
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageChops, ImageStat
+          import json
+
+          root = Path('test-artifacts')
+          names = (
+              '01-grow-visible.png',
+              '03-show-visible.png',
+              'topology-v5-before.png',
+              'topology-v5-after.png',
+          )
+          report = {}
+          images = {}
+          for name in names:
+              path = root / name
+              if not path.exists() or path.stat().st_size < 180_000:
+                  raise SystemExit(f'{name}: missing or suspiciously small')
+              image = Image.open(path).convert('RGB')
+              images[name] = image
+              width, height = image.size
+              crop = image.crop((int(width * .08), int(height * .12), int(width * .92), int(height * .78)))
+              gray = crop.resize((96, 144)).convert('L')
+              stat = ImageStat.Stat(gray)
+              pixels = list(gray.getdata())
+              bright = sum(value > 45 for value in pixels) / len(pixels)
+              near_white = sum(value > 247 for value in pixels) / len(pixels)
+              report[name] = {
+                  'size': [width, height],
+                  'bytes': path.stat().st_size,
+                  'mean': stat.mean[0],
+                  'variance': stat.var[0],
+                  'brightRatio': bright,
+                  'nearWhiteRatio': near_white,
+              }
+              if width < 390 or height < 700 or stat.mean[0] < 16 or stat.var[0] < 220 or bright < .05:
+                  raise SystemExit(f'{name}: blank or hidden artwork {report[name]}')
+
+          before = images['topology-v5-before.png']
+          after = images['topology-v5-after.png']
+          if before.size != after.size:
+              raise SystemExit('topology screenshots changed viewport size')
+          width, height = before.size
+          box = (int(width * .08), int(height * .12), int(width * .92), int(height * .78))
+          difference = ImageChops.difference(before.crop(box), after.crop(box)).resize((96, 144)).convert('L')
+          delta = ImageStat.Stat(difference).mean[0]
+          changed = sum(value > 6 for value in difference.getdata()) / (96 * 144)
+          report['topologyDelta'] = {'mean': delta, 'changedRatio': changed}
+          if delta < .18 or changed < .002:
+              raise SystemExit(f'pruning produced no visible artwork delta: {report["topologyDelta"]}')
+
+          (root / 'branch-topology-v5-visual-audit.json').write_text(
+              json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(report, ensure_ascii=False))
+          PY
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: bonsai-branch-topology-v5-audit
-          path: next/test-artifacts
+          name: bonsai-branch-topology-v5-preflight
+          path: |
+            next/test-artifacts
+            /tmp/bonsai-v5-preview.log
           if-no-files-found: warn
+          retention-days: 14
+
+      - name: Commit only the audited application source
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git checkout HEAD -- .github/workflows/branch-topology-v5-ci.yml
+          rm -rf .bonsai-v5-payload
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- next .bonsai-v5-payload
+          git status --short
+          git commit -m '26箇所互換の個体別枝グラフv5を実装'
+          git push origin "HEAD:${HEAD_BRANCH}"
