@@ -1,0 +1,219 @@
+name: Finalize authentic work consequences v5
+
+on:
+  push:
+    branches: [agent/authentic-work-consequences-v5]
+    paths: ['.bonsai-authentic-v5-r3/final-ready']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-authentic-work-consequences-v5
+  cancel-in-progress: false
+
+jobs:
+  apply-audit-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/authentic-work-consequences-v5
+          fetch-depth: 0
+
+      - name: Apply SHA-verified implementation
+        run: |
+          set -euxo pipefail
+          cat .bonsai-authentic-v5-r3/chunk-* > /tmp/payload.b64
+          printf 'p' | dd of=/tmp/payload.b64 bs=1 seek=12616 conv=notrunc status=none
+          printf '9' | dd of=/tmp/payload.b64 bs=1 seek=40521 conv=notrunc status=none
+          test "$(wc -c < /tmp/payload.b64)" -eq 48576
+          base64 -d /tmp/payload.b64 > /tmp/payload.xz
+          echo 'abd4c952300bb8e72cce3ed0761a9de07cd6a53727a0ce524a302165c7d4d058  /tmp/payload.xz' | sha256sum -c -
+          xz -t /tmp/payload.xz
+          rm -f .github/workflows/deploy-react-v1.yml
+          xz -dc /tmp/payload.xz | patch -p1 --batch --forward
+          git diff --check
+
+      - name: Apply retained calibration and artwork-only pixel audit
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+
+          workflow = Path('.github/workflows/apply-authentic-v5.yml').read_text(encoding='utf-8')
+          marker = "          python <<'PY'\n"
+          start = workflow.index(marker) + len(marker)
+          end = workflow.index("\n          PY", start)
+          lines = workflow[start:end].splitlines()
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines)
+          exec(compile(script, '<retained-authentic-v5-calibration>', 'exec'), {})
+
+          authentic = Path('next/tests/authentic-v5.mjs')
+          text = authentic.read_text(encoding='utf-8')
+          captures = {
+            "  await page.screenshot({ path: 'test-artifacts/authentic-v5-base.png', fullPage: false });": "  await page.screenshot({ path: 'test-artifacts/authentic-v5-base.png', fullPage: false });\n  await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-base-artwork.png' });",
+            "  await page.screenshot({ path: 'test-artifacts/authentic-v5-wire.png', fullPage: false });": "  await page.screenshot({ path: 'test-artifacts/authentic-v5-wire.png', fullPage: false });\n  await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-wire-artwork.png' });",
+            "  await page.screenshot({ path: 'test-artifacts/authentic-v5-deadwood-fresh.png', fullPage: false });": "  await page.screenshot({ path: 'test-artifacts/authentic-v5-deadwood-fresh.png', fullPage: false });\n  await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-deadwood-fresh-artwork.png' });",
+            "  await page.screenshot({ path: 'test-artifacts/authentic-v5-deadwood-paused.png', fullPage: false });": "  await page.screenshot({ path: 'test-artifacts/authentic-v5-deadwood-paused.png', fullPage: false });\n  await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-deadwood-paused-artwork.png' });",
+            "    await page.screenshot({ path: 'test-artifacts/authentic-v5-offline.png', fullPage: false });": "    await page.screenshot({ path: 'test-artifacts/authentic-v5-offline.png', fullPage: false });\n    await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-offline-artwork.png' });",
+            "    await offlinePage.screenshot({ path: 'test-artifacts/authentic-v5-offline.png', fullPage: false });": "    await offlinePage.screenshot({ path: 'test-artifacts/authentic-v5-offline.png', fullPage: false });\n    await offlinePage.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-offline-artwork.png' });"
+          }
+          for old, new in captures.items():
+            if text.count(old) != 1:
+              raise SystemExit(f'capture insertion target mismatch: {old}')
+            text = text.replace(old, new)
+          authentic.write_text(text, encoding='utf-8')
+
+          visual = dedent(r'''
+          from __future__ import annotations
+          import argparse, json
+          from pathlib import Path
+          from PIL import Image, ImageChops, ImageStat
+
+          def args():
+              p = argparse.ArgumentParser()
+              p.add_argument('--root', default='test-artifacts')
+              p.add_argument('--output', default='authentic-v5-visual-audit.json')
+              return p.parse_args()
+
+          def inspect(path: Path, artwork=False):
+              minimum = 120000 if artwork else 160000
+              if not path.exists() or path.stat().st_size < minimum:
+                  raise SystemExit(f'{path.name}: missing or suspiciously small')
+              image = Image.open(path).convert('RGB')
+              w, h = image.size
+              if (artwork and (w < 300 or h < 450)) or (not artwork and (w < 390 or h < 700)):
+                  raise SystemExit(f'{path.name}: unexpected size {image.size}')
+              sample = image if artwork else image.crop((int(w*.055), int(h*.13), int(w*.945), int(h*.77)))
+              gray = sample.resize((120,176)).convert('L')
+              pixels = list(gray.getdata())
+              stat = ImageStat.Stat(gray)
+              result = {'size':[w,h], 'bytes':path.stat().st_size, 'mean':stat.mean[0], 'variance':stat.var[0], 'brightRatio':sum(v>45 for v in pixels)/len(pixels)}
+              if result['mean'] < 17 or result['variance'] < 235 or result['brightRatio'] < .05:
+                  raise SystemExit(f'{path.name}: blank photographed artwork {result}')
+              return image, result
+
+          def delta(base, changed, label):
+              if base.size != changed.size:
+                  raise SystemExit(f'{label}: artwork viewport changed {base.size} -> {changed.size}')
+              image = ImageChops.difference(base, changed).resize((180,270)).convert('L')
+              values = list(image.getdata()); w,h=image.size
+              mask=[v>5 for v in values]; severe=[v>48 for v in values]
+              rows=[sum(mask[y*w:(y+1)*w])/w for y in range(h)]
+              cols=[sum(mask[y*w+x] for y in range(h))/h for x in range(w)]
+              result={'mean':ImageStat.Stat(image).mean[0], 'changedRatio':sum(mask)/len(mask), 'severeRatio':sum(severe)/len(severe), 'maxRowRatio':max(rows), 'maxColumnRatio':max(cols)}
+              if result['mean'] < .08 or result['changedRatio'] < .001:
+                  raise SystemExit(f'{label}: no visible state change {result}')
+              if result['changedRatio'] > .18 or result['severeRatio'] > .08:
+                  raise SystemExit(f'{label}: implausibly broad pasted effect {result}')
+              if result['maxRowRatio'] > .72 or result['maxColumnRatio'] > .72:
+                  raise SystemExit(f'{label}: page-spanning straight band {result}')
+              return result
+
+          def stable(a,b,label):
+              if a.size != b.size: raise SystemExit(f'{label}: viewport changed')
+              image=ImageChops.difference(a,b).resize((180,270)).convert('L'); values=list(image.getdata())
+              result={'mean':ImageStat.Stat(image).mean[0], 'changedRatio':sum(v>5 for v in values)/len(values)}
+              if result['mean'] > 3.5 or result['changedRatio'] > .06:
+                  raise SystemExit(f'{label}: physical work changed too much {result}')
+              return result
+
+          def main():
+              a=args(); root=Path(a.root); report={}; art={}
+              view=['01-grow-visible.png','03-show-visible.png','authentic-v5-danger-advice.png','authentic-v5-danger-result.png','authentic-v5-base.png','authentic-v5-wire.png','authentic-v5-deadwood-fresh.png','authentic-v5-deadwood-paused.png','authentic-v5-offline.png']
+              artwork=['authentic-v5-base-artwork.png','authentic-v5-wire-artwork.png','authentic-v5-deadwood-fresh-artwork.png','authentic-v5-deadwood-paused-artwork.png','authentic-v5-offline-artwork.png']
+              for name in view:
+                  _, report[name]=inspect(root/name)
+              for name in artwork:
+                  art[name], report[name]=inspect(root/name, True)
+              base=art[artwork[0]]
+              report['wireDelta']=delta(base,art[artwork[1]],'wireDelta')
+              report['deadwoodDelta']=delta(base,art[artwork[2]],'deadwoodDelta')
+              report['pauseAppearanceDelta']=stable(art[artwork[2]],art[artwork[3]],'pauseAppearanceDelta')
+              report['offlineAppearanceDelta']=stable(art[artwork[2]],art[artwork[4]],'offlineAppearanceDelta')
+              (root/a.output).write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+              print(json.dumps(report,ensure_ascii=False))
+          if __name__ == '__main__': main()
+          ''').lstrip()
+          Path('next/scripts/visual-audit-v5.py').write_text(visual, encoding='utf-8')
+
+          replacements = [
+            (Path('.github/workflows/authentic-consequences-v5-ci.yml'),
+             "          npm run preview >/tmp/bonsai-authentic-v5-preview.log 2>&1 &\n          server=$!\n          trap 'kill $server' EXIT\n",
+             "          setsid npm run preview >/tmp/bonsai-authentic-v5-preview.log 2>&1 &\n          server=$!\n          echo \"$server\" >/tmp/bonsai-authentic-v5-preview.pid\n          trap 'kill -TERM -- -$server 2>/dev/null || true' EXIT\n"),
+            (Path('.github/workflows/deploy-react-v1.yml'),
+             "          npm run preview >/tmp/bonsai-react-preview.log 2>&1 &\n          server=$!\n          trap 'kill $server' EXIT\n",
+             "          setsid npm run preview >/tmp/bonsai-react-preview.log 2>&1 &\n          server=$!\n          echo \"$server\" >/tmp/bonsai-authentic-v5-preview.pid\n          trap 'kill -TERM -- -$server 2>/dev/null || true' EXIT\n")
+          ]
+          for path, old, new in replacements:
+            source=path.read_text(encoding='utf-8')
+            if source.count(old) != 1: raise SystemExit(f'preview start target mismatch: {path}')
+            path.write_text(source.replace(old,new),encoding='utf-8')
+          PY
+          git diff --check
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Install, typecheck, model audit and build
+        working-directory: next
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:authentic:unit
+          npm run build
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Start production preview
+        working-directory: next
+        run: |
+          setsid npm run preview >/tmp/bonsai-authentic-v5-preview.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/bonsai-authentic-v5-preview.pid
+          for i in $(seq 1 100); do
+            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
+            sleep .25
+          done
+          cat /tmp/bonsai-authentic-v5-preview.log
+          exit 1
+
+      - name: Run all 390x844 DPR3 WebKit and artwork audits
+        working-directory: next
+        run: |
+          set -o pipefail
+          npm run test:smoke 2>&1 | tee /tmp/smoke.log
+          node tests/seasonal-v4.mjs 2>&1 | tee /tmp/seasonal.log
+          npm run test:authentic 2>&1 | tee /tmp/authentic.log
+          python scripts/visual-audit-v5.py --output authentic-v5-preflight-visual-audit.json 2>&1 | tee /tmp/visual.log
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-authentic-v5-final-preflight
+          path: |
+            next/test-artifacts
+            /tmp/bonsai-authentic-v5-preview.log
+            /tmp/smoke.log
+            /tmp/seasonal.log
+            /tmp/authentic.log
+            /tmp/visual.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Commit only audited application source
+        run: |
+          rm -rf .bonsai-authentic-v5 .bonsai-authentic-v5-r2 .bonsai-authentic-v5-r3
+          rm -f .github/workflows/apply-authentic-v5.yml .github/workflows/apply-authentic-v5-final.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- next .github/workflows .bonsai-authentic-v5 .bonsai-authentic-v5-r2 .bonsai-authentic-v5-r3
+          git commit -m '実写加工と剪定リスク結果v5を実装'
+          git push origin HEAD:agent/authentic-work-consequences-v5
