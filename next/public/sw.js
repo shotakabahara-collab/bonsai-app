@@ -1,4 +1,4 @@
-const VERSION = 'bonsai-react-v2-wire-judge';
+const VERSION = 'bonsai-craft-v3';
 const CACHE = `${VERSION}-shell`;
 const CORE = [
   '/bonsai-app/',
