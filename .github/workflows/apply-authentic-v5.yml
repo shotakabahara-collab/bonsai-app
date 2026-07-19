@@ -101,52 +101,17 @@ jobs:
 
           authentic = Path('next/tests/authentic-v5.mjs')
           text = authentic.read_text(encoding='utf-8')
-          old_offline = """  await page.waitForTimeout(800);
-          await context.setOffline(true);
-          await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
-          await page.waitForSelector('[data-testid=\"app-shell\"]', { timeout: 20000 });
-          await page.waitForSelector('.bonsai-stage img', { timeout: 10000 });
-          const offline = await page.evaluate(() => ({
-            online: navigator.onLine,
-            app: Boolean(document.querySelector('[data-testid=\"app-shell\"]')),
-            image: document.querySelector('.bonsai-stage img')?.getAttribute('src'),
-            renderer: document.querySelector('.bonsai-stage')?.getAttribute('data-renderer'),
-            deadwoodCount: document.querySelectorAll('[data-testid=\"photoreal-deadwood\"]').length
-          }));
-          if (offline.online || !offline.app || offline.renderer !== 'authentic-state-v5' || offline.deadwoodCount !== 2) {
-            throw new Error(`Offline restart did not preserve the work state: ${JSON.stringify(offline)}`);
+          replacements = {
+            "  await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });": "  const offlineURL = page.url();\n  await page.close();\n  const offlinePage = await context.newPage();\n  attachErrors(offlinePage);\n  await offlinePage.goto(offlineURL, { waitUntil: 'domcontentloaded', timeout: 30000 });",
+            "  await page.waitForSelector('[data-testid=\"app-shell\"]', { timeout: 20000 });": "  await offlinePage.waitForSelector('[data-testid=\"app-shell\"]', { timeout: 20000 });",
+            "  await page.waitForSelector('.bonsai-stage img', { timeout: 10000 });": "  await offlinePage.waitForSelector('.bonsai-stage img', { timeout: 10000 });",
+            "  const offline = await page.evaluate(() => ({": "  const offline = await offlinePage.evaluate(() => ({",
+            "  await page.screenshot({ path: 'test-artifacts/authentic-v5-offline.png', fullPage: false });": "  await offlinePage.screenshot({ path: 'test-artifacts/authentic-v5-offline.png', fullPage: false });"
           }
-          report.offline = offline;
-          await page.screenshot({ path: 'test-artifacts/authentic-v5-offline.png', fullPage: false });
-          await context.setOffline(false);
-          await context.close();
-          """
-          new_offline = """  await page.waitForTimeout(800);
-          const offlineURL = page.url();
-          await context.setOffline(true);
-          await page.close();
-          const offlinePage = await context.newPage();
-          attachErrors(offlinePage);
-          await offlinePage.goto(offlineURL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-          await offlinePage.waitForSelector('[data-testid=\"app-shell\"]', { timeout: 20000 });
-          await offlinePage.waitForSelector('.bonsai-stage img', { timeout: 10000 });
-          const offline = await offlinePage.evaluate(() => ({
-            online: navigator.onLine,
-            app: Boolean(document.querySelector('[data-testid=\"app-shell\"]')),
-            image: document.querySelector('.bonsai-stage img')?.getAttribute('src'),
-            renderer: document.querySelector('.bonsai-stage')?.getAttribute('data-renderer'),
-            deadwoodCount: document.querySelectorAll('[data-testid=\"photoreal-deadwood\"]').length
-          }));
-          if (offline.online || !offline.app || offline.renderer !== 'authentic-state-v5' || offline.deadwoodCount !== 2) {
-            throw new Error(`Offline restart did not preserve the work state: ${JSON.stringify(offline)}`);
-          }
-          report.offline = offline;
-          await offlinePage.screenshot({ path: 'test-artifacts/authentic-v5-offline.png', fullPage: false });
-          await context.setOffline(false);
-          await context.close();
-          """
-          assert text.count(old_offline) == 1
-          authentic.write_text(text.replace(old_offline, new_offline), encoding='utf-8')
+          for old_line, new_line in replacements.items():
+            assert text.count(old_line) == 1, old_line
+            text = text.replace(old_line, new_line)
+          authentic.write_text(text, encoding='utf-8')
           PY
           git diff --check
 
