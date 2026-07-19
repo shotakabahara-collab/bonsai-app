@@ -4,6 +4,11 @@ on:
   push:
     branches: [agent/authentic-work-consequences-v5]
     paths: ['.bonsai-authentic-v5-r3/final-ready']
+  pull_request:
+    branches: [main]
+    paths:
+      - '.bonsai-authentic-v5-r3/final-ready'
+      - '.github/workflows/apply-authentic-v5-final.yml'
   workflow_dispatch:
 
 permissions:
@@ -11,7 +16,7 @@ permissions:
 
 concurrency:
   group: finalize-authentic-work-consequences-v5
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   apply-audit-and-commit:
