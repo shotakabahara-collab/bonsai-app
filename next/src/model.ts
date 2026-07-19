@@ -18,6 +18,8 @@ export type PartId = 'apex' | 'firstLeft' | 'secondRight' | 'thirdLeft' | 'back'
 export type DiseaseId = 'needleBlight' | 'sootyMold' | 'rootRot';
 export type PestId = 'aphid' | 'spiderMite' | 'scale';
 export type WireDirection = 'down' | 'up' | 'left' | 'right' | 'front' | 'back';
+export type BonsaiLifeStatus = 'living' | 'dead';
+export type WireOutcomeKind = 'interrupted' | 'settled' | 'bitten';
 export type TabId = 'grow' | 'pots' | 'show' | 'people' | 'memorial';
 
 export interface SpeciesDefinition {
@@ -46,6 +48,28 @@ export interface PersonDefinition {
   quote: string;
 }
 
+export interface AftercareRisk {
+  id: string;
+  source: string;
+  createdAt: number;
+  expiresAt: number;
+  diseaseBonus: number;
+  pestBonus: number;
+  growthPenalty: number;
+  diebackBonus: number;
+  deathBonus: number;
+}
+
+export interface WireOutcome {
+  id: string;
+  at: number;
+  intensity: 'light' | 'strong';
+  direction: WireDirection;
+  result: WireOutcomeKind;
+  retention: number;
+  scarAdded: number;
+}
+
 export interface WireState {
   intensity: 'light' | 'strong';
   direction: WireDirection;
@@ -65,6 +89,7 @@ export interface PartState {
   trainedDirection?: WireDirection;
   shapeRetention?: number;
   wireRemovedAt?: number;
+  wireHistory?: WireOutcome[];
   disease?: DiseaseId;
   pest?: PestId;
   deadwood?: boolean;
@@ -113,6 +138,10 @@ export interface BonsaiState {
   memorials: MemorialRecord[];
   logs: LogRecord[];
   lastEventSlot: number;
+  lifeStatus: BonsaiLifeStatus;
+  diedAt?: number;
+  deathCause?: string;
+  aftercareRisks: AftercareRisk[];
 }
 
 export interface GameState {
@@ -213,7 +242,9 @@ export function createBonsai(species: SpeciesId, name?: string): BonsaiState {
     awards: [],
     memorials: [],
     logs: [{ id: uuid(), at: now, text: `${SPECIES[species].name}を迎えた。` }],
-    lastEventSlot: Math.floor(now / 43_200_000)
+    lastEventSlot: Math.floor(now / 43_200_000),
+    lifeStatus: 'living',
+    aftercareRisks: []
   };
 }
 
@@ -248,6 +279,7 @@ function migrateParts(raw: unknown): Record<PartId, PartState> {
       trainedDirection: isWireDirection(legacy.trainedDirection) ? legacy.trainedDirection : undefined,
       shapeRetention: legacy.shapeRetention === undefined ? undefined : clamp(finite(legacy.shapeRetention, 0)),
       wireRemovedAt: finite(legacy.wireRemovedAt, 0) || undefined,
+      wireHistory: Array.isArray(legacy.wireHistory) ? legacy.wireHistory.map((value, index) => normalizeWireOutcome(value, index)).filter((value): value is WireOutcome => Boolean(value)).slice(0, 20) : [],
       wire: typeof legacy.wire === 'string'
         ? { intensity: legacy.wire === 'strong' ? 'strong' : 'light', direction: 'down', appliedAt: Date.now() }
         : wireSource.intensity
@@ -289,6 +321,39 @@ function mapLegacyPest(value: unknown): PestId | undefined {
   return ({ aphid: 'aphid', spider_mite: 'spiderMite', scale: 'scale' } as Record<string, PestId>)[String(value)];
 }
 
+function normalizeWireOutcome(value: unknown, index = 0): WireOutcome | null {
+  const source = asObject(value);
+  if (!['interrupted', 'settled', 'bitten'].includes(String(source.result))) return null;
+  return {
+    id: String(source.id || `wire-outcome-${index}`),
+    at: finite(source.at, Date.now()),
+    intensity: source.intensity === 'strong' ? 'strong' : 'light',
+    direction: isWireDirection(source.direction) ? source.direction : 'down',
+    result: source.result as WireOutcomeKind,
+    retention: clamp(finite(source.retention, 0)),
+    scarAdded: clamp(finite(source.scarAdded, 0))
+  };
+}
+
+function normalizeAftercareRisks(value: unknown): AftercareRisk[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item, index) => {
+    const source = asObject(item);
+    const createdAt = finite(source.createdAt, Date.now());
+    return {
+      id: String(source.id || `aftercare-${index}`),
+      source: String(source.source || '作業後リスク'),
+      createdAt,
+      expiresAt: finite(source.expiresAt, createdAt),
+      diseaseBonus: clamp(finite(source.diseaseBonus, 0)),
+      pestBonus: clamp(finite(source.pestBonus, 0)),
+      growthPenalty: clamp(finite(source.growthPenalty, 0)),
+      diebackBonus: clamp(finite(source.diebackBonus, 0)),
+      deathBonus: clamp(finite(source.deathBonus, 0))
+    } satisfies AftercareRisk;
+  }).filter(item => item.expiresAt > 0).slice(-24);
+}
+
 export function migrateLegacy(raw: unknown): GameState {
   const source = asObject(raw);
   if (source.version === 2 && Array.isArray(source.bonsai)) {
@@ -327,6 +392,10 @@ export function migrateLegacy(raw: unknown): GameState {
         }
       : undefined,
     awards: Array.isArray(source.awards) ? source.awards.map((item, index) => migrateAward(item, index, potId)) : [],
+    lifeStatus: advanced.lifeStatus === 'dead' ? 'dead' : 'living',
+    diedAt: finite(advanced.diedAt, 0) || undefined,
+    deathCause: advanced.deathCause ? String(advanced.deathCause) : undefined,
+    aftercareRisks: normalizeAftercareRisks(advanced.aftercareRisks),
     logs: Array.isArray(source.log) ? source.log.slice(0, 120).map((item, index) => ({
       id: `legacy-log-${index}`,
       at: finite(asObject(item).at, now - index),
@@ -406,6 +475,10 @@ function normalizeBonsai(input: BonsaiState): BonsaiState {
     awards: Array.isArray(input?.awards) ? input.awards : [],
     memorials: Array.isArray(input?.memorials) ? input.memorials : [],
     logs: Array.isArray(input?.logs) ? input.logs : [],
+    lifeStatus: input?.lifeStatus === 'dead' ? 'dead' : 'living',
+    diedAt: finite(input?.diedAt, 0) || undefined,
+    deathCause: input?.deathCause ? String(input.deathCause) : undefined,
+    aftercareRisks: normalizeAftercareRisks(input?.aftercareRisks),
     lastEventSlot: Math.floor(finite(input?.lastEventSlot, Date.now() / 43_200_000))
   };
 }
@@ -452,7 +525,7 @@ export function visualSignature(bonsai: BonsaiState): string {
     const part = bonsai.parts[id];
     return `${id}:${part.foliage.toFixed(0)}:${part.health.toFixed(0)}:${part.pruneLevel}:${part.wire?.intensity ?? '-'}:${part.wire?.direction ?? '-'}:${part.disease ?? '-'}:${part.pest ?? '-'}:${part.deadwood ? 'jin' : '-'}`;
   }).join('|');
-  return `${bonsai.species}:${bonsai.potId}:${bonsai.water.toFixed(0)}:${bonsai.vitality.toFixed(0)}:${bonsai.shari?.side ?? '-'}:${bonsai.shari?.level ?? 0}|${parts}|craft:${craftSignature(bonsai)}`;
+  return `${bonsai.species}:${bonsai.potId}:${bonsai.lifeStatus}:${bonsai.water.toFixed(0)}:${bonsai.vitality.toFixed(0)}:${bonsai.shari?.side ?? '-'}:${bonsai.shari?.level ?? 0}|${parts}|risk:${bonsai.aftercareRisks.length}|craft:${craftSignature(bonsai)}`;
 }
 
 export function weekKey(date = new Date()): string {
@@ -593,34 +666,90 @@ export function advanceTime(game: GameState, now = Date.now()): GameState {
   for (const bonsai of copy.bonsai) {
     const elapsedHours = Math.max(0, (now - bonsai.lastUpdatedAt) / 3_600_000);
     if (elapsedHours <= 0) continue;
+    bonsai.aftercareRisks = normalizeAftercareRisks(bonsai.aftercareRisks).filter(risk => risk.expiresAt > now);
+    if (bonsai.lifeStatus === 'dead') {
+      bonsai.lastUpdatedAt = now;
+      continue;
+    }
     bonsai.water = clamp(bonsai.water - elapsedHours * SPECIES[bonsai.species].waterDecayPerHour);
     const dryPenalty = bonsai.water < 35 ? (35 - bonsai.water) * .035 * elapsedHours : 0;
     const stressPenalty = Math.max(0, bonsai.stress - 20) * .005 * elapsedHours;
-    bonsai.vitality = clamp(bonsai.vitality - dryPenalty - stressPenalty);
+    const growthPenalty = bonsai.aftercareRisks.reduce((sum, risk) => sum + risk.growthPenalty, 0) * elapsedHours / 960;
+    bonsai.vitality = clamp(bonsai.vitality - dryPenalty - stressPenalty - growthPenalty);
     bonsai.stress = Math.max(0, bonsai.stress - elapsedHours * .14);
     advanceCraftLifecycle(bonsai, now);
     bonsai.lastUpdatedAt = now;
     maybeTriggerEvent(bonsai, now);
+    evaluateBonsaiDeath(bonsai, now, '長期の衰弱と培養不良');
   }
   return copy;
 }
 
 function maybeTriggerEvent(bonsai: BonsaiState, now: number): void {
+  if (bonsai.lifeStatus === 'dead') return;
   const slot = Math.floor(now / 43_200_000);
   if (slot <= bonsai.lastEventSlot) return;
   bonsai.lastEventSlot = slot;
   const crowded = PARTS.filter(part => !['trunk', 'roots'].includes(part.id)).filter(part => bonsai.parts[part.id].foliage > 82);
   const seed = hash(`${bonsai.id}:${slot}`);
-  const target = PARTS.filter(part => !['trunk'].includes(part.id))[seed % 7].id;
+  const candidates = PARTS.filter(part => part.id !== 'trunk');
+  const target = candidates[seed % candidates.length].id;
   const part = bonsai.parts[target];
-  const risk = (bonsai.water > 94 ? 22 : 0) + (bonsai.water < 24 ? 18 : 0) + crowded.length * 5 + (bonsai.vitality < 55 ? 25 : 0);
-  if (seed % 100 < Math.min(58, risk)) {
+  const diseaseBonus = bonsai.aftercareRisks.reduce((sum, item) => sum + item.diseaseBonus, 0);
+  const pestBonus = bonsai.aftercareRisks.reduce((sum, item) => sum + item.pestBonus, 0);
+  const baseRisk = (bonsai.water > 94 ? 22 : 0) + (bonsai.water < 24 ? 18 : 0) + crowded.length * 5 + (bonsai.vitality < 55 ? 25 : 0);
+  const risk = Math.min(88, baseRisk + diseaseBonus + pestBonus);
+  if (seed % 100 < risk) {
+    const diseaseWeight = diseaseBonus + (target === 'roots' || bonsai.water > 94 ? 28 : 14);
+    const pestWeight = pestBonus + 16;
     if (target === 'roots' || bonsai.water > 94) part.disease = 'rootRot';
-    else if (seed % 2) part.disease = 'needleBlight';
-    else part.pest = seed % 3 === 0 ? 'scale' : 'spiderMite';
-    part.health = clamp(part.health - 8);
-    bonsai.logs.unshift({ id: uuid(), at: now, text: `${PARTS.find(item => item.id === target)?.name}に異変が見つかった。` });
+    else if ((seed >>> 8) % Math.max(1, Math.round(diseaseWeight + pestWeight)) < diseaseWeight) part.disease = seed % 2 ? 'needleBlight' : 'sootyMold';
+    else part.pest = seed % 3 === 0 ? 'scale' : seed % 2 ? 'spiderMite' : 'aphid';
+    part.health = clamp(part.health - 8 - Math.min(7, risk * .07));
+    bonsai.vitality = clamp(bonsai.vitality - Math.min(4, risk * .025));
+    bonsai.logs.unshift({ id: uuid(), at: now, text: `${PARTS.find(item => item.id === target)?.name}に、作業後の衰弱と関係する異変が見つかった。` });
   }
+}
+
+export function addAftercareRisk(bonsai: BonsaiState, risk: Omit<AftercareRisk, 'id'> & { id?: string }): void {
+  const normalized: AftercareRisk = {
+    id: risk.id || uuid(),
+    source: String(risk.source || '作業後リスク'),
+    createdAt: finite(risk.createdAt, Date.now()),
+    expiresAt: finite(risk.expiresAt, Date.now()),
+    diseaseBonus: clamp(finite(risk.diseaseBonus, 0), 0, 100),
+    pestBonus: clamp(finite(risk.pestBonus, 0), 0, 100),
+    growthPenalty: clamp(finite(risk.growthPenalty, 0), 0, 100),
+    diebackBonus: clamp(finite(risk.diebackBonus, 0), 0, 100),
+    deathBonus: clamp(finite(risk.deathBonus, 0), 0, 100)
+  };
+  bonsai.aftercareRisks = [...normalizeAftercareRisks(bonsai.aftercareRisks), normalized].slice(-24);
+}
+
+export function markBonsaiDead(bonsai: BonsaiState, cause: string, now = Date.now()): void {
+  if (bonsai.lifeStatus === 'dead') return;
+  bonsai.lifeStatus = 'dead';
+  bonsai.diedAt = now;
+  bonsai.deathCause = cause;
+  bonsai.vitality = 0;
+  bonsai.stress = 0;
+  for (const part of Object.values(bonsai.parts)) {
+    part.health = Math.min(part.health, 3);
+    part.foliage = Math.min(part.foliage, 6);
+    delete part.wire;
+  }
+  bonsai.logs.unshift({ id: uuid(), at: now, text: `この木は「${cause}」により枯死した。判断の履歴と最後の姿は銘木録に残る。` });
+}
+
+export function evaluateBonsaiDeath(bonsai: BonsaiState, now = Date.now(), cause = '全身の衰弱'): boolean {
+  if (bonsai.lifeStatus === 'dead') return true;
+  const living = PARTS.filter(part => !['trunk', 'roots'].includes(part.id)).map(part => bonsai.parts[part.id]);
+  const averageHealth = living.length ? living.reduce((sum, part) => sum + part.health, 0) / living.length : 0;
+  if (bonsai.vitality <= 1 || averageHealth <= 2) {
+    markBonsaiDead(bonsai, cause, now);
+    return true;
+  }
+  return false;
 }
 
 function hash(value: string): number {
@@ -643,6 +772,7 @@ export function updateActiveBonsai(game: GameState, updater: (bonsai: BonsaiStat
 
 export function waterBonsai(game: GameState): GameState {
   return updateActiveBonsai(game, bonsai => {
+    if (bonsai.lifeStatus === 'dead') return;
     bonsai.water = 100;
     bonsai.vitality = clamp(bonsai.vitality + 1.5);
     bonsai.logs.unshift({ id: uuid(), at: Date.now(), text: '土の乾きを見て、鉢底から流れるまで水を与えた。' });
@@ -651,6 +781,7 @@ export function waterBonsai(game: GameState): GameState {
 
 export function prunePart(game: GameState, partId: PartId, level: 1 | 2 | 3): GameState {
   return updateActiveBonsai(game, bonsai => {
+    if (bonsai.lifeStatus === 'dead') return;
     const part = bonsai.parts[partId];
     if (!part || ['trunk', 'roots'].includes(partId)) return;
     const reduction = [0, 14, 28, 45][level];
@@ -679,7 +810,7 @@ function wireDirectionName(direction: WireDirection): string {
 export function treatPart(game: GameState, partId: PartId): GameState {
   const copy = structuredClone(game);
   const bonsai = activeBonsai(copy);
-  if (!bonsai) return copy;
+  if (!bonsai || bonsai.lifeStatus === 'dead') return copy;
   const part = bonsai.parts[partId];
   if (!part?.disease && !part?.pest) return copy;
   const cost = part.disease === 'rootRot' ? 900 : part.disease ? 520 : 320;

@@ -190,7 +190,7 @@ try {
   await page.locator('.precision-site-grid button').filter({ hasText: '第一枝・先端' }).click();
   await page.getByRole('button', { name: /古葉取り・葉透かし/ }).click();
   page.once('dialog', dialog => dialog.accept());
-  await page.getByRole('button', { name: 'この箇所へ確定する' }).click();
+  await page.getByRole('button', { name: /この箇所へ確定する|強い反対を理解して実行する/ }).click();
   await page.waitForTimeout(300);
 
   const afterPrune = await page.evaluate(() => JSON.parse(localStorage.getItem('bonsai:v2')));
@@ -210,7 +210,7 @@ try {
   await page.getByRole('button', { name: /育成/ }).click();
   await page.getByRole('button', { name: '部位針金' }).click();
   await page.getByRole('button', { name: '第一枝を選択' }).click();
-  await page.getByRole('button', { name: /定着前に外す|適期に針金を外す|食い込み前にすぐ外す/ }).click();
+  await page.getByRole('button', { name: /養成を中断して針金を外す|定着前に外す|適期に針金を外す|食い込み前にすぐ外す/ }).click();
   await page.waitForSelector('.wire-status-tag', { state: 'detached', timeout: 5000 });
   const afterWireRemoval = await page.evaluate(() => JSON.parse(localStorage.getItem('bonsai:v2')));
   const wiredTree = afterWireRemoval.bonsai.find(item => item.id === afterWireRemoval.activeBonsaiId);
@@ -224,11 +224,15 @@ try {
   await page.waitForSelector('.wire-coil-metal');
   report.wireVisual = await page.evaluate(() => ({
     coils: document.querySelectorAll('.wire-coil-metal').length,
+    photorealGroups: document.querySelectorAll('[data-testid="photoreal-wire"]').length,
+    occlusions: document.querySelectorAll('[data-testid="wire-branch-occlusion"]').length,
+    lineElements: document.querySelectorAll('.authentic-work-layer line').length,
     continuousLines: document.querySelectorAll('.wire-path').length,
+    renderer: document.querySelector('.bonsai-stage')?.getAttribute('data-renderer') ?? '',
     status: document.querySelector('.wire-status-tag')?.textContent ?? '',
     wire: JSON.parse(localStorage.getItem('bonsai:v2')).bonsai.find(item => item.id === JSON.parse(localStorage.getItem('bonsai:v2')).activeBonsaiId).parts.secondRight.wire
   }));
-  if (report.wireVisual.coils < 5 || report.wireVisual.continuousLines !== 0 || !report.wireVisual.status.includes('整姿中') || report.wireVisual.wire?.direction !== 'right') {
+  if (report.wireVisual.coils < 3 || report.wireVisual.photorealGroups < 1 || report.wireVisual.occlusions < 1 || report.wireVisual.lineElements !== 0 || report.wireVisual.continuousLines !== 0 || report.wireVisual.renderer !== 'authentic-state-v5' || !report.wireVisual.status.includes('整姿中') || report.wireVisual.wire?.direction !== 'right') {
     throw new Error(`Wire rendering is not branch-coil based: ${JSON.stringify(report.wireVisual)}`);
   }
   await page.screenshot({ path: 'test-artifacts/02b-wire-coils.png', fullPage: false });
@@ -238,7 +242,7 @@ try {
   await page.getByRole('button', { name: /育成/ }).click();
   await page.getByRole('button', { name: '部位針金' }).click();
   await page.getByRole('button', { name: '第二枝を選択' }).click();
-  await page.getByRole('button', { name: /定着前に外す|適期に針金を外す|食い込み前にすぐ外す/ }).click();
+  await page.getByRole('button', { name: /養成を中断して針金を外す|定着前に外す|適期に針金を外す|食い込み前にすぐ外す/ }).click();
   await page.waitForSelector('.wire-status-tag', { state: 'detached', timeout: 5000 });
   const afterSecondWireRemoval = await page.evaluate(() => JSON.parse(localStorage.getItem('bonsai:v2')));
   const preparedTree = afterSecondWireRemoval.bonsai.find(item => item.id === afterSecondWireRemoval.activeBonsaiId);

@@ -18,72 +18,73 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+env:
+  BONSAI_RELEASE: bonsai-authentic-consequences-v5
+
 jobs:
   build-and-audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: next/package-lock.json
+
       - name: Install exact dependencies
         working-directory: next
         run: npm ci
-      - name: Typecheck and production build
+
+      - name: Typecheck, deterministic model audit and production build
         working-directory: next
-        run: npm run build
+        run: |
+          npm run typecheck
+          npm run test:authentic:unit
+          npm run build
+
       - name: Install iPhone WebKit and image audit tools
         working-directory: next
         run: |
           npx playwright install --with-deps webkit
           python -m pip install --disable-pip-version-check pillow
-      - name: Run local iPhone migration, care and artwork audit
-        run: |
-          cd next
-          npm run preview >/tmp/bonsai-react-preview.log 2>&1 &
-          server=$!
-          trap 'kill $server' EXIT
-          for i in $(seq 1 80); do curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break; sleep .25; done
-          npm run test:smoke
-      - name: Reject blank or hidden iPhone captures
-        run: |
-          python <<'PY'
-          from pathlib import Path
-          from PIL import Image, ImageStat
-          import json
 
-          root = Path('next/test-artifacts')
-          results = {}
-          for name in ('01-grow-visible.png', '03-show-visible.png'):
-              path = root / name
-              if not path.exists() or path.stat().st_size < 300_000:
-                  raise SystemExit(f'{name}: missing or suspiciously small')
-              image = Image.open(path).convert('RGB')
-              width, height = image.size
-              crop = image.crop((0, int(height * .12), width, int(height * .78))).resize((96, 144)).convert('L')
-              stat = ImageStat.Stat(crop)
-              pixels = list(crop.getdata())
-              bright = sum(value > 45 for value in pixels) / len(pixels)
-              results[name] = {'size':[width,height], 'bytes':path.stat().st_size, 'mean':stat.mean[0], 'variance':stat.var[0], 'brightRatio':bright}
-              if stat.mean[0] < 18 or stat.var[0] < 260 or bright < .055:
-                  raise SystemExit(f'{name}: blank central artwork {results[name]}')
-          (root / 'visual-audit.json').write_text(json.dumps(results, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-          print(json.dumps(results, ensure_ascii=False))
-          PY
+      - name: Run local migration, existing flow, seasonal and authentic work audits
+        working-directory: next
+        run: |
+          setsid npm run preview >/tmp/bonsai-react-preview.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/bonsai-authentic-v5-preview.pid
+          trap 'kill -TERM -- -$server 2>/dev/null || true' EXIT
+          for i in $(seq 1 100); do
+            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break
+            sleep .25
+          done
+          curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null
+          npm run test:smoke
+          node tests/seasonal-v4.mjs
+          npm run test:authentic
+          python scripts/visual-audit-v5.py --output authentic-v5-local-visual-audit.json
+
       - uses: actions/configure-pages@v5
         id: configure
+
       - uses: actions/upload-pages-artifact@v3
         id: pages-artifact
         with:
           path: next/dist
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: bonsai-react-local-final-audit
-          path: next/test-artifacts
+          name: bonsai-authentic-v5-local-final-audit
+          path: |
+            next/test-artifacts
+            /tmp/bonsai-react-preview.log
           if-no-files-found: error
+          retention-days: 14
 
   deploy:
     needs: build-and-audit
@@ -101,13 +102,16 @@ jobs:
   public-iphone-audit:
     needs: deploy
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: next/package-lock.json
+
       - name: Install public audit dependencies
         id: install
         working-directory: next
@@ -119,7 +123,8 @@ jobs:
             npx playwright install --with-deps webkit
             python -m pip install --disable-pip-version-check pillow
           } 2>&1 | tee /tmp/public-install.log
-      - name: Wait until GitHub Pages serves the React bundle
+
+      - name: Wait until GitHub Pages serves authentic consequences v5
         id: wait
         if: steps.install.outcome == 'success'
         continue-on-error: true
@@ -131,21 +136,24 @@ jobs:
           {
             base="${PAGE_URL%/}/"
             ready=0
-            for i in $(seq 1 120); do
+            for i in $(seq 1 140); do
               if curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-all-errors "${base}index.html?v=${RELEASE_SHA}-${i}" -o /tmp/live-index.html \
                 && grep -Fq '<title>BONSAI</title>' /tmp/live-index.html \
                 && grep -Eq '/bonsai-app/assets/index-[A-Za-z0-9_-]+\.js' /tmp/live-index.html \
+                && curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-all-errors "${base}sw.js?v=${RELEASE_SHA}-${i}" -o /tmp/live-sw.js \
+                && grep -Fq "$BONSAI_RELEASE" /tmp/live-sw.js \
                 && curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-all-errors "${base}photo-assets.js?v=${RELEASE_SHA}-${i}" -o /tmp/live-photo.js \
                 && grep -Fq 'react-kuromatsu-photoreal-v1' /tmp/live-photo.js; then
                 ready=1
-                echo "React deployment visible after attempt ${i}"
+                echo "Authentic consequences v5 visible after attempt ${i}"
                 break
               fi
               sleep 3
             done
             test "$ready" = 1
           } 2>&1 | tee /tmp/public-wait.log
-      - name: Run the same interaction audit against GitHub Pages
+
+      - name: Run existing interaction regression against GitHub Pages
         id: smoke
         if: steps.wait.outcome == 'success'
         continue-on-error: true
@@ -156,10 +164,36 @@ jobs:
         run: |
           set -o pipefail
           npm run test:smoke 2>&1 | tee /tmp/public-smoke.log
-      - name: Verify public files and visible captures
-        id: files
+
+      - name: Run seasonal timing regression against GitHub Pages
+        id: seasonal
         if: steps.smoke.outcome == 'success'
         continue-on-error: true
+        working-directory: next
+        env:
+          BONSAI_BASE_URL: ${{ needs.deploy.outputs.page_url }}
+          BONSAI_PUBLIC: '1'
+        run: |
+          set -o pipefail
+          node tests/seasonal-v4.mjs 2>&1 | tee /tmp/public-seasonal.log
+
+      - name: Run authentic work, consequence, interruption and offline audit against GitHub Pages
+        id: authentic
+        if: steps.seasonal.outcome == 'success'
+        continue-on-error: true
+        working-directory: next
+        env:
+          BONSAI_BASE_URL: ${{ needs.deploy.outputs.page_url }}
+          BONSAI_PUBLIC: '1'
+        run: |
+          set -o pipefail
+          npm run test:authentic 2>&1 | tee /tmp/public-authentic.log
+
+      - name: Verify public files and photographed state captures
+        id: files
+        if: steps.authentic.outcome == 'success'
+        continue-on-error: true
+        working-directory: next
         env:
           PAGE_URL: ${{ needs.deploy.outputs.page_url }}
           RELEASE_SHA: ${{ github.sha }}
@@ -168,47 +202,30 @@ jobs:
           {
             base="${PAGE_URL%/}/"
             curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}index.html?v=${RELEASE_SHA}" | grep -Fq '<title>BONSAI</title>'
+            curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}sw.js?v=${RELEASE_SHA}" | grep -Fq "$BONSAI_RELEASE"
             curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}photo-assets.js?v=${RELEASE_SHA}" | grep -Fq 'react-kuromatsu-photoreal-v1'
             curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}assets/kuromatsu/base/black.webp?v=${RELEASE_SHA}" -o /tmp/live-black.webp
             test "$(wc -c < /tmp/live-black.webp)" -gt 300000
-            python <<'PY'
-          from pathlib import Path
-          from PIL import Image, ImageStat
-          import json
-
-          root = Path('next/test-artifacts')
-          results = {}
-          for name in ('01-grow-visible.png', '03-show-visible.png'):
-              path = root / name
-              if not path.exists() or path.stat().st_size < 300_000:
-                  raise SystemExit(f'{name}: public screenshot missing or suspiciously small')
-              image = Image.open(path).convert('RGB')
-              width, height = image.size
-              crop = image.crop((0, int(height * .12), width, int(height * .78))).resize((96, 144)).convert('L')
-              stat = ImageStat.Stat(crop)
-              pixels = list(crop.getdata())
-              bright = sum(value > 45 for value in pixels) / len(pixels)
-              results[name] = {'size':[width,height], 'bytes':path.stat().st_size, 'mean':stat.mean[0], 'variance':stat.var[0], 'brightRatio':bright}
-              if stat.mean[0] < 18 or stat.var[0] < 260 or bright < .055:
-                  raise SystemExit(f'{name}: public blank central artwork {results[name]}')
-          (root / 'public-visual-audit.json').write_text(json.dumps(results, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-          print(json.dumps(results, ensure_ascii=False))
-          PY
+            python scripts/visual-audit-v5.py --output authentic-v5-public-visual-audit.json
           } 2>&1 | tee /tmp/public-files.log
+
       - name: Write public audit log bundle
         if: always()
         run: |
           mkdir -p next/test-artifacts/public-logs
-          for name in install wait smoke files; do
+          for name in install wait smoke seasonal authentic files; do
             cp "/tmp/public-${name}.log" "next/test-artifacts/public-logs/${name}.log" 2>/dev/null || true
           done
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: bonsai-react-public-final-audit
+          name: bonsai-authentic-v5-public-final-audit
           path: next/test-artifacts
           if-no-files-found: error
-      - name: Record production completion audit
+          retention-days: 14
+
+      - name: Record production audit and leave iPhone confirmation open
         if: always()
         uses: actions/github-script@v7
         env:
@@ -216,6 +233,8 @@ jobs:
           INSTALL: ${{ steps.install.outcome }}
           WAIT: ${{ steps.wait.outcome }}
           SMOKE: ${{ steps.smoke.outcome }}
+          SEASONAL: ${{ steps.seasonal.outcome }}
+          AUTHENTIC: ${{ steps.authentic.outcome }}
           FILES: ${{ steps.files.outcome }}
         with:
           script: |
@@ -224,6 +243,8 @@ jobs:
               install: process.env.INSTALL || 'not-run',
               wait: process.env.WAIT || 'not-run',
               smoke: process.env.SMOKE || 'not-run',
+              seasonal: process.env.SEASONAL || 'not-run',
+              authentic: process.env.AUTHENTIC || 'not-run',
               files: process.env.FILES || 'not-run'
             };
             const passed = Object.values(outcomes).every(value => value === 'success');
@@ -236,24 +257,33 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: 1,
-              title: `BONSAI React production audit: ${passed ? 'PASS' : 'FAIL'}`,
+              title: passed
+                ? 'BONSAI authentic consequences v5: AUTOMATED PASS / iPhone確認待ち'
+                : 'BONSAI authentic consequences v5 production audit: FAIL',
               body: [
-                '# BONSAI React完成版・本番監査', '',
+                '# BONSAI 実写加工・作業結果 v5 本番監査', '',
                 `- release SHA: \`${context.sha}\``,
+                '- deployed release: `bonsai-authentic-consequences-v5`',
+                `- Pages URL: ${page}`,
                 '- architecture: React 19 + TypeScript + Vite',
-                '- old-save migration: verified',
-                '- irreversible part pruning persistence: verified',
-                '- local 390×844 / DPR 3 WebKit: verified',
-                '- bundled 900×1500 black-pine photograph: verified',
-                '- grow/show viewport pixel audit: verified',
-                ...Object.entries(outcomes).map(([name, value]) => `- public ${name}: ${value}`),
-                `- Pages URL: ${page}`, '',
+                '- `bonsai_live_1` and `bonsai:v2` migration: verified',
+                '- fertilizer/compost UI, save and calculation: absent',
+                '- out-of-season and low-vitality pruning remains executable with mentor warning: verified',
+                '- deterministic disease, pest, dieback, growth and death consequences: verified',
+                '- wire interruption and retained training result: verified',
+                '- jin/shari pause, reload and resume: verified',
+                '- photographed copper occlusion and photo-derived deadwood texture: verified',
+                '- 390×844 / DPR 3 WebKit and offline restart: verified',
+                ...Object.entries(outcomes).map(([name, value]) => `- public ${name}: ${value}`), '',
                 ...Object.keys(outcomes).map(name => `## ${name}\n\`\`\`text\n${log(name)}\n\`\`\``), '',
-                passed ? '公開中の実URLで起動、保存移行、操作、実写作品表示、大会、オファー、売却買替、作品状態画像まで確認しました。' : '公開後監査に未通過項目があります。'
+                passed
+                  ? '自動本番監査は合格しました。Issueは、ユーザーのiPhone実画面で針金・神・舎利・剪定警告・再読み込みを確認するまで開いたままにします。'
+                  : '公開後監査に未通過項目があります。合格前に完成扱いにしません。'
               ].join('\n'),
-              state: passed ? 'closed' : 'open',
-              ...(passed ? { state_reason: 'completed' } : { state_reason: 'reopened' })
+              state: 'open',
+              state_reason: 'reopened'
             });
-      - name: Fail when the public audit did not pass
-        if: always() && (steps.install.outcome != 'success' || steps.wait.outcome != 'success' || steps.smoke.outcome != 'success' || steps.files.outcome != 'success')
+
+      - name: Fail when any public audit stage failed
+        if: always() && (steps.install.outcome != 'success' || steps.wait.outcome != 'success' || steps.smoke.outcome != 'success' || steps.seasonal.outcome != 'success' || steps.authentic.outcome != 'success' || steps.files.outcome != 'success')
         run: exit 1
