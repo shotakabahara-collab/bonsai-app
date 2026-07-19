@@ -6,13 +6,15 @@ on:
     paths:
       - 'scripts/apply_training_lifecycle_v3.py'
       - '.github/workflows/apply-training-lifecycle-v3.yml'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: authentic-bonsai-craft-v3
+  group: authentic-bonsai-craft-v3-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
