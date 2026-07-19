@@ -77,16 +77,27 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-      - name: Verify applied source tree and calibrate coil assertion
+      - name: Verify applied source tree and calibrate regression assertions
         run: |
           test "$(cat /tmp/bonsai-authentic-v5-patch.status)" = 0
           python <<'PY'
           from pathlib import Path
-          path = Path('next/tests/smoke.mjs')
-          text = path.read_text(encoding='utf-8')
+
+          smoke = Path('next/tests/smoke.mjs')
+          text = smoke.read_text(encoding='utf-8')
           old = 'report.wireVisual.coils < 5'
           assert text.count(old) == 1
-          path.write_text(text.replace(old, 'report.wireVisual.coils < 3'), encoding='utf-8')
+          smoke.write_text(text.replace(old, 'report.wireVisual.coils < 3'), encoding='utf-8')
+
+          seasonal = Path('next/tests/seasonal-v4.mjs')
+          text = seasonal.read_text(encoding='utf-8')
+          old_wait = "includes('後の芽吹き')"
+          old_complete = "includes('結果が現れた')"
+          assert text.count(old_wait) == 1
+          assert text.count(old_complete) == 1
+          text = text.replace(old_wait, "includes('結果はゲーム内約')")
+          text = text.replace(old_complete, "includes('芽吹きと回復が予定どおり現れた')")
+          seasonal.write_text(text, encoding='utf-8')
           PY
           git diff --check
 
