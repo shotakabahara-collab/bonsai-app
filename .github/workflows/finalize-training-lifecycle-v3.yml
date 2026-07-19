@@ -6,13 +6,15 @@ on:
     paths:
       - 'scripts/finalize_training_v3_audit.py'
       - '.github/workflows/finalize-training-lifecycle-v3.yml'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: finalize-authentic-bonsai-craft-v3
+  group: finalize-authentic-bonsai-craft-v3-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
