@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: apply-branch-topology-v5
+  group: apply-branch-topology-v5-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
