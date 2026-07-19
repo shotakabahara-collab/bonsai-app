@@ -59,6 +59,8 @@ jobs:
         id: apply
         run: |
           set +e
+          # The transfer baseline omitted this existing workflow, so remove it before the full replacement hunk.
+          rm -f .github/workflows/deploy-react-v1.yml
           xz -dc /tmp/bonsai-authentic-v5.patch.xz > /tmp/bonsai-authentic-v5.patch
           patch -p1 --batch --forward < /tmp/bonsai-authentic-v5.patch > /tmp/bonsai-authentic-v5-patch.log 2>&1
           status=$?
