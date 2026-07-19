@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BonsaiStage } from './BonsaiStage';
-import { DeadwoodLifecycleSheet, PrecisionPruningSheet, WireLifecycleStatus } from './CraftPanels';
+import { DeadwoodLifecycleSheet, WireLifecycleStatus } from './CraftPanels';
+import { PrecisionPruningV4 } from './PrecisionPruningV4';
 import {
   advanceDeadwoodProjectInGame,
-  applyPrecisionPruningToGame,
   exhibitionEligibility,
   startJinProjectInGame,
   startShariProjectInGame
 } from './craft-v3';
+import { applySeasonalPruningToGame } from './seasonal-craft-v4';
 import {
   PARTS,
   PEOPLE,
@@ -201,11 +202,11 @@ export default function App() {
       </nav>
 
       {careMode === 'prune' && (
-        <PrecisionPruningSheet
+        <PrecisionPruningV4
           bonsai={bonsai}
           onClose={() => setCareMode(null)}
           onApply={(siteId, technique) => {
-            commit(current => applyPrecisionPruningToGame(current, siteId, technique), '精密剪定を不可逆で確定しました');
+            commit(current => applySeasonalPruningToGame(current, siteId, technique).game, '季節・樹勢を判定し、結果待ちの精密剪定を記録しました');
             setCareMode(null);
           }}
         />

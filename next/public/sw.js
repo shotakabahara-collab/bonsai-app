@@ -1,4 +1,4 @@
-const VERSION = 'bonsai-craft-v3';
+const VERSION = 'bonsai-seasonal-response-v4';
 const CACHE = `${VERSION}-shell`;
 const CORE = [
   '/bonsai-app/',

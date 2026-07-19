@@ -1,4 +1,5 @@
 import { advanceTime, createGame, migrateLegacy, normalizeGame, type GameState } from './model';
+import { advanceSeasonalGame } from './seasonal-craft-v4';
 
 const STORAGE_KEY = 'bonsai:v2';
 const LEGACY_KEY = 'bonsai_live_1';
@@ -7,7 +8,7 @@ export const GAME_UPDATED_EVENT = 'bonsai:game-updated';
 export function loadGame(): GameState {
   try {
     const current = localStorage.getItem(STORAGE_KEY);
-    if (current) return advanceTime(normalizeGame(JSON.parse(current)));
+    if (current) return advanceForLoad(normalizeGame(JSON.parse(current)));
   } catch (error) {
     backupCorrupt(STORAGE_KEY, error);
   }
@@ -15,7 +16,7 @@ export function loadGame(): GameState {
   try {
     const legacy = localStorage.getItem(LEGACY_KEY);
     if (legacy) {
-      const migrated = advanceTime(migrateLegacy(JSON.parse(legacy)));
+      const migrated = advanceForLoad(migrateLegacy(JSON.parse(legacy)));
       persistGame(migrated);
       return migrated;
     }
@@ -28,14 +29,29 @@ export function loadGame(): GameState {
 
 export function persistGame(game: GameState): GameState {
   const normalized = normalizeGame(game);
+  const seasonal = advanceSeasonalGame(normalized).game;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-    mirrorLegacy(normalized);
-    window.dispatchEvent(new CustomEvent<GameState>(GAME_UPDATED_EVENT, { detail: normalized }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(seasonal));
+    mirrorLegacy(seasonal);
+    window.dispatchEvent(new CustomEvent<GameState>(GAME_UPDATED_EVENT, { detail: seasonal }));
   } catch (error) {
     console.error('[BONSAI save]', error);
   }
-  return normalized;
+  return seasonal;
+}
+
+function advanceForLoad(game: GameState): GameState {
+  const timed = advanceTime(game);
+  const seasonal = advanceSeasonalGame(timed);
+  if (seasonal.changed) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(seasonal.game));
+      mirrorLegacy(seasonal.game);
+    } catch (error) {
+      console.warn('[BONSAI seasonal save]', error);
+    }
+  }
+  return seasonal.game;
 }
 
 function backupCorrupt(key: string, error: unknown): void {

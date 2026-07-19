@@ -8,6 +8,7 @@ import './stability.css';
 import './completion-layer.css';
 import './quality-v2.css';
 import './craft-v3.css';
+import './seasonal-v4.css';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error?: Error }> {
   state: { error?: Error } = {};
@@ -41,7 +42,7 @@ function resetScrollAfterTabChange(event: MouseEvent) {
 }
 
 document.addEventListener('click', resetScrollAfterTabChange, { capture: true });
-(window as Window & { BonsaiRelease?: string }).BonsaiRelease = 'bonsai-craft-v3-20260719';
+(window as Window & { BonsaiRelease?: string }).BonsaiRelease = 'bonsai-seasonal-response-v4-20260719';
 
 createRoot(root).render(
   <ErrorBoundary>
