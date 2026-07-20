@@ -90,7 +90,7 @@ jobs:
         run: |
           setsid npm run preview >/tmp/bonsai-wire-v7-preview.log 2>&1 &
           server=$!
-          echo "$server" >/tmp/bonsai-wire-v7-preview.pid
+          echo "$server" >/tmp/bonsai-photoreal-v6-preview.pid
           for i in $(seq 1 120); do
             curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
             sleep .25
@@ -127,8 +127,8 @@ jobs:
       - name: Stop preview
         if: always()
         run: |
-          if test -f /tmp/bonsai-wire-v7-preview.pid; then
-            server="$(cat /tmp/bonsai-wire-v7-preview.pid)"
+          if test -f /tmp/bonsai-photoreal-v6-preview.pid; then
+            server="$(cat /tmp/bonsai-photoreal-v6-preview.pid)"
             kill -TERM -- -"$server" 2>/dev/null || kill "$server" 2>/dev/null || true
           fi
 
