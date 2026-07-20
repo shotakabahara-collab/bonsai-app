@@ -10,7 +10,7 @@
 | 本番統合SHA | `6b106f66e715eab4b4e685efd65e1453fa47fba3` |
 | 公開リリース | `bonsai-photoreal-craft-v7` |
 | 公開URL | `https://shotakabahara-collab.github.io/bonsai-app/?release=bonsai-photoreal-craft-v7` |
-| 本番監査Issue | Issue #1 `AUTOMATED PASS / iPhone確認待ち` |
+| 本番監査Issue | Issue #1 `公開完了 / ユーザー承認済み`（closed） |
 | セーブキー | `bonsai:v2` |
 | 旧セーブキー | `bonsai_live_1` |
 
@@ -19,7 +19,7 @@
 - PR #11はsquash merge済み。
 - GitHub Pagesへ`bonsai-photoreal-craft-v7`を公開済み。
 - 公開URLのinstall、wait、smoke、seasonal、photoreal、files監査はすべてPASS。
-- Issue #1はiPhone実画面確認まで開いたままにする。
+- Issue #1は公開完了・ユーザー承認済みとしてclosed。
 - PR用の一時転送データ、適用・診断用Actions、旧v5 CIは削除済み。
 - 恒久CIは`.github/workflows/photoreal-craft-v7-ci.yml`。
 
@@ -112,11 +112,11 @@ next/public/assets/kuromatsu/deadwood-photo-v6/*.webp   24枚
 4. GitHub Actionsの直近実行
 5. 本ファイル
 
-## 残作業
+## 公開後の扱い
 
-1. 公開URLをユーザーのiPhoneで開く。
-2. 針金、神・舎利強度、工程途中、中断、再読み込み、機内モードを確認する。
-3. 実機合格後にだけIssue #1を閉じ、完成判断する。
+- 通常開発は最新mainから新しい機能ブランチを作成する。
+- 公開版のiPhone実画面で回帰が見つかった場合はIssue #1を再オープンする。
+- 自動監査だけで視覚品質を合格へ戻さず、実機画像を正本として扱う。
 
 ## 本番へ戻してはいけない表現
 
