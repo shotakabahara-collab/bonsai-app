@@ -191,43 +191,73 @@ async function auditPhotographicWorkAndInterruption() {
   await page.getByRole('button', { name: '右へ' }).click();
   await page.getByRole('button', { name: 'この部位へかける' }).click();
   await page.waitForSelector('[data-testid="photoreal-wire"]');
-  await page.waitForSelector('[data-testid="wire-back-pass"]');
   const wireVisual = await page.evaluate(() => {
     const stage = document.querySelector('.bonsai-stage');
     const workLayer = stage?.querySelector('.authentic-work-layer');
     const precisionLayer = stage?.querySelector('.precision-prune-svg');
-    const frontPaths = [...document.querySelectorAll('[data-testid="photoreal-wire"] .wire-turn-front')].map(node => ({
-      d: node.getAttribute('d'),
-      style: node.getAttribute('style'),
-      span: Number(node.getAttribute('data-wire-span')),
-      strokeWidth: getComputedStyle(node).strokeWidth
-    }));
-    const backSpans = [...document.querySelectorAll('[data-testid="wire-back-pass"] .wire-turn-back')].map(node => Number(node.getAttribute('data-wire-span')));
+    const groups = [...document.querySelectorAll('[data-testid="photoreal-wire"]')].map(node => {
+      const raster = node.querySelector('image.wire-raster');
+      return {
+        part: node.getAttribute('data-wire-part'),
+        intensity: node.getAttribute('data-wire-intensity'),
+        direction: node.getAttribute('data-wire-direction'),
+        progress: Number(node.getAttribute('data-wire-progress')),
+        progressBand: Number(node.getAttribute('data-wire-progress-band')),
+        status: node.getAttribute('data-wire-status'),
+        asset: node.getAttribute('data-wire-asset'),
+        imageHref: raster?.getAttribute('href'),
+        rasterCount: node.querySelectorAll('image.wire-raster').length,
+        width: raster?.getAttribute('width'),
+        height: raster?.getAttribute('height'),
+        preserveAspectRatio: raster?.getAttribute('preserveAspectRatio'),
+        opacity: raster ? getComputedStyle(raster).opacity : ''
+      };
+    });
     return {
       renderer: stage?.getAttribute('data-renderer'),
-      frontPaths,
-      backPaths: backSpans.length,
-      backPasses: document.querySelectorAll('[data-testid="wire-back-pass"]').length,
-      maxSpan: Math.max(0, ...frontPaths.map(item => item.span), ...backSpans),
-      glints: document.querySelectorAll('.wire-turn-glint').length,
-      legacyPhotoOcclusions: document.querySelectorAll('[data-testid="wire-branch-occlusion"]').length,
+      groups,
+      legacySvgTurns: document.querySelectorAll('.wire-turn-front,.wire-turn-back,.wire-coil-metal,[data-testid="wire-back-pass"]').length,
       lineElements: document.querySelectorAll('.authentic-work-layer line').length,
       circleElements: document.querySelectorAll('.precision-prune-svg circle').length,
       workAspect: workLayer?.getAttribute('preserveAspectRatio'),
       precisionAspect: precisionLayer?.getAttribute('preserveAspectRatio'),
       imageFit: getComputedStyle(stage?.querySelector('.bonsai-photo')).objectFit,
-      status: document.querySelector('.wire-status-tag')?.textContent ?? ''
+      statusText: document.querySelector('.wire-status-tag')?.textContent ?? ''
     };
   });
-  if (wireVisual.renderer !== 'photoreal-craft-v6' || wireVisual.frontPaths.length < 5 || wireVisual.backPaths < 5 || wireVisual.backPasses < 1 || wireVisual.glints !== 0 || wireVisual.legacyPhotoOcclusions !== 0 || wireVisual.lineElements !== 0 || wireVisual.circleElements !== 0 || wireVisual.maxSpan <= 0 || wireVisual.maxSpan > 55 || wireVisual.workAspect !== 'xMidYMid meet' || wireVisual.precisionAspect !== 'xMidYMid meet' || wireVisual.imageFit !== 'contain') {
-    throw new Error(`Photoreal v6 wire structure is incomplete or detached: ${JSON.stringify(wireVisual)}`);
-  }
-  if (wireVisual.frontPaths.some(item => !item.d?.includes('C') || !item.style?.includes('url(') || !Number.isFinite(item.span))) {
-    throw new Error(`Wire contains a long, straight or flat-color turn: ${JSON.stringify(wireVisual.frontPaths)}`);
+  const wireGroup = wireVisual.groups[0];
+  if (wireVisual.renderer !== 'photoreal-craft-v7' || wireVisual.groups.length !== 1 || wireGroup.part !== 'secondRight' || wireGroup.intensity !== 'strong' || wireGroup.rasterCount !== 1 || wireGroup.width !== '900' || wireGroup.height !== '1500' || wireGroup.preserveAspectRatio !== 'none' || !wireGroup.asset?.includes('/wire-photo-v7/secondRight-strong.webp') || wireGroup.imageHref !== wireGroup.asset || !Number.isFinite(wireGroup.progress) || !Number.isInteger(wireGroup.progressBand) || wireVisual.legacySvgTurns !== 0 || wireVisual.lineElements !== 0 || wireVisual.circleElements !== 0 || wireVisual.workAspect !== 'xMidYMid meet' || wireVisual.precisionAspect !== 'xMidYMid meet' || wireVisual.imageFit !== 'contain') {
+    throw new Error(`Photographed wire v7 is incomplete or detached: ${JSON.stringify(wireVisual)}`);
   }
   await page.screenshot({ path: 'test-artifacts/authentic-v5-wire.png', fullPage: false });
   await captureArtwork(page, '.bonsai-stage [data-testid="bonsai-photo-canvas"]', 'test-artifacts/authentic-v5-wire-artwork.png');
   await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-stage-wire.png' });
+
+  report.phase = 'wire time progression';
+  await page.evaluate(nowValue => {
+    const game = JSON.parse(localStorage.getItem('bonsai:v2'));
+    const tree = game.bonsai.find(item => item.id === game.activeBonsaiId);
+    const wire = tree.parts.secondRight.wire;
+    wire.appliedAt = nowValue - 7 * 86400000;
+    wire.readyAt = nowValue + 7 * 86400000;
+    localStorage.setItem('bonsai:v2', JSON.stringify(game));
+  }, Date.now());
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+  await waitForApp(page);
+  const wireProgressVisual = await page.evaluate(() => {
+    const group = document.querySelector('[data-testid="photoreal-wire"][data-wire-part="secondRight"]');
+    const raster = group?.querySelector('image.wire-raster');
+    return {
+      progress: Number(group?.getAttribute('data-wire-progress')),
+      band: Number(group?.getAttribute('data-wire-progress-band')),
+      opacity: raster ? getComputedStyle(raster).opacity : '',
+      filter: raster ? getComputedStyle(raster).filter : ''
+    };
+  });
+  if (wireProgressVisual.progress < 45 || wireProgressVisual.progress > 55 || wireProgressVisual.band !== 2 || wireProgressVisual.opacity === wireGroup.opacity) {
+    throw new Error(`Wire training time did not alter the photographic state: ${JSON.stringify({ wireGroup, wireProgressVisual })}`);
+  }
+  report.wireProgress = wireProgressVisual;
 
   report.phase = 'wire interruption';
   await page.getByRole('button', { name: '部位針金' }).click();
@@ -247,13 +277,13 @@ async function auditPhotographicWorkAndInterruption() {
   report.phase = 'photographic jin';
   await page.getByRole('button', { name: /神・舎利/ }).click();
   page.once('dialog', dialog => dialog.accept());
-  await page.getByRole('button', { name: 'この枝で神の工程を始める' }).click();
+  await page.getByRole('button', { name: /この枝で神の第1強度を始める/ }).click();
   await page.waitForSelector('[data-testid="photoreal-deadwood"]');
 
   report.phase = 'photographic shari';
   await page.getByRole('button', { name: /神・舎利/ }).click();
   page.once('dialog', dialog => dialog.accept());
-  await page.getByRole('button', { name: '右側から始める' }).click();
+  await page.getByRole('button', { name: /右側・第1強度を始める/ }).click();
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="photoreal-deadwood"]').length === 2, { timeout: 5000 });
   const deadwoodVisual = await page.evaluate(() => ({
     groups: [...document.querySelectorAll('[data-testid="photoreal-deadwood"]')].map(node => {
@@ -262,33 +292,84 @@ async function auditPhotographicWorkAndInterruption() {
         kind: node.getAttribute('data-deadwood-kind'),
         stage: node.getAttribute('data-stage'),
         paused: node.getAttribute('data-paused'),
+        level: Number(node.getAttribute('data-deadwood-level')),
+        progress: Number(node.getAttribute('data-deadwood-progress')),
+        progressBand: Number(node.getAttribute('data-deadwood-progress-band')),
         asset: node.getAttribute('data-deadwood-asset'),
         rasterCount: node.querySelectorAll('image.deadwood-raster').length,
         width: raster?.getAttribute('width'),
         height: raster?.getAttribute('height'),
         preserveAspectRatio: raster?.getAttribute('preserveAspectRatio'),
-        vectorPieces: node.querySelectorAll('.deadwood-bark-edge, .deadwood-live-edge, .deadwood-wood-core, .deadwood-grain, .deadwood-bark-island, .jin-torn-end').length,
+        vectorPieces: node.querySelectorAll('.deadwood-bark-edge, .deadwood-live-edge, .deadwood-wood-core, .deadwood-grain, .deadwood-bark-island, .jin-torn-end, .deadwood-svg-path').length,
         filter: raster ? getComputedStyle(raster).filter : ''
       };
     }),
     lineElements: document.querySelectorAll('.authentic-work-layer line').length,
     circleElements: document.querySelectorAll('.precision-prune-svg circle').length,
-    legacyPhotoOcclusions: document.querySelectorAll('[data-testid="wire-branch-occlusion"]').length,
     status: document.querySelector('.deadwood-status-tag')?.textContent ?? ''
   }));
   const jinVisual = deadwoodVisual.groups.find(group => group.kind === 'jin');
   const shariVisual = deadwoodVisual.groups.find(group => group.kind === 'shari');
   const invalidRaster = deadwoodVisual.groups.some(group =>
-    group.stage !== 'fresh' || group.rasterCount !== 1 || group.width !== '900' || group.height !== '1500' ||
+    group.stage !== 'fresh' || group.level !== 1 || group.rasterCount !== 1 || group.width !== '900' || group.height !== '1500' ||
     group.preserveAspectRatio !== 'none' || group.vectorPieces !== 0 || !group.asset?.includes('/deadwood-photo-v6/') ||
+    !Number.isFinite(group.progress) || group.progress < 0 || group.progress > 100 || !Number.isInteger(group.progressBand) ||
     !group.filter || group.filter === 'none'
   );
-  if (deadwoodVisual.groups.length !== 2 || !jinVisual || !shariVisual || invalidRaster || !jinVisual.asset?.includes('/jin-') || !shariVisual.asset?.match(/\/shari-right-l[1-3]\.webp$/) || deadwoodVisual.lineElements !== 0 || deadwoodVisual.circleElements !== 0 || deadwoodVisual.legacyPhotoOcclusions !== 0) {
-    throw new Error(`Photographed deadwood raster structure is incomplete: ${JSON.stringify(deadwoodVisual)}`);
+  if (deadwoodVisual.groups.length !== 2 || !jinVisual || !shariVisual || invalidRaster || !jinVisual.asset?.includes('/jin-thirdLeft-l1.webp') || !shariVisual.asset?.includes('/shari-right-l1.webp') || deadwoodVisual.lineElements !== 0 || deadwoodVisual.circleElements !== 0) {
+    throw new Error(`Photographed deadwood strength/time state is incomplete: ${JSON.stringify(deadwoodVisual)}`);
   }
   await page.screenshot({ path: 'test-artifacts/authentic-v5-deadwood-fresh.png', fullPage: false });
   await captureArtwork(page, '.bonsai-stage [data-testid="bonsai-photo-canvas"]', 'test-artifacts/authentic-v5-deadwood-fresh-artwork.png');
   await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-stage-deadwood-fresh.png' });
+
+  report.phase = 'deadwood strength and time progression';
+  await page.evaluate(nowValue => {
+    const game = JSON.parse(localStorage.getItem('bonsai:v2'));
+    const tree = game.bonsai.find(item => item.id === game.activeBonsaiId);
+    for (const project of tree.craft.deadwoodProjects) {
+      project.level = 3;
+      project.stage = 'weathering';
+      project.stageStartedAt = nowValue - 9 * 86400000;
+      project.readyAt = nowValue + 9 * 86400000;
+      delete project.pausedAt;
+      delete project.remainingMs;
+    }
+    localStorage.setItem('bonsai:v2', JSON.stringify(game));
+  }, Date.now());
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+  await waitForApp(page);
+  const progressedDeadwood = await page.evaluate(() => [...document.querySelectorAll('[data-testid="photoreal-deadwood"]')].map(node => {
+    const raster = node.querySelector('image.deadwood-raster');
+    return {
+      kind: node.getAttribute('data-deadwood-kind'),
+      level: Number(node.getAttribute('data-deadwood-level')),
+      progress: Number(node.getAttribute('data-deadwood-progress')),
+      band: Number(node.getAttribute('data-deadwood-progress-band')),
+      asset: node.getAttribute('data-deadwood-asset'),
+      filter: raster ? getComputedStyle(raster).filter : ''
+    };
+  }));
+  if (progressedDeadwood.length !== 2 || progressedDeadwood.some(item => item.level !== 3 || item.progress < 45 || item.progress > 55 || item.band !== 2 || !item.asset?.includes('-l3.webp')) || progressedDeadwood.every(item => deadwoodVisual.groups.some(initial => initial.kind === item.kind && initial.filter === item.filter))) {
+    throw new Error(`Deadwood strength/time did not change the photographed state: ${JSON.stringify(progressedDeadwood)}`);
+  }
+  report.deadwoodStrengthProgress = progressedDeadwood;
+  await captureArtwork(page, '.bonsai-stage [data-testid="bonsai-photo-canvas"]', 'test-artifacts/photoreal-v7-deadwood-level3-mid-artwork.png');
+  await page.evaluate(nowValue => {
+    const game = JSON.parse(localStorage.getItem('bonsai:v2'));
+    const tree = game.bonsai.find(item => item.id === game.activeBonsaiId);
+    for (const project of tree.craft.deadwoodProjects) {
+      project.level = 1;
+      project.stage = 'fresh';
+      project.stageStartedAt = nowValue;
+      project.readyAt = nowValue + 0.7 * 86400000;
+      delete project.pausedAt;
+      delete project.remainingMs;
+    }
+    localStorage.setItem('bonsai:v2', JSON.stringify(game));
+  }, Date.now());
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+  await waitForApp(page);
 
   report.phase = 'deadwood interruption';
   await page.getByRole('button', { name: /神・舎利/ }).click();
@@ -357,19 +438,18 @@ async function auditPhotographicWorkAndInterruption() {
   await page.waitForSelector('.wall-mode .wall-stage');
   const combinedVisual = await page.evaluate(() => {
     const stage = document.querySelector('.wall-mode .wall-stage');
-    const spans = [...stage.querySelectorAll('[data-wire-span]')].map(node => Number(node.getAttribute('data-wire-span'))).filter(Number.isFinite);
     const canvas = stage.querySelector('[data-testid="bonsai-photo-canvas"]');
     const image = stage.querySelector('.bonsai-photo');
     const work = stage.querySelector('.authentic-work-layer');
     return {
       renderer: stage.getAttribute('data-renderer'),
       wireGroups: stage.querySelectorAll('[data-testid="photoreal-wire"]').length,
-      backPasses: stage.querySelectorAll('[data-testid="wire-back-pass"]').length,
       deadwoodGroups: stage.querySelectorAll('[data-testid="photoreal-deadwood"]').length,
       deadwoodRasters: stage.querySelectorAll('image.deadwood-raster').length,
       legacyPhotoOcclusions: stage.querySelectorAll('[data-testid="wire-branch-occlusion"]').length,
       circleElements: stage.querySelectorAll('circle').length,
-      maxSpan: spans.length ? Math.max(...spans) : 0,
+      wireRasters: stage.querySelectorAll('image.wire-raster').length,
+      wireAssets: [...stage.querySelectorAll('[data-testid="photoreal-wire"]')].map(node => node.getAttribute('data-wire-asset')),
       canvasRect: canvas.getBoundingClientRect().toJSON(),
       imageRect: image.getBoundingClientRect().toJSON(),
       workRect: work.getBoundingClientRect().toJSON(),
@@ -388,7 +468,7 @@ async function auditPhotographicWorkAndInterruption() {
     Math.abs(combinedVisual.canvasRect.width - combinedVisual.workRect.width),
     Math.abs(combinedVisual.canvasRect.height - combinedVisual.workRect.height)
   );
-  if (combinedVisual.renderer !== 'photoreal-craft-v6' || combinedVisual.wireGroups !== 3 || combinedVisual.backPasses !== 3 || combinedVisual.deadwoodGroups !== 2 || combinedVisual.deadwoodRasters !== 2 || combinedVisual.legacyPhotoOcclusions !== 0 || combinedVisual.circleElements !== 0 || combinedVisual.maxSpan > 55 || combinedVisual.aspect !== 'xMidYMid meet' || combinedVisual.natural[0] < 800 || combinedVisual.natural[1] < 1400 || rectDelta > .6 || !combinedVisual.status.includes('3枝')) {
+  if (combinedVisual.renderer !== 'photoreal-craft-v7' || combinedVisual.wireGroups !== 3 || combinedVisual.wireRasters !== 3 || combinedVisual.deadwoodGroups !== 2 || combinedVisual.deadwoodRasters !== 2 || combinedVisual.legacyPhotoOcclusions !== 0 || combinedVisual.circleElements !== 0 || combinedVisual.wireAssets.some(asset => !asset?.includes('/wire-photo-v7/')) || combinedVisual.aspect !== 'xMidYMid meet' || combinedVisual.natural[0] < 800 || combinedVisual.natural[1] < 1400 || rectDelta > .6 || !combinedVisual.status.includes('3枝')) {
     throw new Error(`Combined iPhone artwork is not registered to one photograph canvas: ${JSON.stringify({ combinedVisual, rectDelta })}`);
   }
   report.combinedVisual = combinedVisual;
@@ -411,7 +491,7 @@ async function auditPhotographicWorkAndInterruption() {
 
   const webkitCache = await page.evaluate(async () => {
     const cacheNames = await caches.keys();
-    const cacheName = cacheNames.find(name => name === 'bonsai-photoreal-craft-v6-shell');
+    const cacheName = cacheNames.find(name => name === 'bonsai-photoreal-craft-v7-shell');
     const dynamicAssets = [...document.querySelectorAll('script[src],link[rel="stylesheet"][href]')]
       .map(node => new URL(node.getAttribute('src') || node.getAttribute('href'), location.href).pathname)
       .filter(pathname => pathname.startsWith('/bonsai-app/assets/'));
@@ -481,7 +561,7 @@ async function auditPhotographicWorkAndInterruption() {
     }));
     webkitRestart.navigationError = navigationError;
     webkitRestart.serverReachable = serverReachable;
-    if (webkitRestart.serverReachable || !webkitRestart.app || webkitRestart.renderer !== 'photoreal-craft-v6' || webkitRestart.deadwoodCount !== 2 || webkitRestart.wireCount !== 3) {
+    if (webkitRestart.serverReachable || !webkitRestart.app || webkitRestart.renderer !== 'photoreal-craft-v7' || webkitRestart.deadwoodCount !== 2 || webkitRestart.wireCount !== 3) {
       throw new Error(`WebKit offline restart did not preserve the work state: ${JSON.stringify(webkitRestart)}`);
     }
     report.offline = { webkitCache, webkitRestart };

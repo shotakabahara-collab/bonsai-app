@@ -473,11 +473,22 @@ export function deadwoodNextAction(stage: DeadwoodStage): string {
 
 export function deadwoodStatus(project: DeadwoodProject, now = Date.now()) {
   const paused = Boolean(project.pausedAt);
-  const remainingMs = paused ? Math.max(0, finite(project.remainingMs, project.readyAt - finite(project.pausedAt, now))) : Math.max(0, project.readyAt - now);
+  const durationMs = Math.max(0, stageWaitMs(project.stage));
+  const remainingMs = project.stage === 'mature'
+    ? 0
+    : paused
+      ? Math.max(0, finite(project.remainingMs, project.readyAt - finite(project.pausedAt, now)))
+      : Math.max(0, project.readyAt - now);
+  const progress = project.stage === 'mature' || durationMs <= 0
+    ? 100
+    : clamp((durationMs - remainingMs) / durationMs * 100);
+  const progressBand = Math.min(3, Math.floor(Math.min(99.999, progress) / 25));
   return {
     paused,
     ready: !paused && project.stage !== 'mature' && now >= project.readyAt,
     remainingInGameDays: remainingMs / 86_400_000 * 10,
+    progress,
+    progressBand,
     label: paused ? `${deadwoodStageLabel(project.stage)}・中断中` : deadwoodStageLabel(project.stage),
     nextAction: paused ? '工程を再開する' : deadwoodNextAction(project.stage)
   };
@@ -504,8 +515,10 @@ export function resumeDeadwoodProjectInGame(game: GameState, projectId: string, 
   const project = bonsai?.craft.deadwoodProjects.find(item => item.id === projectId);
   if (!bonsai || !project || project.stage === 'mature' || !project.pausedAt) return copy;
   const remaining = Math.max(0, finite(project.remainingMs, project.readyAt - project.pausedAt));
+  const duration = Math.max(1, stageWaitMs(project.stage));
+  const elapsed = Math.max(0, duration - remaining);
   project.readyAt = now + remaining;
-  project.stageStartedAt = now;
+  project.stageStartedAt = now - elapsed;
   delete project.pausedAt;
   delete project.remainingMs;
   bonsai.logs.unshift({
@@ -519,18 +532,22 @@ export function startJinProjectInGame(game: GameState, partId: PartId, now = Dat
   const copy = structuredClone(game);
   const bonsai = copy.bonsai.find(item => item.id === copy.activeBonsaiId) ?? copy.bonsai[0];
   if (!bonsai || bonsai.lifeStatus === 'dead' || ['trunk', 'roots'].includes(partId) || bonsai.vitality < 60) return copy;
-  if (bonsai.craft.deadwoodProjects.some(project => project.kind === 'jin' && project.targetPartId === partId && project.stage !== 'mature')) return copy;
+  const samePart = bonsai.craft.deadwoodProjects.filter(project => project.kind === 'jin' && project.targetPartId === partId);
+  if (samePart.some(project => project.stage !== 'mature')) return copy;
+  const currentLevel = Math.max(0, ...samePart.filter(project => project.stage === 'mature').map(project => project.level));
+  if (currentLevel >= 3) return copy;
+  const level = (currentLevel + 1) as 1 | 2 | 3;
   const part = bonsai.parts[partId];
   part.deadwood = true;
   part.foliage = 0;
-  part.health = clamp(part.health - 12);
+  part.health = clamp(part.health - (8 + level * 4));
   delete part.wire;
   bonsai.craft.deadwoodProjects.unshift({
-    id: uid(), kind: 'jin', targetPartId: partId, stage: 'fresh', level: 1,
+    id: uid(), kind: 'jin', targetPartId: partId, stage: 'fresh', level,
     startedAt: now, stageStartedAt: now, readyAt: now + stageWaitMs('fresh'), interruptionCount: 0
   });
-  bonsai.stress = clamp(bonsai.stress + 18, 0, 1000);
-  bonsai.logs.unshift({ id: uid(), at: now, text: `${PART_LABELS[partId]}の枝葉を整理し、神の樹皮剥離を始めた。完成には乾燥・整形・保護・風化が必要。` });
+  bonsai.stress = clamp(bonsai.stress + 10 + level * 7, 0, 1000);
+  bonsai.logs.unshift({ id: uid(), at: now, text: `${PART_LABELS[partId]}の神を第${level}強度として加工した。完成には乾燥・整形・保護・風化が必要。` });
   return copy;
 }
 
@@ -540,13 +557,16 @@ export function startShariProjectInGame(game: GameState, side: 'left' | 'right',
   if (!bonsai || bonsai.lifeStatus === 'dead' || bonsai.vitality < 70) return copy;
   if (bonsai.craft.deadwoodProjects.some(project => project.kind === 'shari' && project.stage !== 'mature')) return copy;
   const mature = bonsai.craft.deadwoodProjects.filter(project => project.kind === 'shari' && project.stage === 'mature');
-  const level = clamp((mature.at(0)?.level ?? 0) + 1, 1, 3) as 1 | 2 | 3;
+  const currentLevel = Math.max(0, ...mature.map(project => project.level));
+  if (currentLevel >= 3) return copy;
+  const level = (currentLevel + 1) as 1 | 2 | 3;
   bonsai.craft.deadwoodProjects.unshift({
     id: uid(), kind: 'shari', targetPartId: 'trunk', side, stage: 'fresh', level,
     startedAt: now, stageStartedAt: now, readyAt: now + stageWaitMs('fresh'), interruptionCount: 0
   });
-  bonsai.stress = clamp(bonsai.stress + 14, 0, 1000);
-  bonsai.logs.unshift({ id: uid(), at: now, text: `主幹の${side === 'left' ? '左' : '右'}側に、生き筋を残して細い舎利の樹皮剥離を始めた。` });
+  bonsai.stress = clamp(bonsai.stress + 8 + level * 6, 0, 1000);
+  bonsai.parts.trunk.health = clamp(bonsai.parts.trunk.health - (4 + level * 3));
+  bonsai.logs.unshift({ id: uid(), at: now, text: `主幹の${side === 'left' ? '左' : '右'}側で、舎利を第${level}強度へ広げる樹皮剥離を始めた。生き筋は残している。` });
   return copy;
 }
 

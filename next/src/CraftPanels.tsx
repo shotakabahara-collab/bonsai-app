@@ -158,6 +158,8 @@ export function DeadwoodLifecycleSheet({ bonsai, onClose, onStartJin, onStartSha
   const projects = [...bonsai.craft.deadwoodProjects].sort((a, b) => b.startedAt - a.startedAt);
   const activeJinParts = new Set(projects.filter(project => project.kind === 'jin' && project.stage !== 'mature').map(project => project.targetPartId));
   const activeShari = projects.some(project => project.kind === 'shari' && project.stage !== 'mature');
+  const jinLevel = Math.max(0, ...projects.filter(project => project.kind === 'jin' && project.targetPartId === targetPart && project.stage === 'mature').map(project => project.level));
+  const shariLevel = Math.max(0, ...projects.filter(project => project.kind === 'shari' && project.stage === 'mature').map(project => project.level));
 
   return (
     <div className="care-overlay" role="dialog" aria-modal="true" aria-label="神舎利の工程管理">
@@ -169,8 +171,8 @@ export function DeadwoodLifecycleSheet({ bonsai, onClose, onStartJin, onStartSha
         <BonsaiStage bonsai={bonsai} className="care-stage" />
 
         <section className="deadwood-intro">
-          <b>加工直後を完成扱いにしません</b>
-          <p>木部の色と表情は時間と手入れで変化します。未完成工程がある作品は品評会へ出展できません。</p>
+          <b>強度と経過時間が、同じ加工面の姿へ段階的に残ります</b>
+          <p>第1〜第3強度で加工面積が不可逆に広がり、各工程の待機中も湿潤・乾燥・風化の表情が進みます。未完成工程がある作品は品評会へ出展できません。</p>
         </section>
 
         <div className="deadwood-project-list">
@@ -190,23 +192,24 @@ export function DeadwoodLifecycleSheet({ bonsai, onClose, onStartJin, onStartSha
           <button
             className="primary-button"
             type="button"
-            disabled={bonsai.lifeStatus === 'dead' || bonsai.vitality < 60 || activeJinParts.has(targetPart)}
+            disabled={bonsai.lifeStatus === 'dead' || bonsai.vitality < 60 || activeJinParts.has(targetPart) || jinLevel >= 3}
             onClick={() => {
-              if (!window.confirm(`${PARTS.find(item => item.id === targetPart)?.name}で神の工程を始めます。枝葉を失い、元には戻せません。`)) return;
+              const nextLevel = Math.min(3, jinLevel + 1);
+              if (!window.confirm(`${PARTS.find(item => item.id === targetPart)?.name}の神を第${nextLevel}強度として加工します。加工面は元には戻せません。`)) return;
               onStartJin(targetPart);
             }}
           >
-            この枝で神の工程を始める
+            {jinLevel >= 3 ? 'この枝の神は第3強度まで完成済み' : `この枝で神の第${jinLevel + 1}強度を始める`}
           </button>
           {bonsai.vitality < 60 && <small>樹勢60以上が必要です。</small>}
         </section>
 
         <section className="deadwood-start-panel">
           <div className="eyebrow">新しい舎利を始める</div>
-          <p>生き筋を残し、最初は細い面積から始めます。完成後、次年度工程として段階的に広げます。</p>
+          <p>生き筋を残し、第1〜第3強度で同じ舎利面を段階的に広げます。強度が高いほど樹勢と幹の健康への負担も増えます。</p>
           <div className="two-buttons">
-            <button type="button" disabled={bonsai.lifeStatus === 'dead' || bonsai.vitality < 70 || activeShari} onClick={() => onStartShari('left')}>左側から始める</button>
-            <button type="button" disabled={bonsai.lifeStatus === 'dead' || bonsai.vitality < 70 || activeShari} onClick={() => onStartShari('right')}>右側から始める</button>
+            <button type="button" disabled={bonsai.lifeStatus === 'dead' || bonsai.vitality < 70 || activeShari || shariLevel >= 3} onClick={() => onStartShari('left')}>{shariLevel >= 3 ? '左側・第3強度まで完成済み' : `左側・第${shariLevel + 1}強度を始める`}</button>
+            <button type="button" disabled={bonsai.lifeStatus === 'dead' || bonsai.vitality < 70 || activeShari || shariLevel >= 3} onClick={() => onStartShari('right')}>{shariLevel >= 3 ? '右側・第3強度まで完成済み' : `右側・第${shariLevel + 1}強度を始める`}</button>
           </div>
           {bonsai.vitality < 70 && <small>樹勢70以上が必要です。</small>}
         </section>
@@ -222,7 +225,7 @@ function DeadwoodProjectCard({ project, onAdvance, onPause, onResume }: {
   onResume: (id: string) => void;
 }) {
   const status = deadwoodStatus(project);
-  const title = project.kind === 'jin' ? `${PARTS.find(item => item.id === project.targetPartId)?.name}の神` : `主幹${project.side === 'right' ? '右' : '左'}側の舎利・第${project.level}段階`;
+  const title = project.kind === 'jin' ? `${PARTS.find(item => item.id === project.targetPartId)?.name}の神・第${project.level}強度` : `主幹${project.side === 'right' ? '右' : '左'}側の舎利・第${project.level}強度`;
   return (
     <article className={`deadwood-project deadwood-stage-${project.stage} ${status.paused ? 'paused' : ''}`} data-project-paused={status.paused ? 'true' : 'false'}>
       <header><div><small>{project.kind === 'jin' ? 'JIN' : 'SHARI'}</small><b>{title}</b></div><em>{status.label}</em></header>
@@ -231,7 +234,9 @@ function DeadwoodProjectCard({ project, onAdvance, onPause, onResume }: {
           <li key={stage} className={project.stage === stage ? 'current' : stageCompleted(project.stage, stage) ? 'done' : ''}>{stageShort(stage)}</li>
         ))}
       </ol>
-      {project.stage === 'mature' ? <p>風化完成。展示前には周囲の生き筋と木部の調和を確認します。</p> : status.paused ? (
+      <div className="deadwood-progress-meter" aria-label={`工程進行 ${Math.round(status.progress)}%`}><span style={{ width: `${status.progress}%` }} /></div>
+      <div className="deadwood-progress-caption"><span>工程内の経過</span><b>{Math.round(status.progress)}%</b></div>
+      {project.stage === 'mature' ? <p>第{project.level}強度の風化完成。展示前には周囲の生き筋と木部の調和を確認します。</p> : status.paused ? (
         <>
           <p>工程は中断中です。加工済みの木部は残り、待機時間は停止しています。未完成のため品評会へは出展できません。</p>
           <button type="button" className="primary-button" onClick={() => onResume(project.id)}>この工程を再開する</button>

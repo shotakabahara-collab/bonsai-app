@@ -53,35 +53,27 @@
   z-index: 8;
 }
 
-/* A visible half-turn is deliberately short. No path connects one turn to the next. */
-.photoreal-craft-v6 .wire-turn-back,
-.photoreal-craft-v6 .wire-turn-front {
-  fill: none;
-  vector-effect: non-scaling-stroke;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+/* Wire v7 is a photographed transparent state, not repeated SVG S marks. */
+.photoreal-craft-v6 .wire-photo-state {
+  pointer-events: none;
+  isolation: isolate;
 }
 
-.photoreal-craft-v6 .wire-turn-back {
-  stroke-width: 1.05;
-  opacity: .32;
+.photoreal-craft-v6 .wire-raster {
+  width: 900px;
+  height: 1500px;
+  opacity: .96;
+  pointer-events: none;
+  image-rendering: auto;
+  transform: translateZ(0);
+  filter: saturate(1.02) brightness(1.01) contrast(1.03);
 }
 
-.photoreal-craft-v6 .wire-turn-front {
-  stroke-width: 1.35;
-  opacity: .82;
-  filter: drop-shadow(.35px .5px .32px rgba(17, 9, 5, .54));
-}
-
-.photoreal-craft-v6 .wire-group-strong .wire-turn-back {
-  stroke-width: 1.55;
-  opacity: .36;
-}
-
-.photoreal-craft-v6 .wire-group-strong .wire-turn-front {
-  stroke-width: 2.05;
-  opacity: .88;
-}
+.photoreal-craft-v6 .wire-progress-0 .wire-raster { opacity: .91; filter: saturate(1.08) brightness(1.04) contrast(1.01); }
+.photoreal-craft-v6 .wire-progress-1 .wire-raster { opacity: .94; filter: saturate(1.03) brightness(1.01) contrast(1.04); }
+.photoreal-craft-v6 .wire-progress-2 .wire-raster { opacity: .96; filter: saturate(.96) brightness(.98) contrast(1.06); }
+.photoreal-craft-v6 .wire-progress-3 .wire-raster { opacity: .97; filter: saturate(.88) brightness(.95) contrast(1.08); }
+.photoreal-craft-v6 .wire-status-overdue .wire-raster { opacity: .98; filter: saturate(.76) brightness(.89) contrast(1.14); }
 
 /* Deadwood is muted wood, not a luminous orange ribbon. */
 .photoreal-craft-v6 .deadwood-effect {
@@ -231,9 +223,4 @@
 .photoreal-craft-v6 .deadwood-status-tag,
 .photoreal-craft-v6 .dead-tree-status-tag {
   z-index: 10;
-}
-
-@media (max-width: 520px) {
-  .photoreal-craft-v6 .wire-turn-front { stroke-width: 1.22; }
-  .photoreal-craft-v6 .wire-group-strong .wire-turn-front { stroke-width: 1.82; }
 }

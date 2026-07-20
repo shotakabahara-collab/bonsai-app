@@ -232,19 +232,44 @@ JIN = {
     'front': [(405, 815, 13), (416, 819, 10), (427, 823, 6), (438, 827, 2.2)],
 }
 
-for offset, (name, points) in enumerate(JIN.items()):
-    mask, centreline = make_mask([points], 6000 + offset, clip_wood=True, holes=False)
-    # Tear a small notch from the free end so the jin does not terminate as a cap.
-    draw = ImageDraw.Draw(mask)
-    end_x, end_y, _ = points[-1]
-    draw.polygon([(end_x - 4, end_y - 2), (end_x + 1, end_y), (end_x - 2, end_y + 4)], fill=0)
-    make_layer(mask, centreline, 6000 + offset, 'jin').save(
-        OUT / f'jin-{name}.webp', 'WEBP', lossless=True, method=6
-    )
+def jin_level_points(points: list[tuple[float, float, float]], level: int) -> list[tuple[float, float, float]]:
+    if level == 1:
+        return points
+    origin_x, origin_y, _ = points[0]
+    length_scale = {2: 1.28, 3: 1.55}[level]
+    width_scale = {2: 1.20, 3: 1.38}[level]
+    result = []
+    for index, (x, y, width) in enumerate(points):
+        taper = 1 - index / max(1, len(points) - 1) * .12
+        result.append((
+            origin_x + (x - origin_x) * length_scale,
+            origin_y + (y - origin_y) * length_scale,
+            max(2.0, width * width_scale * taper),
+        ))
+    return result
+
+
+for offset, (name, base_points) in enumerate(JIN.items()):
+    for level in (1, 2, 3):
+        points = jin_level_points(base_points, level)
+        seed = 6000 + offset
+        mask, centreline = make_mask([points], seed, clip_wood=True, holes=False)
+        # Tear a small notch from the free end so the jin does not terminate as a cap.
+        draw = ImageDraw.Draw(mask)
+        end_x, end_y, end_width = points[-1]
+        notch = max(3.0, end_width * .9)
+        draw.polygon([
+            (end_x - notch, end_y - notch * .45),
+            (end_x + notch * .25, end_y),
+            (end_x - notch * .45, end_y + notch),
+        ], fill=0)
+        make_layer(mask, centreline, seed, 'jin').save(
+            OUT / f'jin-{name}-l{level}.webp', 'WEBP', lossless=True, method=6
+        )
 
 expected = {
     *(f'shari-{side}-l{level}.webp' for side in ('left', 'right') for level in (1, 2, 3)),
-    *(f'jin-{name}.webp' for name in JIN),
+    *(f'jin-{name}-l{level}.webp' for name in JIN for level in (1, 2, 3)),
 }
 actual = {path.name for path in OUT.glob('*.webp')}
 if actual != expected:

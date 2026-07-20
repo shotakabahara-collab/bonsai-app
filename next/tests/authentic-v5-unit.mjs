@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { rmSync, mkdirSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
@@ -97,10 +97,52 @@ const pausedProject = model.activeBonsai(paused).craft.deadwoodProjects[0];
 assert.ok(pausedProject.pausedAt);
 assert.ok(craft.deadwoodStatus(pausedProject, now + 5000).paused);
 assert.equal(craft.exhibitionEligibility(model.activeBonsai(paused), now + 5000).eligible, false);
+const progressBeforeResume = craft.deadwoodStatus(pausedProject, now + 5000).progress;
 const resumed = craft.resumeDeadwoodProjectInGame(paused, projectId, now + 10_000);
 const resumedProject = model.activeBonsai(resumed).craft.deadwoodProjects[0];
 assert.equal(resumedProject.pausedAt, undefined);
 assert.ok(resumedProject.readyAt > now + 10_000);
+assert.ok(Math.abs(craft.deadwoodStatus(resumedProject, now + 10_000).progress - progressBeforeResume) < .01, 'resume must preserve stage progress');
+
+function finishProject(inputGame, id, clock) {
+  let result = inputGame;
+  let at = clock;
+  for (let index = 0; index < 5; index += 1) {
+    const active = model.activeBonsai(result).craft.deadwoodProjects.find(item => item.id === id);
+    at = active.readyAt + 1;
+    result = craft.advanceDeadwoodProjectInGame(result, id, at);
+  }
+  return { game: result, at };
+}
+
+let strengthGame = craft.startJinProjectInGame(deadwoodGame, 'firstLeft', now);
+let strengthProject = model.activeBonsai(strengthGame).craft.deadwoodProjects[0];
+assert.equal(strengthProject.level, 1);
+({ game: strengthGame } = finishProject(strengthGame, strengthProject.id, now));
+strengthGame = craft.startJinProjectInGame(strengthGame, 'firstLeft', now + 2_000_000_000);
+strengthProject = model.activeBonsai(strengthGame).craft.deadwoodProjects[0];
+assert.equal(strengthProject.level, 2, 'completed jin can be strengthened to level 2');
+({ game: strengthGame } = finishProject(strengthGame, strengthProject.id, now));
+strengthGame = craft.startJinProjectInGame(strengthGame, 'firstLeft', now + 4_000_000_000);
+strengthProject = model.activeBonsai(strengthGame).craft.deadwoodProjects[0];
+assert.equal(strengthProject.level, 3, 'completed jin can be strengthened to level 3');
+({ game: strengthGame } = finishProject(strengthGame, strengthProject.id, now));
+const refusedFourthJin = craft.startJinProjectInGame(strengthGame, 'firstLeft', now + 6_000_000_000);
+assert.equal(model.activeBonsai(refusedFourthJin).craft.deadwoodProjects.length, model.activeBonsai(strengthGame).craft.deadwoodProjects.length, 'jin strength is capped at 3');
+
+let shariGame = craft.startShariProjectInGame(deadwoodGame, 'right', now);
+let shariProject = model.activeBonsai(shariGame).craft.deadwoodProjects[0];
+assert.equal(shariProject.level, 1);
+({ game: shariGame } = finishProject(shariGame, shariProject.id, now));
+shariGame = craft.startShariProjectInGame(shariGame, 'right', now + 2_000_000_000);
+shariProject = model.activeBonsai(shariGame).craft.deadwoodProjects[0];
+assert.equal(shariProject.level, 2, 'completed shari can be widened to level 2');
+
+const wireAssetDir = path.join(root, 'public', 'assets', 'kuromatsu', 'wire-photo-v7');
+const deadwoodAssetDir = path.join(root, 'public', 'assets', 'kuromatsu', 'deadwood-photo-v6');
+assert.ok(existsSync(wireAssetDir));
+assert.equal(readdirSync(wireAssetDir).filter(name => name.endsWith('.webp')).length, 12, 'wire v7 has six parts × two strengths');
+assert.equal(readdirSync(deadwoodAssetDir).filter(name => name.endsWith('.webp')).length, 24, 'deadwood has six jin parts × three strengths plus six shari states');
 
 model.markBonsaiDead(deadwoodTree, '試験上の全身衰弱', now);
 assert.equal(deadwoodTree.lifeStatus, 'dead');
@@ -111,5 +153,8 @@ console.log(JSON.stringify({
   storedOutcome: persistedOutcome,
   wireOutcome: wireTree.parts.firstLeft.wireHistory?.[0],
   deadwoodPaused: Boolean(pausedProject.pausedAt),
+  deadwoodProgress: progressBeforeResume,
+  jinStrength: strengthProject.level,
+  shariStrength: shariProject.level,
   saveVersion: 2
 }, null, 2));

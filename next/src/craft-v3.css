@@ -285,3 +285,20 @@
   .precision-technique-grid { grid-template-columns: 1fr; }
   .precision-state-grid { grid-template-columns: repeat(2,1fr); }
 }
+
+.deadwood-progress-meter {
+  position: relative;
+  overflow: hidden;
+  height: 5px;
+  margin: 7px 0 4px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.07);
+}
+.deadwood-progress-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg,rgba(135,91,58,.72),rgba(214,183,119,.82));
+  transition: width .25s ease;
+}
+.deadwood-progress-caption { display: flex; justify-content: space-between; color: var(--muted); font-size: 8px; }

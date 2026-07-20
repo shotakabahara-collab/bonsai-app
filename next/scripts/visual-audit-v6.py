@@ -109,7 +109,8 @@ def compare_state(base: Image.Image, changed: Image.Image, label: str) -> dict[s
         'brightOrangeRatio': float(np.mean(bright_orange & changed_mask)),
         'paleBandRatio': float(np.mean(pale_band)),
     }
-    if result['mean'] < .035 or result['changedRatio'] < .00018:
+    min_mean = .012 if label == 'wireDelta' else .035
+    if result['mean'] < min_mean or result['changedRatio'] < .00018:
         raise SystemExit(f'{label}: work produced no visible state change {result}')
     if result['changedRatio'] > .16 or result['severeRatio'] > .075:
         raise SystemExit(f'{label}: effect is implausibly broad {result}')
@@ -126,6 +127,37 @@ def compare_state(base: Image.Image, changed: Image.Image, label: str) -> dict[s
         raise SystemExit(f'{label}: circular marker/halo candidates detected {result}')
     return result
 
+
+
+def audit_wire_contact(base: Image.Image, changed: Image.Image) -> dict[str, object]:
+    base_small = base.resize((450, 750), Image.Resampling.LANCZOS)
+    changed_small = changed.resize((450, 750), Image.Resampling.LANCZOS)
+    base_arr = np.asarray(base_small, dtype=np.uint8)
+    changed_arr = np.asarray(changed_small, dtype=np.uint8)
+    delta = np.max(np.abs(changed_arr.astype(np.int16) - base_arr.astype(np.int16)), axis=2)
+    base_max = base_arr.max(axis=2)
+    base_min = base_arr.min(axis=2)
+    base_lum = base_arr.mean(axis=2)
+    wall = (base_lum > 207) & ((base_max - base_min) < 24)
+    red, green, blue = changed_arr[..., 0], changed_arr[..., 1], changed_arr[..., 2]
+    copper = (delta > 5) & (red.astype(int) > green.astype(int) + 8) & (green.astype(int) > blue.astype(int) + 3)
+    wall_copper = copper & wall
+    components = connected_components(wall_copper)
+    compact_marks = [item for item in components if 3 <= int(item['width']) <= 36 and 3 <= int(item['height']) <= 36 and float(item['fill']) > .18]
+    result = {
+        'copperChangedRatio': float(np.mean(copper)),
+        'wallCopperRatio': float(np.mean(wall_copper)),
+        'wallCopperPixels': int(np.sum(wall_copper)),
+        'wallComponents': components[:12],
+        'compactPaintMarkCandidates': compact_marks[:12],
+    }
+    if result['copperChangedRatio'] < .00010:
+        raise SystemExit(f'wireContact: photographed copper is not visible {result}')
+    if result['wallCopperRatio'] > .000035 or result['wallCopperPixels'] > 12:
+        raise SystemExit(f'wireContact: copper escaped the photographed branch silhouette {result}')
+    if len(compact_marks) > 1:
+        raise SystemExit(f'wireContact: repeated S/paint-mark candidates detected in wall space {result}')
+    return result
 
 def compare_identity(first: Image.Image, second: Image.Image, label: str) -> dict[str, float]:
     if first.size != second.size:
@@ -145,6 +177,7 @@ def main() -> None:
         'authentic-v5-wire-artwork.png',
         'authentic-v5-deadwood-fresh-artwork.png',
         'authentic-v5-deadwood-paused-artwork.png',
+        'photoreal-v7-deadwood-level3-mid-artwork.png',
         'photoreal-v6-combined-artwork.png',
         'authentic-v5-offline-artwork.png',
     ]
@@ -158,12 +191,16 @@ def main() -> None:
 
     base = images['authentic-v5-base-artwork.png']
     report['wireDelta'] = compare_state(base, images['authentic-v5-wire-artwork.png'], 'wireDelta')
+    report['wireContact'] = audit_wire_contact(base, images['authentic-v5-wire-artwork.png'])
     report['deadwoodDelta'] = compare_state(base, images['authentic-v5-deadwood-fresh-artwork.png'], 'deadwoodDelta')
     # A deadwood state must occupy an irregular photographed surface, not collapse
     # back into the thin vector line that failed the iPhone review.
     deadwood = report['deadwoodDelta']
     if deadwood['changedRatio'] < .0024 or deadwood['componentCount'] < 3 or int(deadwood['largestComponent']['width']) < 7 or int(deadwood['largestComponent']['height']) < 28:
         raise SystemExit(f"deadwoodDelta: stripped wood is too thin or too small {deadwood}")
+    report['deadwoodLevel3MidDelta'] = compare_state(base, images['photoreal-v7-deadwood-level3-mid-artwork.png'], 'deadwoodLevel3MidDelta')
+    if report['deadwoodLevel3MidDelta']['changedRatio'] <= deadwood['changedRatio'] * 1.04:
+        raise SystemExit(f"deadwoodStrength: level 3 did not visibly extend level 1 {deadwood} -> {report['deadwoodLevel3MidDelta']}")
     report['combinedDelta'] = compare_state(base, images['photoreal-v6-combined-artwork.png'], 'combinedDelta')
     report['pauseAppearanceDelta'] = compare_identity(
         images['authentic-v5-deadwood-fresh-artwork.png'],

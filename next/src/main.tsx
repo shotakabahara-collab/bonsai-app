@@ -44,7 +44,7 @@ function resetScrollAfterTabChange(event: MouseEvent) {
 }
 
 document.addEventListener('click', resetScrollAfterTabChange, { capture: true });
-(window as Window & { BonsaiRelease?: string }).BonsaiRelease = 'bonsai-photoreal-craft-v6-20260720';
+(window as Window & { BonsaiRelease?: string }).BonsaiRelease = 'bonsai-photoreal-craft-v7-20260720';
 
 createRoot(root).render(
   <ErrorBoundary>

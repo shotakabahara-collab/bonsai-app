@@ -221,28 +221,30 @@ try {
   await page.getByRole('button', { name: '第二枝を選択' }).click();
   await page.getByRole('button', { name: '右へ' }).click();
   await page.getByRole('button', { name: 'この部位へかける' }).click();
-  await page.waitForSelector('.wire-coil-metal');
+  await page.waitForSelector('[data-testid="photoreal-wire"] image.wire-raster');
   report.wireVisual = await page.evaluate(() => {
-    const spans = [...document.querySelectorAll('.wire-turn-front[data-wire-span],.wire-turn-back[data-wire-span]')]
-      .map(node => Number(node.getAttribute('data-wire-span')))
-      .filter(Number.isFinite);
+    const group = document.querySelector('[data-testid="photoreal-wire"][data-wire-part="secondRight"]');
+    const raster = group?.querySelector('image.wire-raster');
+    const game = JSON.parse(localStorage.getItem('bonsai:v2'));
     return {
-      coils: document.querySelectorAll('.wire-coil-metal').length,
       photorealGroups: document.querySelectorAll('[data-testid="photoreal-wire"]').length,
-      backPasses: document.querySelectorAll('[data-testid="wire-back-pass"]').length,
-      legacyPhotoOcclusions: document.querySelectorAll('[data-testid="wire-branch-occlusion"]').length,
+      rasterCount: document.querySelectorAll('image.wire-raster').length,
+      asset: group?.getAttribute('data-wire-asset') ?? '',
+      progress: Number(group?.getAttribute('data-wire-progress')),
+      progressBand: Number(group?.getAttribute('data-wire-progress-band')),
+      legacySvgTurns: document.querySelectorAll('.wire-turn-front,.wire-turn-back,.wire-coil-metal,[data-testid="wire-back-pass"]').length,
       lineElements: document.querySelectorAll('.authentic-work-layer line').length,
       continuousLines: document.querySelectorAll('.wire-path').length,
       circleElements: document.querySelectorAll('.precision-prune-svg circle').length,
-      maxSegmentSpan: spans.length ? Math.max(...spans) : 0,
       preserveAspectRatio: document.querySelector('.authentic-work-layer')?.getAttribute('preserveAspectRatio') ?? '',
+      rasterAspect: raster?.getAttribute('preserveAspectRatio') ?? '',
       renderer: document.querySelector('.bonsai-stage')?.getAttribute('data-renderer') ?? '',
       status: document.querySelector('.wire-status-tag')?.textContent ?? '',
-      wire: JSON.parse(localStorage.getItem('bonsai:v2')).bonsai.find(item => item.id === JSON.parse(localStorage.getItem('bonsai:v2')).activeBonsaiId).parts.secondRight.wire
+      wire: game.bonsai.find(item => item.id === game.activeBonsaiId).parts.secondRight.wire
     };
   });
-  if (report.wireVisual.coils < 5 || report.wireVisual.photorealGroups < 1 || report.wireVisual.backPasses < 1 || report.wireVisual.legacyPhotoOcclusions !== 0 || report.wireVisual.lineElements !== 0 || report.wireVisual.continuousLines !== 0 || report.wireVisual.circleElements !== 0 || report.wireVisual.maxSegmentSpan <= 0 || report.wireVisual.maxSegmentSpan > 55 || report.wireVisual.preserveAspectRatio !== 'xMidYMid meet' || report.wireVisual.renderer !== 'photoreal-craft-v6' || !report.wireVisual.status.includes('整姿中') || report.wireVisual.wire?.direction !== 'right') {
-    throw new Error(`Wire rendering is not tightly branch-wrapped: ${JSON.stringify(report.wireVisual)}`);
+  if (report.wireVisual.photorealGroups < 1 || report.wireVisual.rasterCount < 1 || !report.wireVisual.asset.includes('/wire-photo-v7/secondRight-light.webp') || !Number.isFinite(report.wireVisual.progress) || !Number.isInteger(report.wireVisual.progressBand) || report.wireVisual.legacySvgTurns !== 0 || report.wireVisual.lineElements !== 0 || report.wireVisual.continuousLines !== 0 || report.wireVisual.circleElements !== 0 || report.wireVisual.preserveAspectRatio !== 'xMidYMid meet' || report.wireVisual.rasterAspect !== 'none' || report.wireVisual.renderer !== 'photoreal-craft-v7' || !report.wireVisual.status.includes('整姿中') || report.wireVisual.wire?.direction !== 'right') {
+    throw new Error(`Photographed wire v7 is not registered to the branch photograph: ${JSON.stringify(report.wireVisual)}`);
   }
   await page.screenshot({ path: 'test-artifacts/02b-wire-coils.png', fullPage: false });
 
