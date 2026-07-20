@@ -4,6 +4,9 @@ on:
   push:
     branches: [agent/gameplay-experience-v8]
     paths: ['.github/workflows/export-gameplay-v8-source.yml']
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/export-gameplay-v8-source.yml']
   workflow_dispatch:
 
 permissions:
@@ -11,6 +14,7 @@ permissions:
 
 jobs:
   export:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
