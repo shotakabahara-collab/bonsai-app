@@ -142,17 +142,15 @@ jobs:
             kill -TERM -- -"$server" 2>/dev/null || kill "$server" 2>/dev/null || true
           fi
 
-      - name: Commit only the audited implementation
+      - name: Commit only the audited application source
         run: |
           rm -rf .wire-v7
-          rm -f .github/workflows/materialize-wire-v7.yml
-          rm -f .github/workflows/export-wire-v7-source.yml
-          rm -f .github/workflows/inspect-wire-v7-payload.yml
           rm -rf next/.test-cjs next/scripts/__pycache__ next/dist next/test-artifacts
+          git restore --source=HEAD -- .github/workflows
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
+          git add -A -- next .wire-v7
           git status --short
           git commit -m '針金を写真状態レイヤーへ再実装し神舎利の強度時間差を追加'
           git push origin HEAD:agent/photoreal-craft-v6-final
