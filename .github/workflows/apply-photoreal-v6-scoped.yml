@@ -1,0 +1,159 @@
+name: Apply scoped Photoreal Craft v6 source
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths:
+      - '.photoreal-v6-scoped.ready'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-photoreal-craft-v6-robust
+  cancel-in-progress: false
+
+jobs:
+  apply-audit-and-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6
+          fetch-depth: 0
+
+      - name: Apply only v6 application and permanent workflow paths
+        run: |
+          set -euxo pipefail
+          if test -f next/tests/photoreal-v6.mjs && test -f next/scripts/visual-audit-v6.py; then
+            echo 'v6 source is already present'
+            exit 0
+          fi
+          mkdir -p /tmp/photoreal-v6-scoped
+          if compgen -G '.photoreal-v6-payload/bin-*' >/dev/null; then
+            cat .photoreal-v6-payload/bin-* > /tmp/photoreal-v6-scoped/assembled.patch.xz
+          fi
+          candidates=(
+            .photoreal-v6-source.patch.xz
+            .photoreal-v6-payload/changes.patch.xz
+            /tmp/photoreal-v6-scoped/assembled.patch.xz
+            .photoreal-v6-final.patch.xz
+          )
+          includes=(
+            "--include=next/**"
+            "--include=.github/workflows/deploy-react-v1.yml"
+            "--include=.github/workflows/photoreal-craft-v6-ci.yml"
+            "--include=.github/workflows/photoreal-v6-final-gate.yml"
+          )
+          selected=''
+          selected_strip=''
+          for candidate in "${candidates[@]}"; do
+            test -f "$candidate" || continue
+            sha256sum "$candidate" | tee -a /tmp/photoreal-v6-scoped/candidates.sha256
+            xz -t "$candidate" || continue
+            patch_file="/tmp/photoreal-v6-scoped/$(basename "$candidate" .xz).patch"
+            xz -dc "$candidate" > "$patch_file"
+            for strip in default 0 1; do
+              case "$strip" in
+                default) strip_args=() ;;
+                0) strip_args=(-p0) ;;
+                1) strip_args=(-p1) ;;
+              esac
+              if git apply --check --binary "${strip_args[@]}" "${includes[@]}" "$patch_file"; then
+                selected="$patch_file"
+                selected_strip="$strip"
+                break 2
+              fi
+            done
+          done
+          test -n "$selected"
+          case "$selected_strip" in
+            default) strip_args=() ;;
+            0) strip_args=(-p0) ;;
+            1) strip_args=(-p1) ;;
+          esac
+          git apply --binary --whitespace=nowarn "${strip_args[@]}" "${includes[@]}" "$selected"
+          git diff --check
+          test -f next/tests/photoreal-v6.mjs
+          test -f next/tests/photoreal-v6-unit.mjs
+          test -f next/scripts/visual-audit-v6.py
+          test -f next/src/BonsaiStage.tsx
+          find next/public/assets/kuromatsu/craft-v6 -type f -name '*.webp' | sort | tee /tmp/photoreal-v6-scoped/raster-assets.txt
+          test "$(wc -l < /tmp/photoreal-v6-scoped/raster-assets.txt)" -ge 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Install, typecheck, unit-audit and build
+        working-directory: next
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run build
+          python -m py_compile scripts/visual-audit-v6.py
+
+      - name: Install iPhone WebKit and Pillow
+        working-directory: next
+        run: |
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Run complete WebKit, save, offline and photographed-artwork audits
+        working-directory: next
+        run: |
+          set -euxo pipefail
+          setsid npm run preview >/tmp/bonsai-photoreal-v6-scoped.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/bonsai-photoreal-v6-preview.pid
+          trap 'kill -TERM -- -$server 2>/dev/null || true' EXIT
+          for i in $(seq 1 120); do
+            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break
+            sleep .25
+          done
+          curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null
+          npm run test:smoke
+          node tests/seasonal-v4.mjs
+          npm run test:photoreal
+          python scripts/visual-audit-v6.py --output photoreal-v6-scoped-visual-audit.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-photoreal-craft-v6-scoped-audit
+          path: |
+            next/test-artifacts
+            /tmp/bonsai-photoreal-v6-scoped.log
+            /tmp/photoreal-v6-scoped
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Commit audited v6 source and remove all transport scaffolding
+        run: |
+          set -euxo pipefail
+          rm -rf next/node_modules next/dist next/test-artifacts next/.test-cjs next/scripts/__pycache__
+          rm -rf .photoreal-v6-payload
+          rm -f .photoreal-v6-source.patch.xz .photoreal-v6-source.ready
+          rm -f .photoreal-v6-final.patch.xz .photoreal-v6-final.ready
+          rm -f .photoreal-v6-robust.ready .photoreal-v6-worktree.ready .photoreal-v6-scoped.ready
+          rm -f .github/workflows/apply-photoreal-v6.yml
+          rm -f .github/workflows/apply-photoreal-v6-robust.yml
+          rm -f .github/workflows/apply-photoreal-v6-worktree.yml
+          rm -f .github/workflows/apply-photoreal-v6-scoped.yml
+          rm -f .github/workflows/diagnose-photoreal-v6.yml
+          rm -f .github/workflows/export-applied-photoreal-v6.yml
+          rm -f .github/workflows/export-photoreal-v6-source.yml
+          rm -f .github/workflows/finalize-photoreal-v6-source.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git status --short
+          git commit -m '針金・神・舎利を写真座標へ密着させるPhotoreal Craft v6を実装'
+          git push origin HEAD:agent/photoreal-craft-v6
