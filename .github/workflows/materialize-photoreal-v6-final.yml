@@ -117,6 +117,7 @@ jobs:
         run: |
           setsid npm run preview >/tmp/bonsai-photoreal-v6-final-preview.log 2>&1 &
           server=$!
+          echo "$server" >/tmp/bonsai-photoreal-v6-preview.pid
           echo "$server" >/tmp/bonsai-photoreal-v6-final-preview.pid
           for i in $(seq 1 120); do
             curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
@@ -152,8 +153,8 @@ jobs:
       - name: Stop preview
         if: always()
         run: |
-          if test -f /tmp/bonsai-photoreal-v6-final-preview.pid; then
-            server="$(cat /tmp/bonsai-photoreal-v6-final-preview.pid)"
+          if test -f /tmp/bonsai-photoreal-v6-preview.pid; then
+            server="$(cat /tmp/bonsai-photoreal-v6-preview.pid)"
             kill -TERM -- -"$server" 2>/dev/null || kill "$server" 2>/dev/null || true
           fi
 
@@ -161,6 +162,7 @@ jobs:
         run: |
           rm -rf .v6-final
           rm -f .github/workflows/materialize-photoreal-v6-final.yml
+          rm -f .github/workflows/inspect-v6-final-chunks.yml
           rm -rf next/.test-cjs next/scripts/__pycache__ next/dist next/test-artifacts
           git diff --check
           git config user.name 'github-actions[bot]'
