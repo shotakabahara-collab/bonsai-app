@@ -1,4 +1,4 @@
-const VERSION = 'bonsai-authentic-consequences-v5';
+const VERSION = 'bonsai-photoreal-craft-v6';
 const CACHE = `${VERSION}-shell`;
 const INDEX = '/bonsai-app/index.html';
 const CORE = [

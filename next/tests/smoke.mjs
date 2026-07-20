@@ -222,18 +222,27 @@ try {
   await page.getByRole('button', { name: '右へ' }).click();
   await page.getByRole('button', { name: 'この部位へかける' }).click();
   await page.waitForSelector('.wire-coil-metal');
-  report.wireVisual = await page.evaluate(() => ({
-    coils: document.querySelectorAll('.wire-coil-metal').length,
-    photorealGroups: document.querySelectorAll('[data-testid="photoreal-wire"]').length,
-    occlusions: document.querySelectorAll('[data-testid="wire-branch-occlusion"]').length,
-    lineElements: document.querySelectorAll('.authentic-work-layer line').length,
-    continuousLines: document.querySelectorAll('.wire-path').length,
-    renderer: document.querySelector('.bonsai-stage')?.getAttribute('data-renderer') ?? '',
-    status: document.querySelector('.wire-status-tag')?.textContent ?? '',
-    wire: JSON.parse(localStorage.getItem('bonsai:v2')).bonsai.find(item => item.id === JSON.parse(localStorage.getItem('bonsai:v2')).activeBonsaiId).parts.secondRight.wire
-  }));
-  if (report.wireVisual.coils < 3 || report.wireVisual.photorealGroups < 1 || report.wireVisual.occlusions < 1 || report.wireVisual.lineElements !== 0 || report.wireVisual.continuousLines !== 0 || report.wireVisual.renderer !== 'authentic-state-v5' || !report.wireVisual.status.includes('整姿中') || report.wireVisual.wire?.direction !== 'right') {
-    throw new Error(`Wire rendering is not branch-coil based: ${JSON.stringify(report.wireVisual)}`);
+  report.wireVisual = await page.evaluate(() => {
+    const spans = [...document.querySelectorAll('.wire-turn-front[data-wire-span],.wire-turn-back[data-wire-span]')]
+      .map(node => Number(node.getAttribute('data-wire-span')))
+      .filter(Number.isFinite);
+    return {
+      coils: document.querySelectorAll('.wire-coil-metal').length,
+      photorealGroups: document.querySelectorAll('[data-testid="photoreal-wire"]').length,
+      backPasses: document.querySelectorAll('[data-testid="wire-back-pass"]').length,
+      legacyPhotoOcclusions: document.querySelectorAll('[data-testid="wire-branch-occlusion"]').length,
+      lineElements: document.querySelectorAll('.authentic-work-layer line').length,
+      continuousLines: document.querySelectorAll('.wire-path').length,
+      circleElements: document.querySelectorAll('.precision-prune-svg circle').length,
+      maxSegmentSpan: spans.length ? Math.max(...spans) : 0,
+      preserveAspectRatio: document.querySelector('.authentic-work-layer')?.getAttribute('preserveAspectRatio') ?? '',
+      renderer: document.querySelector('.bonsai-stage')?.getAttribute('data-renderer') ?? '',
+      status: document.querySelector('.wire-status-tag')?.textContent ?? '',
+      wire: JSON.parse(localStorage.getItem('bonsai:v2')).bonsai.find(item => item.id === JSON.parse(localStorage.getItem('bonsai:v2')).activeBonsaiId).parts.secondRight.wire
+    };
+  });
+  if (report.wireVisual.coils < 5 || report.wireVisual.photorealGroups < 1 || report.wireVisual.backPasses < 1 || report.wireVisual.legacyPhotoOcclusions !== 0 || report.wireVisual.lineElements !== 0 || report.wireVisual.continuousLines !== 0 || report.wireVisual.circleElements !== 0 || report.wireVisual.maxSegmentSpan <= 0 || report.wireVisual.maxSegmentSpan > 55 || report.wireVisual.preserveAspectRatio !== 'xMidYMid meet' || report.wireVisual.renderer !== 'photoreal-craft-v6' || !report.wireVisual.status.includes('整姿中') || report.wireVisual.wire?.direction !== 'right') {
+    throw new Error(`Wire rendering is not tightly branch-wrapped: ${JSON.stringify(report.wireVisual)}`);
   }
   await page.screenshot({ path: 'test-artifacts/02b-wire-coils.png', fullPage: false });
 

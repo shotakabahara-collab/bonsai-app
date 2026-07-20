@@ -10,7 +10,9 @@
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "test:smoke": "node tests/smoke.mjs",
     "test:authentic:unit": "node tests/authentic-v5-unit.mjs",
-    "test:authentic": "node tests/authentic-v5.mjs"
+    "test:authentic": "node tests/authentic-v5.mjs",
+    "test:photoreal:unit": "node tests/authentic-v5-unit.mjs",
+    "test:photoreal": "node tests/authentic-v5.mjs"
   },
   "dependencies": {
     "react": "19.2.7",
