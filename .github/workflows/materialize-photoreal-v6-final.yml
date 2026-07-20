@@ -28,14 +28,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/photoreal-craft-v6-final
-          fetch-depth: 0
+          fetch-depth: 1
+          show-progress: false
 
       - name: Reassemble and verify the exact v6 source snapshot
         run: |
           set -euxo pipefail
           cat .v6-final/src-* | tr -d '\r\n' > /tmp/photoreal-v6-source.tar.gz.b64
           wc -c /tmp/photoreal-v6-source.tar.gz.b64
+          sha256sum /tmp/photoreal-v6-source.tar.gz.b64
           base64 -d /tmp/photoreal-v6-source.tar.gz.b64 > /tmp/photoreal-v6-source.tar.gz
+          wc -c /tmp/photoreal-v6-source.tar.gz
+          sha256sum /tmp/photoreal-v6-source.tar.gz
           echo '6f19d747e2cbe00d7e5ba9b2dbd006ba41ee444bde49d15310bdd734e7507652  /tmp/photoreal-v6-source.tar.gz' | sha256sum -c -
           tar -tzf /tmp/photoreal-v6-source.tar.gz
 
