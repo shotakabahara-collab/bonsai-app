@@ -33,6 +33,36 @@ jobs:
       - name: Decode and verify exact implementation payload
         run: |
           set -euxo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          path = Path('.wire-v7/payload-003')
+          target = '67f5d3a741b25ea74b7b871742ab1d61d82e239c'
+          alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+          data = path.read_text(encoding='ascii')
+          def blob_sha(value: str) -> str:
+              raw = value.encode('ascii')
+              return hashlib.sha1(f'blob {len(raw)}\0'.encode() + raw).hexdigest()
+          if blob_sha(data) != target:
+              chars = list(data)
+              found = None
+              for index, original in enumerate(chars):
+                  for replacement in alphabet:
+                      if replacement == original:
+                          continue
+                      chars[index] = replacement
+                      candidate = ''.join(chars)
+                      if blob_sha(candidate) == target:
+                          found = candidate
+                          break
+                  chars[index] = original
+                  if found is not None:
+                      break
+              if found is None:
+                  raise SystemExit('payload-003 could not be repaired as a single-character transfer error')
+              path.write_text(found, encoding='ascii')
+          assert blob_sha(path.read_text(encoding='ascii')) == target
+          PY
           cat .wire-v7/payload-* | tr -d '\r\n' > /tmp/wire-v7-payload.b64
           test "$(wc -c < /tmp/wire-v7-payload.b64)" -eq 62236
           base64 -d /tmp/wire-v7-payload.b64 > /tmp/wire-v7-payload.tar.gz
