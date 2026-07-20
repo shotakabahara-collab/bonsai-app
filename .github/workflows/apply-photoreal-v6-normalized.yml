@@ -1,0 +1,245 @@
+name: Apply normalized Photoreal Craft v6 source
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths:
+      - '.photoreal-v6-normalized.ready'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-photoreal-craft-v6-robust
+  cancel-in-progress: false
+
+jobs:
+  normalize-apply-audit-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6
+          fetch-depth: 0
+
+      - name: Normalize retained git patches to repository-relative v6 paths
+        run: |
+          set -euxo pipefail
+          if test -f next/tests/photoreal-v6.mjs && test -f next/scripts/visual-audit-v6.py; then
+            echo "$GITHUB_WORKSPACE" > /tmp/photoreal-v6-normalized-root
+            exit 0
+          fi
+          mkdir -p /tmp/photoreal-v6-normalized/candidates
+          if compgen -G '.photoreal-v6-payload/bin-*' >/dev/null; then
+            cat .photoreal-v6-payload/bin-* > /tmp/photoreal-v6-normalized/candidates/assembled.patch.xz
+          fi
+          for source in \
+            .photoreal-v6-source.patch.xz \
+            .photoreal-v6-payload/changes.patch.xz \
+            .photoreal-v6-final.patch.xz; do
+            test -f "$source" && cp "$source" /tmp/photoreal-v6-normalized/candidates/
+          done
+          git fetch origin main
+          git worktree add --detach /tmp/bonsai-v6-normalized origin/main
+
+          cat > /tmp/photoreal-v6-normalized/normalize_patch.py <<'PY'
+          from __future__ import annotations
+          import re
+          import sys
+          from pathlib import Path
+
+          source = Path(sys.argv[1])
+          target = Path(sys.argv[2])
+          text = source.read_bytes().decode('latin1')
+          allowed_prefixes = ('next/', '.github/workflows/deploy-react-v1.yml', '.github/workflows/photoreal-craft-v6-ci.yml', '.github/workflows/photoreal-v6-final-gate.yml')
+
+          def normalize(path: str) -> str | None:
+              path = path.strip().strip('"')
+              if path == '/dev/null':
+                  return path
+              path = path.removeprefix('a/').removeprefix('b/')
+              for marker in ('next/', '.github/workflows/'):
+                  pos = path.find(marker)
+                  if pos >= 0:
+                      candidate = path[pos:]
+                      if candidate.startswith(allowed_prefixes):
+                          return candidate
+              return None
+
+          sections = re.split(r'(?=^diff --git )', text, flags=re.M)
+          kept: list[str] = []
+          for section in sections:
+              if not section.startswith('diff --git '):
+                  continue
+              first, *rest = section.splitlines(keepends=True)
+              match = re.match(r'diff --git\s+(?:"?a/(.+?)"?)\s+(?:"?b/(.+?)"?)\s*$', first.rstrip('\r\n'))
+              if not match:
+                  continue
+              old_norm = normalize(match.group(1))
+              new_norm = normalize(match.group(2))
+              chosen = new_norm or old_norm
+              if not chosen or not chosen.startswith(allowed_prefixes):
+                  continue
+              old_header = '/dev/null' if old_norm == '/dev/null' else f'a/{old_norm or chosen}'
+              new_header = '/dev/null' if new_norm == '/dev/null' else f'b/{new_norm or chosen}'
+              output = [f'diff --git {old_header} {new_header}\n']
+              for line in rest:
+                  stripped = line.rstrip('\r\n')
+                  ending = line[len(stripped):]
+                  if stripped.startswith('--- '):
+                      raw = stripped[4:].split('\t', 1)[0]
+                      norm = normalize(raw)
+                      stripped = '--- /dev/null' if raw == '/dev/null' else f'--- a/{norm or chosen}'
+                  elif stripped.startswith('+++ '):
+                      raw = stripped[4:].split('\t', 1)[0]
+                      norm = normalize(raw)
+                      stripped = '+++ /dev/null' if raw == '/dev/null' else f'+++ b/{norm or chosen}'
+                  elif stripped.startswith('rename from '):
+                      norm = normalize(stripped[len('rename from '):])
+                      stripped = f'rename from {norm or chosen}'
+                  elif stripped.startswith('rename to '):
+                      norm = normalize(stripped[len('rename to '):])
+                      stripped = f'rename to {norm or chosen}'
+                  elif stripped.startswith('copy from '):
+                      norm = normalize(stripped[len('copy from '):])
+                      stripped = f'copy from {norm or chosen}'
+                  elif stripped.startswith('copy to '):
+                      norm = normalize(stripped[len('copy to '):])
+                      stripped = f'copy to {norm or chosen}'
+                  output.append(stripped + ending)
+              kept.append(''.join(output))
+          target.write_bytes(''.join(kept).encode('latin1'))
+          PY
+
+          selected=''
+          for candidate in /tmp/photoreal-v6-normalized/candidates/*.xz; do
+            test -f "$candidate" || continue
+            sha256sum "$candidate" | tee -a /tmp/photoreal-v6-normalized/candidates.sha256
+            xz -t "$candidate" || continue
+            raw="${candidate%.xz}.raw.patch"
+            normalized="${candidate%.xz}.normalized.patch"
+            xz -dc "$candidate" > "$raw"
+            python /tmp/photoreal-v6-normalized/normalize_patch.py "$raw" "$normalized"
+            grep -Fq 'next/src/BonsaiStage.tsx' "$normalized" || continue
+            grep -Fq 'next/scripts/visual-audit-v6.py' "$normalized" || continue
+            grep -Fq 'next/tests/photoreal-v6.mjs' "$normalized" || continue
+            grep -Fq 'craft-v6/' "$normalized" || continue
+            cd /tmp/bonsai-v6-normalized
+            git reset --hard origin/main
+            git clean -fdx
+            if git apply --check --binary "$normalized"; then
+              selected="$normalized"
+              break
+            fi
+          done
+          test -n "$selected"
+          cd /tmp/bonsai-v6-normalized
+          git reset --hard origin/main
+          git clean -fdx
+          git apply --binary --whitespace=nowarn "$selected"
+          git diff --check
+          echo /tmp/bonsai-v6-normalized > /tmp/photoreal-v6-normalized-root
+          echo "$selected" > /tmp/photoreal-v6-normalized/selected.txt
+          test -f next/tests/photoreal-v6.mjs
+          test -f next/tests/photoreal-v6-unit.mjs
+          test -f next/scripts/visual-audit-v6.py
+          test "$(find next/public/assets/kuromatsu/craft-v6 -type f -name '*.webp' | wc -l)" -ge 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Install, typecheck, unit-audit and production build
+        run: |
+          set -euxo pipefail
+          root="$(cat /tmp/photoreal-v6-normalized-root)"
+          cd "$root/next"
+          npm ci
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run build
+          python -m py_compile scripts/visual-audit-v6.py
+
+      - name: Install iPhone WebKit and image audit tools
+        run: |
+          root="$(cat /tmp/photoreal-v6-normalized-root)"
+          cd "$root/next"
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Run complete 390x844 DPR3, persistence, offline and visual audits
+        run: |
+          set -euxo pipefail
+          root="$(cat /tmp/photoreal-v6-normalized-root)"
+          cd "$root/next"
+          setsid npm run preview >/tmp/bonsai-photoreal-v6-normalized.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/bonsai-photoreal-v6-preview.pid
+          trap 'kill -TERM -- -$server 2>/dev/null || true' EXIT
+          for i in $(seq 1 120); do
+            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break
+            sleep .25
+          done
+          curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null
+          npm run test:smoke
+          node tests/seasonal-v4.mjs
+          npm run test:photoreal
+          python scripts/visual-audit-v6.py --output photoreal-v6-normalized-visual-audit.json
+
+      - name: Copy normalized audited source into the PR branch
+        run: |
+          set -euxo pipefail
+          root="$(cat /tmp/photoreal-v6-normalized-root)"
+          if test "$root" != "$GITHUB_WORKSPACE"; then
+            rm -rf next
+            cp -a "$root/next" ./next
+            rm -rf next/node_modules next/dist next/test-artifacts next/.test-cjs next/scripts/__pycache__
+            for workflow in deploy-react-v1.yml photoreal-craft-v6-ci.yml photoreal-v6-final-gate.yml; do
+              test -f "$root/.github/workflows/$workflow" && cp "$root/.github/workflows/$workflow" ".github/workflows/$workflow" || true
+            done
+          fi
+          git diff --check
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-photoreal-craft-v6-normalized-audit
+          path: |
+            /tmp/bonsai-photoreal-v6-normalized.log
+            /tmp/photoreal-v6-normalized
+            /tmp/bonsai-v6-normalized/next/test-artifacts
+            next/test-artifacts
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Commit audited normalized v6 source
+        run: |
+          set -euxo pipefail
+          rm -rf next/node_modules next/dist next/test-artifacts next/.test-cjs next/scripts/__pycache__
+          rm -rf .photoreal-v6-payload
+          rm -f .photoreal-v6-source.patch.xz .photoreal-v6-source.ready
+          rm -f .photoreal-v6-final.patch.xz .photoreal-v6-final.ready
+          rm -f .photoreal-v6-robust.ready .photoreal-v6-worktree.ready .photoreal-v6-scoped.ready .photoreal-v6-autostrip.ready .photoreal-v6-normalized.ready .photoreal-v6-report.ready
+          rm -f .github/workflows/apply-photoreal-v6.yml
+          rm -f .github/workflows/apply-photoreal-v6-robust.yml
+          rm -f .github/workflows/apply-photoreal-v6-worktree.yml
+          rm -f .github/workflows/apply-photoreal-v6-scoped.yml
+          rm -f .github/workflows/apply-photoreal-v6-autostrip.yml
+          rm -f .github/workflows/apply-photoreal-v6-normalized.yml
+          rm -f .github/workflows/diagnose-photoreal-v6.yml
+          rm -f .github/workflows/export-applied-photoreal-v6.yml
+          rm -f .github/workflows/export-photoreal-v6-source.yml
+          rm -f .github/workflows/finalize-photoreal-v6-source.yml
+          rm -f .github/workflows/report-photoreal-v6-status.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git status --short
+          git commit -m '針金・神・舎利を写真座標へ密着させるPhotoreal Craft v6を実装'
+          git push origin HEAD:agent/photoreal-craft-v6
