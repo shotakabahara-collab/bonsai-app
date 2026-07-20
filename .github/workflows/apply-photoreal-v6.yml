@@ -28,9 +28,11 @@ jobs:
       - name: Apply SHA-verified Photoreal Craft v6 source
         run: |
           set -euxo pipefail
-          echo 'ee0ff926de4965eb5b93ec0f59a6231bae468f1c766c04b2129bcb020776956c  .photoreal-v6-payload/changes.patch.xz' | sha256sum -c -
-          xz -t .photoreal-v6-payload/changes.patch.xz
-          xz -dc .photoreal-v6-payload/changes.patch.xz > /tmp/photoreal-v6.patch
+          cat .photoreal-v6-payload/bin-* > /tmp/photoreal-v6.patch.xz
+          test "$(wc -c < /tmp/photoreal-v6.patch.xz)" -eq 17572
+          echo 'ee0ff926de4965eb5b93ec0f59a6231bae468f1c766c04b2129bcb020776956c  /tmp/photoreal-v6.patch.xz' | sha256sum -c -
+          xz -t /tmp/photoreal-v6.patch.xz
+          xz -dc /tmp/photoreal-v6.patch.xz > /tmp/photoreal-v6.patch
           git apply --check /tmp/photoreal-v6.patch
           git apply /tmp/photoreal-v6.patch
           git diff --check
