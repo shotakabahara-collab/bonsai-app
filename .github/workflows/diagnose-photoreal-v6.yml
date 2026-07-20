@@ -1,0 +1,39 @@
+name: Diagnose Photoreal Craft v6 payload
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths: ['.github/workflows/diagnose-photoreal-v6.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6
+          fetch-depth: 0
+      - name: Inspect payload and application
+        run: |
+          set +e
+          mkdir -p /tmp/photoreal-v6-diagnostic
+          sha256sum .photoreal-v6-source.patch.xz | tee /tmp/photoreal-v6-diagnostic/sha256.txt
+          wc -c .photoreal-v6-source.patch.xz | tee /tmp/photoreal-v6-diagnostic/size.txt
+          xz -t .photoreal-v6-source.patch.xz > /tmp/photoreal-v6-diagnostic/xz-test.log 2>&1
+          echo $? > /tmp/photoreal-v6-diagnostic/xz-test.status
+          xz -dc .photoreal-v6-source.patch.xz > /tmp/photoreal-v6-diagnostic/source.patch 2> /tmp/photoreal-v6-diagnostic/decompress.log
+          echo $? > /tmp/photoreal-v6-diagnostic/decompress.status
+          git apply --check --verbose /tmp/photoreal-v6-diagnostic/source.patch > /tmp/photoreal-v6-diagnostic/apply-check.log 2>&1
+          echo $? > /tmp/photoreal-v6-diagnostic/apply-check.status
+          git status --short > /tmp/photoreal-v6-diagnostic/status.txt
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: photoreal-v6-payload-diagnostic
+          path: /tmp/photoreal-v6-diagnostic
+          if-no-files-found: error
+          retention-days: 3
