@@ -17,19 +17,33 @@ jobs:
         with:
           ref: ${{ github.head_ref || 'agent/photoreal-craft-v6' }}
           fetch-depth: 0
-      - name: Inspect payload and application
+      - name: Inspect every retained payload candidate
         run: |
           set +e
-          mkdir -p /tmp/photoreal-v6-diagnostic
-          sha256sum .photoreal-v6-source.patch.xz | tee /tmp/photoreal-v6-diagnostic/sha256.txt
-          wc -c .photoreal-v6-source.patch.xz | tee /tmp/photoreal-v6-diagnostic/size.txt
-          xz -t .photoreal-v6-source.patch.xz > /tmp/photoreal-v6-diagnostic/xz-test.log 2>&1
-          echo $? > /tmp/photoreal-v6-diagnostic/xz-test.status
-          xz -dc .photoreal-v6-source.patch.xz > /tmp/photoreal-v6-diagnostic/source.patch 2> /tmp/photoreal-v6-diagnostic/decompress.log
-          echo $? > /tmp/photoreal-v6-diagnostic/decompress.status
-          git apply --check --verbose /tmp/photoreal-v6-diagnostic/source.patch > /tmp/photoreal-v6-diagnostic/apply-check.log 2>&1
-          echo $? > /tmp/photoreal-v6-diagnostic/apply-check.status
-          git status --short > /tmp/photoreal-v6-diagnostic/status.txt
+          out=/tmp/photoreal-v6-diagnostic
+          mkdir -p "$out"
+          cat .photoreal-v6-payload/bin-* > "$out/assembled-bins.xz" 2>"$out/assembled-bins-cat.log"
+          for spec in \
+            source:.photoreal-v6-source.patch.xz \
+            changes:.photoreal-v6-payload/changes.patch.xz \
+            assembled:$out/assembled-bins.xz \
+            final:.photoreal-v6-final.patch.xz; do
+            name="${spec%%:*}"
+            file="${spec#*:}"
+            if test ! -f "$file"; then
+              echo missing > "$out/$name.missing"
+              continue
+            fi
+            sha256sum "$file" > "$out/$name.sha256.txt"
+            wc -c "$file" > "$out/$name.size.txt"
+            xz -t "$file" > "$out/$name.xz-test.log" 2>&1
+            echo $? > "$out/$name.xz-test.status"
+            xz -dc "$file" > "$out/$name.patch" 2> "$out/$name.decompress.log"
+            echo $? > "$out/$name.decompress.status"
+            git apply --check --verbose "$out/$name.patch" > "$out/$name.apply-check.log" 2>&1
+            echo $? > "$out/$name.apply-check.status"
+          done
+          git status --short > "$out/status.txt"
           exit 0
       - uses: actions/upload-artifact@v4
         with:
