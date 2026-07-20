@@ -1,0 +1,39 @@
+name: Report Gameplay v8 deploy status
+
+on:
+  push:
+    branches: [chore/gameplay-v8-release-audit]
+    paths: ['.github/workflows/report-gameplay-v8-deploy.yml']
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const result = await github.rest.actions.listWorkflowRunsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              branch: 'main',
+              per_page: 30
+            });
+            const runs = result.data.workflow_runs
+              .filter(run => run.name === 'Deploy BONSAI React production')
+              .slice(0, 5);
+            const body = [
+              '## Gameplay v8 deploy monitor',
+              '',
+              ...runs.map(run => `- run #${run.run_number} / id ${run.id}: **${run.status} / ${run.conclusion ?? 'pending'}** — head \`${run.head_sha}\` — event ${run.event}`)
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 14,
+              body
+            });
