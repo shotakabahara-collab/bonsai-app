@@ -1,0 +1,136 @@
+name: Materialize and audit Photoreal Craft v6 final
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6-final]
+    paths:
+      - '.v6-final/ready'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-photoreal-craft-v6-final
+  cancel-in-progress: false
+
+jobs:
+  materialize-audit-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6-final
+          fetch-depth: 0
+
+      - name: Reassemble and verify the exact v6 source snapshot
+        run: |
+          set -euxo pipefail
+          cat .v6-final/src-* > /tmp/photoreal-v6-source.tar.gz.b64
+          test "$(wc -c < /tmp/photoreal-v6-source.tar.gz.b64)" -eq 42000
+          base64 -d /tmp/photoreal-v6-source.tar.gz.b64 > /tmp/photoreal-v6-source.tar.gz
+          echo '6f19d747e2cbe00d7e5ba9b2dbd006ba41ee444bde49d15310bdd734e7507652  /tmp/photoreal-v6-source.tar.gz' | sha256sum -c -
+          tar -tzf /tmp/photoreal-v6-source.tar.gz
+
+      - name: Materialize the clean application source
+        run: |
+          set -euxo pipefail
+          tar -xzf /tmp/photoreal-v6-source.tar.gz -C .
+          rm -f .github/workflows/authentic-consequences-v5-ci.yml
+          rm -rf next/scripts/__pycache__ next/.test-cjs next/dist next/test-artifacts
+          echo '2d7a1cb9f958fa82bc2eb3db9a5df8d4ef72df7de7731b952de7ecba3e45e1bb  .github/workflows/deploy-react-v1.yml' | sha256sum -c -
+          echo 'f7d634556597da05ac89adb2605f41b860054496dca7af149e6588e419019e94  .github/workflows/photoreal-craft-v6-ci.yml' | sha256sum -c -
+          echo '101569cdfe8bc6abf670e2b2b6f1e5f7e0cda47d4b8ec6b8c47bcf6cd90ac299  next/package.json' | sha256sum -c -
+          echo '644781f36999f81e44d7a2ea8efb2ea774485e50e56ed5df0e38bae43f5c2a54  next/public/sw.js' | sha256sum -c -
+          echo '0cd1f625341f8b85a96881d90989b30ef92c98ed92ba3808a84a268ca9d16d40  next/scripts/visual-audit-v6.py' | sha256sum -c -
+          echo '6f536c55df374ed9e6af24050030b64fe2c8ec523747edc103604c5c1b6c183a  next/src/BonsaiStage.tsx' | sha256sum -c -
+          echo '4ea17cfcb98fadd1f3c5d2e5257ab3ac2034e8625b9332acf01dc407aa21f1bd  next/src/main.tsx' | sha256sum -c -
+          echo '9a5bd72261d6f53fa87d70d4e1defb24c6ee44ec6ca875193eb145a229008797  next/src/photoreal-v6.css' | sha256sum -c -
+          echo '3ee5dcc9766625957e103212cf851467f1e65283866a56947a559951000f8575  next/tests/authentic-v5.mjs' | sha256sum -c -
+          echo '10e36fb82849fce5b2ef3f004daacaf52a8227ae6105553aa2c3665632b00b4d  next/tests/smoke.mjs' | sha256sum -c -
+          test ! -e .github/workflows/authentic-consequences-v5-ci.yml
+          grep -Fq 'bonsai-photoreal-craft-v6' next/public/sw.js
+          grep -Fq 'data-renderer="photoreal-craft-v6"' next/src/BonsaiStage.tsx
+          grep -Fq 'test:photoreal' next/package.json
+          git diff --check
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Install, typecheck, deterministic audit and production build
+        working-directory: next
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run build
+          node --check tests/smoke.mjs
+          node --check tests/seasonal-v4.mjs
+          node --check tests/authentic-v5.mjs
+          python -m py_compile scripts/visual-audit-v6.py
+
+      - name: Install iPhone WebKit and visual audit dependencies
+        working-directory: next
+        run: |
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow numpy
+
+      - name: Start verified production preview
+        working-directory: next
+        run: |
+          setsid npm run preview >/tmp/bonsai-photoreal-v6-final-preview.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/bonsai-photoreal-v6-final-preview.pid
+          for i in $(seq 1 120); do
+            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
+            sleep .25
+          done
+          cat /tmp/bonsai-photoreal-v6-final-preview.log
+          exit 1
+
+      - name: Run all 390x844 DPR3 WebKit regressions
+        working-directory: next
+        run: |
+          npm run test:smoke
+          node tests/seasonal-v4.mjs
+          npm run test:photoreal
+
+      - name: Reject tubes, floating work, luminous ribbons and circular markers
+        working-directory: next
+        run: python scripts/visual-audit-v6.py --output photoreal-v6-final-visual-audit.json
+
+      - name: Preserve the complete candidate audit bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-photoreal-craft-v6-final-candidate-audit
+          path: |
+            next/test-artifacts
+            /tmp/bonsai-photoreal-v6-final-preview.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop preview
+        if: always()
+        run: |
+          if test -f /tmp/bonsai-photoreal-v6-final-preview.pid; then
+            server="$(cat /tmp/bonsai-photoreal-v6-final-preview.pid)"
+            kill -TERM -- -"$server" 2>/dev/null || kill "$server" 2>/dev/null || true
+          fi
+
+      - name: Commit only the audited v6 application source
+        run: |
+          rm -rf .v6-final
+          rm -f .github/workflows/materialize-photoreal-v6-final.yml
+          rm -rf next/.test-cjs next/scripts/__pycache__ next/dist next/test-artifacts
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git status --short
+          git commit -m '針金・神・舎利を実枝へ密着させるPhotoreal Craft v6を実装'
+          git push origin HEAD:agent/photoreal-craft-v6-final
