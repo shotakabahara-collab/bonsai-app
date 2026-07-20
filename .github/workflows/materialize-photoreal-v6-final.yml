@@ -5,6 +5,11 @@ on:
     branches: [agent/photoreal-craft-v6-final]
     paths:
       - '.v6-final/ready'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.v6-final/ready'
+      - '.github/workflows/materialize-photoreal-v6-final.yml'
   workflow_dispatch:
 
 permissions:
@@ -16,6 +21,7 @@ concurrency:
 
 jobs:
   materialize-audit-and-commit:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
