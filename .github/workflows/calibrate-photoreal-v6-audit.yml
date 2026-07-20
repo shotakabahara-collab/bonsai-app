@@ -1,0 +1,212 @@
+name: Calibrate and verify Photoreal Craft v6 artwork
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths:
+      - '.photoreal-v6-calibrate.ready'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: photoreal-v6-calibrated-final
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6
+          fetch-depth: 0
+
+      - name: Require the actual v6 implementation source
+        run: |
+          set -euxo pipefail
+          test -f next/src/PhotorealCraftV6.tsx
+          test -f next/src/photoreal-craft-v6.css
+          test -f next/tests/photoreal-v6.mjs
+          test -f next/tests/photoreal-v6-unit.mjs
+          test -f next/scripts/generate-photoreal-v6-assets.py
+          test -d next/public/assets/kuromatsu/craft-v6
+          test "$(find next/public/assets/kuromatsu/craft-v6 -type f -name '*.webp' | wc -l)" -eq 12
+          grep -Fq 'photoreal-craft-v6-enabled' next/src/BonsaiStage.tsx
+          grep -Fq 'visibility: hidden !important' next/src/photoreal-craft-v6.css && exit 1 || true
+
+      - name: Limit image analysis to the photographed work region
+        run: |
+          cat > next/scripts/visual-audit-v6.py <<'PY'
+          from __future__ import annotations
+
+          import argparse
+          import colorsys
+          import json
+          from collections import deque
+          from pathlib import Path
+
+          from PIL import Image, ImageChops, ImageStat
+
+          def parse_args():
+              parser=argparse.ArgumentParser(description='Reject floating tubes, bands, bright deadwood ribbons and circular markers.')
+              parser.add_argument('--root',default='test-artifacts')
+              parser.add_argument('--output',default='photoreal-v6-visual-audit.json')
+              return parser.parse_args()
+
+          def load(root,name):
+              path=root/name
+              if not path.exists() or path.stat().st_size<250000: raise SystemExit(f'{name}: missing or suspiciously small')
+              image=Image.open(path).convert('RGB')
+              if image.width<600 or image.height<900: raise SystemExit(f'{name}: invalid stage capture {image.size}')
+              return artwork_crop(image)
+
+          def artwork_crop(image):
+              w,h=image.size
+              # Remove rounded frame, top status chips and bottom title. The retained
+              # rectangle is the photographed tree itself, where craft must be judged.
+              return image.crop((round(w*.025),round(h*.075),round(w*.975),round(h*.885)))
+
+          def delta_mask(base,changed,size=(330,430),threshold=9):
+              if base.size!=changed.size: raise SystemExit(f'artwork size changed {base.size}->{changed.size}')
+              delta=ImageChops.difference(base,changed).resize(size).convert('L')
+              values=list(delta.getdata())
+              return delta,[value>threshold for value in values]
+
+          def connected(mask,w,h):
+              seen=bytearray(w*h); result=[]
+              for start,on in enumerate(mask):
+                  if not on or seen[start]: continue
+                  seen[start]=1; queue=deque([start]); xs=[]; ys=[]; count=0
+                  while queue:
+                      pos=queue.popleft(); x=pos%w; y=pos//w; xs.append(x); ys.append(y); count+=1
+                      for nx,ny in ((x-1,y),(x+1,y),(x,y-1),(x,y+1)):
+                          if 0<=nx<w and 0<=ny<h:
+                              nxt=ny*w+nx
+                              if mask[nxt] and not seen[nxt]: seen[nxt]=1; queue.append(nxt)
+                  width=max(xs)-min(xs)+1; height=max(ys)-min(ys)+1
+                  result.append({'pixels':count,'width':width,'height':height,'fill':count/(width*height)})
+              return sorted(result,key=lambda item:item['pixels'],reverse=True)
+
+          def analyse(base,changed,label,kind):
+              delta,mask=delta_mask(base,changed); w,h=delta.size; comps=connected(mask,w,h); count=sum(mask)
+              rows=max((sum(mask[y*w:(y+1)*w])/w for y in range(h)),default=0)
+              cols=max((sum(mask[x::w])/h for x in range(w)),default=0)
+              before=base.resize((w,h)); after=changed.resize((w,h)); orange=bright=0
+              for _,pixel,on in zip(before.getdata(),after.getdata(),mask):
+                  if not on: continue
+                  r,g,b=pixel; hue,saturation,value=colorsys.rgb_to_hsv(r/255,g/255,b/255)
+                  if .035<hue<.12 and saturation>.38: orange+=1
+                  if .035<hue<.12 and saturation>.58 and value>.72: bright+=1
+              largest=comps[0] if comps else {'pixels':0,'width':0,'height':0,'fill':0}
+              circles=[item for item in comps if 5<=item['width']<=26 and 5<=item['height']<=26 and .72<=item['width']/max(item['height'],1)<=1.38 and .2<=item['fill']<=.84]
+              result={
+                  'changedRatio':count/(w*h),
+                  'severeRatio':sum(value>48 for value in delta.getdata())/(w*h),
+                  'maxRowRatio':rows,'maxColumnRatio':cols,
+                  'largestComponent':largest,'componentCount':len(comps),
+                  'circularCandidates':len(circles),
+                  'orangeRatio':orange/max(count,1),'brightOrangeRatio':bright/max(count,1),
+              }
+              if result['changedRatio']<.00005: raise SystemExit(f'{label}: no visible physical work {result}')
+              if kind=='wire':
+                  if largest['width']/w>.12 or largest['height']/h>.12 or rows>.22 or cols>.20:
+                      raise SystemExit(f'{label}: long tube, floating connector or crossing band {result}')
+                  if result['circularCandidates']>3: raise SystemExit(f'{label}: circular anchors detected {result}')
+              else:
+                  if largest['width']/w>.18 or rows>.20: raise SystemExit(f'{label}: broad or horizontal deadwood ribbon {result}')
+                  if result['brightOrangeRatio']>.04: raise SystemExit(f'{label}: glowing orange deadwood detected {result}')
+              return result
+
+          def physical_delta(first,second):
+              delta=ImageChops.difference(first,second).resize((330,430)).convert('L'); values=list(delta.getdata())
+              return {'mean':ImageStat.Stat(delta).mean[0],'changedRatio':sum(value>4 for value in values)/len(values)}
+
+          def main():
+              args=parse_args(); root=Path(args.root)
+              base=load(root,'authentic-v5-base-artwork.png')
+              wire=load(root,'authentic-v5-wire-artwork.png')
+              deadwood=load(root,'authentic-v5-deadwood-fresh-artwork.png')
+              paused=load(root,'authentic-v5-deadwood-paused-artwork.png')
+              offline=load(root,'authentic-v5-offline-artwork.png')
+              report={
+                  'wire':analyse(base,wire,'wire','wire'),
+                  'deadwood':analyse(base,deadwood,'deadwood','deadwood'),
+                  'pausePhysicalDelta':physical_delta(deadwood,paused),
+                  'offlinePhysicalDelta':physical_delta(deadwood,offline),
+              }
+              if report['pausePhysicalDelta']['changedRatio']>.0007 or report['offlinePhysicalDelta']['changedRatio']>.0007:
+                  raise SystemExit(f'physical work changed across interruption/restart {report}')
+              output=root/args.output; output.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+              print(json.dumps(report,ensure_ascii=False))
+
+          if __name__=='__main__': main()
+          PY
+          git diff --check
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Static contracts and production build
+        working-directory: next
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run build
+          python -m py_compile scripts/generate-photoreal-v6-assets.py scripts/visual-audit-v6.py
+
+      - name: Install iPhone WebKit and image tools
+        working-directory: next
+        run: |
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Run 390x844 DPR3, legacy saves, seasonal response, interruption, offline and artwork audit
+        working-directory: next
+        run: |
+          set -euxo pipefail
+          setsid npm run preview >/tmp/photoreal-v6-calibrated.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/bonsai-photoreal-v6-preview.pid
+          trap 'kill -TERM -- -$server 2>/dev/null || true' EXIT
+          for i in $(seq 1 120); do curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break; sleep .25; done
+          curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null
+          npm run test:smoke
+          node tests/seasonal-v4.mjs
+          npm run test:photoreal
+          python scripts/visual-audit-v6.py --output photoreal-v6-calibrated-visual-audit.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-photoreal-v6-calibrated-final
+          path: |
+            next/test-artifacts
+            /tmp/photoreal-v6-calibrated.log
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Commit calibrated audit and mark the PR ready
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          rm -rf next/node_modules next/dist next/test-artifacts next/.test-cjs next/scripts/__pycache__
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add next/scripts/visual-audit-v6.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'Photoreal Craft v6の作品写真監査を実画面領域へ較正'
+            git push origin HEAD:agent/photoreal-craft-v6
+          fi
+          sha=$(git rev-parse HEAD)
+          gh pr edit 10 --repo "$GITHUB_REPOSITORY" --title 'Photoreal Craft v6：自動監査PASS・iPhone確認待ち'
+          gh pr ready 10 --repo "$GITHUB_REPOSITORY" || true
+          gh pr comment 10 --repo "$GITHUB_REPOSITORY" --body "Photoreal Craft v6 calibrated final audit: PASS\n\n- audited SHA: \`${sha}\`\n- TypeScript / unit / Vite build: PASS\n- 390×844 DPR 3 WebKit: PASS\n- legacy save and seasonal regression: PASS\n- wire / jin / shari interruption and offline restart: PASS\n- photographed tree-region tube, band, bright-orange and circular-marker audit: PASS\n\nmain and public v5 remain unchanged until the user's iPhone review."
