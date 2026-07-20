@@ -1,0 +1,41 @@
+name: Inspect Photoreal Craft v6 final chunks
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6-final]
+    paths:
+      - '.github/workflows/inspect-v6-final-chunks.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/inspect-v6-final-chunks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6-final
+          fetch-depth: 1
+          show-progress: false
+      - name: Record exact chunk bytes
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/v6-final-chunks
+          cp .v6-final/src-* /tmp/v6-final-chunks/
+          wc -c /tmp/v6-final-chunks/src-* | tee /tmp/v6-final-chunks/sizes.txt
+          sha256sum /tmp/v6-final-chunks/src-* | tee /tmp/v6-final-chunks/sha256.txt
+          cat /tmp/v6-final-chunks/src-* | tr -d '\r\n' > /tmp/v6-final-chunks/assembled.b64
+          wc -c /tmp/v6-final-chunks/assembled.b64 | tee /tmp/v6-final-chunks/assembled-size.txt
+          sha256sum /tmp/v6-final-chunks/assembled.b64 | tee /tmp/v6-final-chunks/assembled-sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: photoreal-v6-final-chunks
+          path: /tmp/v6-final-chunks
+          if-no-files-found: error
+          retention-days: 3
