@@ -1,3 +1,4 @@
+// Photographed jin/shari raster assets are part of the immutable offline artwork shell.
 const VERSION = 'bonsai-photoreal-craft-v6';
 const CACHE = `${VERSION}-shell`;
 const INDEX = '/bonsai-app/index.html';
