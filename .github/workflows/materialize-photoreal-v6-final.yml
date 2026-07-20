@@ -160,14 +160,11 @@ jobs:
 
       - name: Commit only the audited v6 application source
         run: |
-          rm -rf .v6-final
-          rm -f .github/workflows/materialize-photoreal-v6-final.yml
-          rm -f .github/workflows/inspect-v6-final-chunks.yml
           rm -rf next/.test-cjs next/scripts/__pycache__ next/dist next/test-artifacts
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
+          git add -A -- next
           git status --short
           git commit -m '針金・神・舎利を実枝へ密着させるPhotoreal Craft v6を実装'
           git push origin HEAD:agent/photoreal-craft-v6-final
