@@ -23,7 +23,15 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
           fetch-depth: 1
-      - name: Apply SHA-verified final v6 source
+      - name: Apply SHA-verified Photoreal Craft v6 base source
+        run: |
+          set -euxo pipefail
+          cat .photoreal-v6-payload/bin-* > /tmp/photoreal-v6.patch.xz
+          test "$(wc -c < /tmp/photoreal-v6.patch.xz)" -eq 17572
+          echo 'ee0ff926de4965eb5b93ec0f59a6231bae468f1c766c04b2129bcb020776956c  /tmp/photoreal-v6.patch.xz' | sha256sum -c -
+          xz -t /tmp/photoreal-v6.patch.xz
+          xz -dc /tmp/photoreal-v6.patch.xz | git apply --whitespace=error
+      - name: Apply SHA-verified final visual calibration
         run: |
           set -euxo pipefail
           echo '34c9c45cd2bf35491341271e1ab1c347335fbf06465c474bee19621bbbbc496d  .photoreal-v6-final.patch.xz' | sha256sum -c -
