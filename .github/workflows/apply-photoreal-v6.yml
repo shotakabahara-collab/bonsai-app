@@ -12,8 +12,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: apply-photoreal-craft-v6-source
-  cancel-in-progress: false
+  group: apply-photoreal-craft-v6-source-${{ github.sha }}
+  cancel-in-progress: true
 
 jobs:
   apply-audit-and-commit:
