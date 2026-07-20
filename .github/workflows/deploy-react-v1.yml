@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  BONSAI_RELEASE: bonsai-photoreal-craft-v6
+  BONSAI_RELEASE: bonsai-photoreal-craft-v7
 
 jobs:
   build-and-audit:
@@ -50,13 +50,21 @@ jobs:
         run: |
           npx playwright install --with-deps webkit
           python -m pip install --disable-pip-version-check pillow numpy
+      - name: Verify deterministic photographed state assets
+        working-directory: next
+        run: |
+          python scripts/generate-wire-photo-v7.py
+          python scripts/generate-deadwood-photo-v6.py
+          test "$(find public/assets/kuromatsu/wire-photo-v7 -type f -name '*.webp' | wc -l)" -eq 12
+          test "$(find public/assets/kuromatsu/deadwood-photo-v6 -type f -name '*.webp' | wc -l)" -eq 24
+          git diff --exit-code -- public/assets/kuromatsu/wire-photo-v7 public/assets/kuromatsu/deadwood-photo-v6
 
       - name: Run local migration, existing flow, seasonal and authentic work audits
         working-directory: next
         run: |
           setsid npm run preview >/tmp/bonsai-react-preview.log 2>&1 &
           server=$!
-          echo "$server" >/tmp/bonsai-photoreal-v6-preview.pid
+          echo "$server" >/tmp/bonsai-photoreal-v7-preview.pid
           trap 'kill -TERM -- -$server 2>/dev/null || true' EXIT
           for i in $(seq 1 100); do
             curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break
@@ -66,7 +74,7 @@ jobs:
           npm run test:smoke
           node tests/seasonal-v4.mjs
           npm run test:photoreal
-          python scripts/visual-audit-v6.py --output photoreal-v6-local-visual-audit.json
+          python scripts/visual-audit-v6.py --output photoreal-v7-local-visual-audit.json
 
       - uses: actions/configure-pages@v5
         id: configure
@@ -79,7 +87,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: bonsai-photoreal-v6-local-final-audit
+          name: bonsai-photoreal-v7-local-final-audit
           path: |
             next/test-artifacts
             /tmp/bonsai-react-preview.log
@@ -124,7 +132,7 @@ jobs:
             python -m pip install --disable-pip-version-check pillow numpy
           } 2>&1 | tee /tmp/public-install.log
 
-      - name: Wait until GitHub Pages serves photoreal craft v6
+      - name: Wait until GitHub Pages serves photoreal craft v7
         id: wait
         if: steps.install.outcome == 'success'
         continue-on-error: true
@@ -145,7 +153,7 @@ jobs:
                 && curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-all-errors "${base}photo-assets.js?v=${RELEASE_SHA}-${i}" -o /tmp/live-photo.js \
                 && grep -Fq 'react-kuromatsu-photoreal-v1' /tmp/live-photo.js; then
                 ready=1
-                echo "Photoreal craft v6 visible after attempt ${i}"
+                echo "Photoreal craft v7 visible after attempt ${i}"
                 break
               fi
               sleep 3
@@ -206,7 +214,7 @@ jobs:
             curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}photo-assets.js?v=${RELEASE_SHA}" | grep -Fq 'react-kuromatsu-photoreal-v1'
             curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}assets/kuromatsu/base/black.webp?v=${RELEASE_SHA}" -o /tmp/live-black.webp
             test "$(wc -c < /tmp/live-black.webp)" -gt 300000
-            python scripts/visual-audit-v6.py --output photoreal-v6-public-visual-audit.json
+            python scripts/visual-audit-v6.py --output photoreal-v7-public-visual-audit.json
           } 2>&1 | tee /tmp/public-files.log
 
       - name: Write public audit log bundle
@@ -220,7 +228,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: bonsai-photoreal-v6-public-final-audit
+          name: bonsai-photoreal-v7-public-final-audit
           path: next/test-artifacts
           if-no-files-found: error
           retention-days: 14
@@ -258,12 +266,12 @@ jobs:
               repo: context.repo.repo,
               issue_number: 1,
               title: passed
-                ? 'BONSAI photoreal craft v6: AUTOMATED PASS / iPhone確認待ち'
-                : 'BONSAI photoreal craft v6 production audit: FAIL',
+                ? 'BONSAI photoreal craft v7: AUTOMATED PASS / iPhone確認待ち'
+                : 'BONSAI photoreal craft v7 production audit: FAIL',
               body: [
-                '# BONSAI Photoreal Craft v6 本番監査', '',
+                '# BONSAI Photoreal Craft v7 本番監査', '',
                 `- release SHA: \`${context.sha}\``,
-                '- deployed release: `bonsai-photoreal-craft-v6`',
+                '- deployed release: `bonsai-photoreal-craft-v7`',
                 `- Pages URL: ${page}`,
                 '- architecture: React 19 + TypeScript + Vite',
                 '- `bonsai_live_1` and `bonsai:v2` migration: verified',
@@ -272,12 +280,12 @@ jobs:
                 '- deterministic disease, pest, dieback, growth and death consequences: verified',
                 '- wire interruption and retained training result: verified',
                 '- jin/shari pause, reload and resume: verified',
-                '- photo-registered branch wire, narrow shari and photo-derived wood texture: verified',
+                '- photographed branch-clipped wire, strength-graded jin/shari and time-progressive wood texture: verified',
                 '- 390×844 / DPR 3 WebKit and offline restart: verified',
                 ...Object.entries(outcomes).map(([name, value]) => `- public ${name}: ${value}`), '',
                 ...Object.keys(outcomes).map(name => `## ${name}\n\`\`\`text\n${log(name)}\n\`\`\``), '',
                 passed
-                  ? '自動本番監査は合格しました。Issueは、ユーザーのiPhone実画面で細い巻き線、木部に密着した神・舎利、剪定警告、再読み込みを確認するまで開いたままにします。'
+                  ? '自動本番監査は合格しました。Issueは、ユーザーのiPhone実画面で枝写真へ密着した連続銅線、強度と時間に応じた神・舎利、剪定警告、再読み込みを確認するまで開いたままにします。'
                   : '公開後監査に未通過項目があります。合格前に完成扱いにしません。'
               ].join('\n'),
               state: 'open',
