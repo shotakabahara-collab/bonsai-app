@@ -1,0 +1,578 @@
+name: Implement Photoreal Craft v6 directly
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths:
+      - '.photoreal-v6-direct.ready'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: photoreal-v6-direct-implementation
+  cancel-in-progress: true
+
+jobs:
+  implement-test-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6
+          fetch-depth: 0
+
+      - name: Restore the current production source as the implementation baseline
+        run: |
+          set -euxo pipefail
+          git fetch origin main
+          git checkout origin/main -- next
+          mkdir -p next/public/assets/kuromatsu/craft-v6
+
+      - name: Write the v6 photographed wire and deadwood renderer
+        run: |
+          cat > next/src/PhotorealCraftV6.tsx <<'TSX'
+          import type { BonsaiState, PartId } from './model';
+          import type { DeadwoodStage } from './craft-v3';
+
+          type Props = {
+            bonsai: BonsaiState;
+          };
+
+          type Coil = readonly [cx: number, cy: number, rx: number, ry: number, angle: number];
+
+          const COILS: Partial<Record<PartId, readonly Coil[]>> = {
+            apex: [
+              [475, 610, 7.1, 2.1, -80], [468, 574, 6.8, 2, -79], [459, 538, 6.5, 1.9, -76],
+              [448, 503, 6.1, 1.8, -72], [432, 468, 5.8, 1.7, -66], [412, 436, 5.4, 1.6, -58],
+              [389, 405, 5, 1.5, -50], [365, 374, 4.6, 1.4, -46]
+            ],
+            firstLeft: [
+              [463, 590, 6.8, 2, 14], [425, 575, 6.5, 1.9, 13], [386, 561, 6.2, 1.8, 11],
+              [346, 548, 5.9, 1.7, 8], [305, 538, 5.6, 1.65, 5], [263, 529, 5.2, 1.55, 2],
+              [220, 521, 4.8, 1.45, 0], [178, 515, 4.4, 1.35, -2]
+            ],
+            secondRight: [
+              [488, 485, 7.2, 2.05, -6], [529, 480, 6.8, 2, -4], [570, 478, 6.5, 1.9, 0],
+              [613, 480, 6.1, 1.8, 4], [657, 486, 5.7, 1.7, 8], [701, 495, 5.2, 1.55, 13],
+              [745, 508, 4.8, 1.4, 18]
+            ],
+            thirdLeft: [
+              [427, 823, 6.8, 2, -10], [391, 831, 6.3, 1.9, -13], [355, 841, 5.9, 1.75, -16],
+              [319, 852, 5.4, 1.6, -19], [284, 864, 4.9, 1.45, -22]
+            ],
+            back: [
+              [476, 615, 6.2, 1.85, 10], [510, 621, 5.8, 1.7, 12], [545, 629, 5.4, 1.6, 14],
+              [580, 638, 5, 1.5, 16], [616, 649, 4.6, 1.35, 18]
+            ],
+            front: [
+              [449, 786, 6.5, 1.9, 18], [485, 798, 6, 1.8, 20], [522, 812, 5.6, 1.65, 22],
+              [559, 827, 5.1, 1.5, 24], [596, 844, 4.7, 1.35, 26]
+            ]
+          };
+
+          const BASE = '/bonsai-app/assets/kuromatsu/craft-v6';
+
+          export function PhotorealCraftV6({ bonsai }: Props) {
+            if (bonsai.species !== 'pine') return null;
+            const wired = (Object.keys(COILS) as PartId[]).filter(partId => bonsai.parts[partId]?.wire);
+            const projects = bonsai.craft.deadwoodProjects ?? [];
+            const hasProjectShari = projects.some(project => project.kind === 'shari');
+
+            return (
+              <svg
+                className="photoreal-craft-v6-layer"
+                viewBox="0 0 900 1500"
+                preserveAspectRatio="xMidYMid slice"
+                aria-hidden="true"
+                data-testid="photoreal-craft-v6"
+              >
+                <defs>
+                  <linearGradient id="photoreal-v6-copper" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0" stopColor="#4c2d20" />
+                    <stop offset=".34" stopColor="#8d5739" />
+                    <stop offset=".62" stopColor="#b0774f" />
+                    <stop offset="1" stopColor="#42271c" />
+                  </linearGradient>
+                  <filter id="photoreal-v6-wire-shadow" x="-30%" y="-30%" width="160%" height="160%">
+                    <feDropShadow dx=".45" dy=".65" stdDeviation=".42" floodColor="#120b07" floodOpacity=".62" />
+                  </filter>
+                </defs>
+
+                {projects.map(project => (
+                  <image
+                    key={project.id}
+                    className={`photoreal-v6-deadwood stage-${project.stage} ${project.pausedAt ? 'paused' : ''}`}
+                    data-testid="photoreal-v6-deadwood"
+                    data-kind={project.kind}
+                    data-stage={project.stage}
+                    data-paused={project.pausedAt ? 'true' : 'false'}
+                    href={deadwoodAsset(project.kind, project.targetPartId, project.side, project.level)}
+                    x="0"
+                    y="0"
+                    width="900"
+                    height="1500"
+                    preserveAspectRatio="xMidYMid meet"
+                  />
+                ))}
+
+                {bonsai.shari && !hasProjectShari && (
+                  <image
+                    className="photoreal-v6-deadwood stage-mature"
+                    data-testid="photoreal-v6-deadwood"
+                    data-kind="shari"
+                    data-stage="mature"
+                    data-paused="false"
+                    href={`${BASE}/shari-${bonsai.shari.side}-l${clampLevel(bonsai.shari.level)}.webp`}
+                    x="0"
+                    y="0"
+                    width="900"
+                    height="1500"
+                    preserveAspectRatio="xMidYMid meet"
+                  />
+                )}
+
+                {wired.map(partId => {
+                  const part = bonsai.parts[partId];
+                  const turns = COILS[partId] ?? [];
+                  const width = part.wire?.intensity === 'strong' ? 2.25 : 1.55;
+                  return (
+                    <g
+                      key={partId}
+                      className={`photoreal-v6-wire wire-${part.wire?.intensity ?? 'light'}`}
+                      data-testid="photoreal-v6-wire"
+                      data-part={partId}
+                      data-wire-width={width}
+                      data-max-span={Math.max(...turns.map(([, , rx]) => rx * 2), 0).toFixed(1)}
+                      filter="url(#photoreal-v6-wire-shadow)"
+                    >
+                      {turns.map(([cx, cy, rx, ry, angle], index) => (
+                        <g key={`${partId}-${index}`} transform={`translate(${cx} ${cy}) rotate(${angle})`}>
+                          <path
+                            className="photoreal-v6-wire-back"
+                            d={`M ${-rx} 0 C ${-rx} ${ry} ${rx} ${ry} ${rx} 0`}
+                            style={{ strokeWidth: width }}
+                          />
+                          <path
+                            className="photoreal-v6-wire-front"
+                            d={`M ${-rx} 0 C ${-rx} ${-ry} ${rx} ${-ry} ${rx} 0`}
+                            style={{ strokeWidth: width }}
+                          />
+                        </g>
+                      ))}
+                    </g>
+                  );
+                })}
+              </svg>
+            );
+          }
+
+          function clampLevel(level: number | undefined): 1 | 2 | 3 {
+            return Math.max(1, Math.min(3, Math.round(level ?? 1))) as 1 | 2 | 3;
+          }
+
+          function deadwoodAsset(
+            kind: 'jin' | 'shari',
+            targetPartId: PartId,
+            side: 'left' | 'right' | undefined,
+            level: number | undefined
+          ): string {
+            if (kind === 'shari') return `${BASE}/shari-${side === 'right' ? 'right' : 'left'}-l${clampLevel(level)}.webp`;
+            return `${BASE}/jin-${targetPartId}.webp`;
+          }
+
+          export function deadwoodStageFilter(stage: DeadwoodStage): string {
+            return ({
+              fresh: 'fresh',
+              drying: 'drying',
+              carving: 'carving',
+              preserving: 'preserving',
+              weathering: 'weathering',
+              mature: 'mature'
+            } as Record<DeadwoodStage, string>)[stage];
+          }
+          TSX
+
+          cat > next/src/photoreal-craft-v6.css <<'CSS'
+          /* Photoreal Craft v6: short, branch-bound wire faces and photo-aligned deadwood rasters. */
+          .photoreal-craft-v6-enabled { isolation: isolate; }
+          .photoreal-craft-v6-enabled > .authentic-work-layer {
+            opacity: 0 !important;
+            visibility: hidden !important;
+          }
+          .photoreal-craft-v6-layer {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 6;
+            overflow: hidden;
+            pointer-events: none;
+          }
+          .photoreal-v6-wire-front,
+          .photoreal-v6-wire-back {
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            vector-effect: non-scaling-stroke;
+          }
+          .photoreal-v6-wire-back {
+            stroke: #35241d;
+            opacity: .36;
+          }
+          .photoreal-v6-wire-front {
+            stroke: url(#photoreal-v6-copper);
+            opacity: .88;
+          }
+          .photoreal-v6-deadwood {
+            opacity: .82;
+            mix-blend-mode: normal;
+            pointer-events: none;
+          }
+          .photoreal-v6-deadwood.stage-fresh { filter: saturate(.68) brightness(.88) contrast(1.08); opacity: .76; }
+          .photoreal-v6-deadwood.stage-drying { filter: saturate(.5) brightness(.94) contrast(1.08); opacity: .78; }
+          .photoreal-v6-deadwood.stage-carving { filter: saturate(.34) brightness(1.01) contrast(1.16); opacity: .84; }
+          .photoreal-v6-deadwood.stage-preserving { filter: grayscale(.42) saturate(.28) brightness(1.08) contrast(1.08); opacity: .86; }
+          .photoreal-v6-deadwood.stage-weathering { filter: grayscale(.7) saturate(.18) brightness(1.04) contrast(1.13); opacity: .84; }
+          .photoreal-v6-deadwood.stage-mature { filter: grayscale(.86) saturate(.12) brightness(1.02) contrast(1.16); opacity: .84; }
+          .photoreal-v6-deadwood.paused { /* Interruption never changes physical work. */ }
+          .bonsai-stage-viewing .precision-cut-site,
+          .bonsai-stage-viewing .part-visual .condition::before,
+          .bonsai-stage-viewing .part-visual .condition::after {
+            display: none !important;
+          }
+          CSS
+
+      - name: Write and run the deterministic transparent WebP generator
+        run: |
+          cat > next/scripts/generate-photoreal-v6-assets.py <<'PY'
+          from __future__ import annotations
+
+          import math
+          import random
+          from pathlib import Path
+
+          from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
+
+          ROOT = Path(__file__).resolve().parents[1]
+          BASE = ROOT / 'public/assets/kuromatsu/base/black.webp'
+          OUT = ROOT / 'public/assets/kuromatsu/craft-v6'
+          SIZE = (900, 1500)
+          rng = random.Random(60210)
+
+          SHARI = {
+              'left': [(291,1238),(278,1187),(260,1123),(258,1066),(280,1018),(330,972),(372,936),(404,875),(425,812),(446,730),(463,644),(476,552)],
+              'right': [(307,1238),(294,1182),(278,1118),(276,1062),(298,1014),(346,966),(387,925),(417,868),(437,807),(456,724),(473,637),(484,552)],
+          }
+          JIN = {
+              'apex': [(480,620),(468,562),(452,507),(426,458),(399,412),(363,370),(326,338)],
+              'firstLeft': [(474,594),(420,574),(361,554),(300,539),(241,526),(184,516),(128,506)],
+              'secondRight': [(485,486),(548,477),(612,480),(675,492),(728,504),(771,521),(807,541)],
+              'thirdLeft': [(435,821),(396,831),(355,844),(315,860),(282,873),(254,886),(230,900)],
+              'back': [(470,615),(513,621),(564,635),(616,653)],
+              'front': [(447,784),(493,800),(544,823),(598,849)],
+          }
+
+          def variable_mask(points, widths, seed):
+              randomizer = random.Random(seed)
+              mask = Image.new('L', SIZE, 0)
+              draw = ImageDraw.Draw(mask)
+              for index, (start, end) in enumerate(zip(points, points[1:])):
+                  x1, y1 = start; x2, y2 = end
+                  distance = max(1, int(math.dist(start, end)))
+                  previous = None
+                  for step in range(distance + 1):
+                      t = step / distance
+                      x = x1 + (x2 - x1) * t + randomizer.uniform(-.45, .45)
+                      y = y1 + (y2 - y1) * t + randomizer.uniform(-.45, .45)
+                      width = widths[index] + (widths[index + 1] - widths[index]) * t
+                      radius = max(.8, width / 2 + randomizer.uniform(-.45, .35))
+                      box = (x-radius, y-radius, x+radius, y+radius)
+                      draw.ellipse(box, fill=255)
+                      if previous:
+                          draw.line((previous[0], previous[1], x, y), fill=255, width=max(1, round(radius * 1.65)))
+                      previous = (x, y)
+              mask = mask.filter(ImageFilter.GaussianBlur(.38))
+              return mask
+
+          def textured_overlay(mask, points, seed, mature=False):
+              base = Image.open(BASE).convert('RGB').resize(SIZE)
+              gray = ImageEnhance.Contrast(ImageOps.grayscale(base)).enhance(1.18)
+              dark = '#55483a' if mature else '#604a35'
+              light = '#c6b28f' if mature else '#c29d72'
+              wood = ImageOps.colorize(gray, dark, light).convert('RGBA')
+              texture = Image.new('RGBA', SIZE, (0,0,0,0))
+              grain = ImageDraw.Draw(texture)
+              randomizer = random.Random(seed)
+              for offset in (-2.2, 0, 2.1):
+                  shifted = []
+                  for i, (x,y) in enumerate(points):
+                      if i == 0: nx, ny = points[1][1]-y, x-points[1][0]
+                      else: nx, ny = y-points[i-1][1], points[i-1][0]-x
+                      length = max(1, math.hypot(nx, ny))
+                      shifted.append((x + nx/length*offset + randomizer.uniform(-.45,.45), y + ny/length*offset + randomizer.uniform(-.45,.45)))
+                  grain.line(shifted, fill=(58,45,34,95 if offset else 135), width=1)
+              for _ in range(22):
+                  segment = randomizer.randrange(max(1, len(points)-1))
+                  x,y = points[segment]
+                  grain.line((x+randomizer.uniform(-5,5), y+randomizer.uniform(-3,3), x+randomizer.uniform(-2,2), y+randomizer.uniform(5,16)), fill=(225,210,177,55), width=1)
+              alpha = ImageEnhance.Contrast(mask).enhance(1.12)
+              wood.putalpha(alpha)
+              texture.putalpha(ImageChops.multiply(texture.getchannel('A'), alpha))
+              result = Image.alpha_composite(wood, texture)
+              edge = ImageChops.subtract(mask.filter(ImageFilter.MaxFilter(3)), mask)
+              edge_layer = Image.new('RGBA', SIZE, (38,27,19,0)); edge_layer.putalpha(edge.point(lambda value: round(value*.52)))
+              return Image.alpha_composite(edge_layer, result)
+
+          def save_shari(side, level):
+              points = SHARI[side]
+              profiles = {
+                  1: [2.5,3.5,4.8,5.2,5.6,5.2,4.8,4.3,3.8,3.3,2.8,1.8],
+                  2: [3.2,4.8,6.8,7.5,8.2,7.6,7.0,6.2,5.5,4.8,3.8,2.2],
+                  3: [4.0,6.0,8.8,10.5,11.8,11.0,9.8,8.7,7.5,6.2,4.8,2.6],
+              }
+              mask = variable_mask(points, profiles[level], 1000 + level + (20 if side=='right' else 0))
+              image = textured_overlay(mask, points, 2000 + level, mature=level >= 2)
+              image.save(OUT / f'shari-{side}-l{level}.webp', 'WEBP', lossless=True, method=6)
+
+          def save_jin(name, points, seed):
+              count = len(points)
+              widths = [max(1.4, 7.8 - i * (6.3 / max(1,count-1))) for i in range(count)]
+              mask = variable_mask(points, widths, 3000 + seed)
+              draw = ImageDraw.Draw(mask)
+              x,y = points[-1]
+              draw.line((x,y,x-5,y-7), fill=230, width=2)
+              draw.line((x,y,x+3,y-9), fill=230, width=1)
+              draw.line((x,y,x+6,y-4), fill=210, width=1)
+              image = textured_overlay(mask, points, 4000 + seed, mature=True)
+              image.save(OUT / f'jin-{name}.webp', 'WEBP', lossless=True, method=6)
+
+          def main():
+              OUT.mkdir(parents=True, exist_ok=True)
+              for side in ('left','right'):
+                  for level in (1,2,3): save_shari(side, level)
+              for index, (name, points) in enumerate(JIN.items(), 1): save_jin(name, points, index)
+              outputs = sorted(OUT.glob('*.webp'))
+              if len(outputs) != 12: raise SystemExit(f'expected 12 assets, got {len(outputs)}')
+              for path in outputs:
+                  image = Image.open(path)
+                  if image.size != SIZE or image.mode not in ('RGBA','RGB') or path.stat().st_size < 1500:
+                      raise SystemExit(f'invalid asset: {path} {image.size} {image.mode} {path.stat().st_size}')
+              print('\n'.join(str(path.relative_to(ROOT)) for path in outputs))
+
+          if __name__ == '__main__': main()
+          PY
+          python -m pip install --disable-pip-version-check pillow
+          python next/scripts/generate-photoreal-v6-assets.py
+
+      - name: Connect v6 renderer, tests and scripts to the existing application
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import json
+
+          stage = Path('next/src/BonsaiStage.tsx')
+          text = stage.read_text(encoding='utf-8')
+          if "./PhotorealCraftV6" not in text:
+              anchor = "import { activeDeadwoodProjects"
+              if anchor not in text: raise SystemExit('BonsaiStage import anchor not found')
+              text = text.replace(anchor, "import { PhotorealCraftV6 } from './PhotorealCraftV6';\n" + anchor, 1)
+          old = "className={`bonsai-stage authentic-state-v5 ${dead ? 'bonsai-dead' : ''} ${className}`}"
+          new = "className={`bonsai-stage authentic-state-v5 ${dead ? 'bonsai-dead' : ''} ${interactive ? 'bonsai-stage-editing' : 'bonsai-stage-viewing'} ${bonsai.species === 'pine' ? 'photoreal-craft-v6-enabled' : ''} ${className}`}"
+          if old in text: text = text.replace(old, new, 1)
+          if 'data-craft-renderer="photoreal-craft-v6"' not in text:
+              text = text.replace('data-renderer="authentic-state-v5">', 'data-renderer="authentic-state-v5" data-craft-renderer={bonsai.species === \'pine\' ? \'photoreal-craft-v6\' : \'legacy\'}>', 1)
+          marker = "      {!interactive && wiredCount > 0"
+          if '<PhotorealCraftV6 bonsai={bonsai}' not in text:
+              if marker not in text: raise SystemExit('BonsaiStage insertion anchor not found')
+              text = text.replace(marker, "      <PhotorealCraftV6 bonsai={bonsai} />\n\n" + marker, 1)
+          stage.write_text(text, encoding='utf-8')
+
+          main = Path('next/src/main.tsx')
+          text = main.read_text(encoding='utf-8')
+          if "./photoreal-craft-v6.css" not in text:
+              text = "import './photoreal-craft-v6.css';\n" + text
+          main.write_text(text, encoding='utf-8')
+
+          package_path = Path('next/package.json')
+          package = json.loads(package_path.read_text(encoding='utf-8'))
+          scripts = package.setdefault('scripts', {})
+          scripts['test:photoreal:unit'] = 'node tests/photoreal-v6-unit.mjs'
+          scripts['test:photoreal'] = 'node tests/photoreal-v6.mjs'
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+
+          cat > next/tests/photoreal-v6-unit.mjs <<'MJS'
+          import fs from 'node:fs';
+          import path from 'node:path';
+
+          const component = fs.readFileSync('src/PhotorealCraftV6.tsx', 'utf8');
+          const css = fs.readFileSync('src/photoreal-craft-v6.css', 'utf8');
+          const stage = fs.readFileSync('src/BonsaiStage.tsx', 'utf8');
+          const assetRoot = 'public/assets/kuromatsu/craft-v6';
+          const assets = fs.readdirSync(assetRoot).filter(name => name.endsWith('.webp')).sort();
+
+          if (!component.includes('photoreal-v6-wire-front') || !component.includes('photoreal-v6-wire-back')) throw new Error('independent wire faces missing');
+          if (component.includes('wireOffset(') || component.includes('wireCoilSegments(')) throw new Error('legacy translated or connected wire algorithm remains in v6 component');
+          if (component.includes('<circle')) throw new Error('v6 component contains a circular artwork marker');
+          if (!component.includes('data-max-span') || !component.includes('data-wire-width')) throw new Error('wire geometry contracts missing');
+          if (!stage.includes('photoreal-craft-v6-enabled') || !stage.includes('<PhotorealCraftV6 bonsai={bonsai}')) throw new Error('v6 renderer not connected');
+          if (!css.includes('.bonsai-stage-viewing .precision-cut-site')) throw new Error('viewing marker suppression missing');
+          if (assets.length !== 12) throw new Error(`expected 12 photographed WebP assets, got ${assets.length}`);
+          for (const name of assets) {
+            const bytes = fs.readFileSync(path.join(assetRoot, name));
+            if (bytes.length < 1500 || bytes.toString('ascii', 0, 4) !== 'RIFF' || bytes.toString('ascii', 8, 12) !== 'WEBP') throw new Error(`invalid WebP asset: ${name}`);
+          }
+          console.log('Photoreal Craft v6 unit contracts: PASS');
+          MJS
+
+          cat > next/tests/photoreal-v6.mjs <<'MJS'
+          import { spawnSync } from 'node:child_process';
+          import fs from 'node:fs';
+
+          const result = spawnSync(process.execPath, ['tests/authentic-v5.mjs'], { stdio: 'inherit', env: { ...process.env, BONSAI_PHOTOREAL_V6: '1' } });
+          if (result.status !== 0) process.exit(result.status ?? 1);
+          const report = JSON.parse(fs.readFileSync('test-artifacts/authentic-v5-result.json', 'utf8'));
+          if (report.phase !== 'complete') throw new Error(`underlying work lifecycle did not complete: ${report.phase}`);
+          for (const file of ['authentic-v5-base-artwork.png','authentic-v5-wire-artwork.png','authentic-v5-deadwood-fresh-artwork.png','authentic-v5-deadwood-paused-artwork.png','authentic-v5-offline-artwork.png']) {
+            if (!fs.existsSync(`test-artifacts/${file}`) || fs.statSync(`test-artifacts/${file}`).size < 250000) throw new Error(`missing photographed v6 evidence: ${file}`);
+          }
+          console.log('Photoreal Craft v6 lifecycle/WebKit evidence: PASS');
+          MJS
+
+          cat > next/scripts/visual-audit-v6.py <<'PY'
+          from __future__ import annotations
+
+          import argparse
+          import colorsys
+          import json
+          from collections import deque
+          from pathlib import Path
+          from PIL import Image, ImageChops, ImageStat
+
+          def args():
+              p=argparse.ArgumentParser(); p.add_argument('--root',default='test-artifacts'); p.add_argument('--output',default='photoreal-v6-visual-audit.json'); return p.parse_args()
+
+          def load(root,name):
+              path=root/name
+              if not path.exists() or path.stat().st_size<250000: raise SystemExit(f'{name}: missing or suspiciously small')
+              image=Image.open(path).convert('RGB')
+              if image.width<600 or image.height<900: raise SystemExit(f'{name}: invalid photographed-stage size {image.size}')
+              return image
+
+          def binary_delta(base,changed,size=(300,420),threshold=10):
+              delta=ImageChops.difference(base,changed).resize(size).convert('L')
+              pixels=list(delta.getdata()); mask=[v>threshold for v in pixels]
+              return delta,mask
+
+          def components(mask,w,h):
+              seen=bytearray(w*h); result=[]
+              for start,on in enumerate(mask):
+                  if not on or seen[start]: continue
+                  queue=deque([start]); seen[start]=1; xs=[]; ys=[]; count=0
+                  while queue:
+                      pos=queue.popleft(); x=pos%w; y=pos//w; xs.append(x); ys.append(y); count+=1
+                      for nx,ny in ((x-1,y),(x+1,y),(x,y-1),(x,y+1)):
+                          if 0<=nx<w and 0<=ny<h:
+                              n=ny*w+nx
+                              if mask[n] and not seen[n]: seen[n]=1; queue.append(n)
+                  result.append({'pixels':count,'width':max(xs)-min(xs)+1,'height':max(ys)-min(ys)+1,'fill':count/((max(xs)-min(xs)+1)*(max(ys)-min(ys)+1))})
+              return sorted(result,key=lambda item:item['pixels'],reverse=True)
+
+          def analyse(base,changed,label,kind):
+              delta,mask=binary_delta(base,changed); w,h=delta.size; comps=components(mask,w,h); changed_count=sum(mask)
+              row=max((sum(mask[y*w:(y+1)*w])/w for y in range(h)),default=0); col=max((sum(mask[x::w])/h for x in range(w)),default=0)
+              severe=list(delta.getdata()); orange=0; bright_orange=0
+              changed_small=changed.resize((w,h))
+              base_small=base.resize((w,h))
+              for before,after,on in zip(base_small.getdata(),changed_small.getdata(),mask):
+                  if not on: continue
+                  r,g,b=after; hue,sat,val=colorsys.rgb_to_hsv(r/255,g/255,b/255)
+                  if .035<hue<.12 and sat>.38: orange+=1
+                  if .035<hue<.12 and sat>.58 and val>.72: bright_orange+=1
+              largest=comps[0] if comps else {'pixels':0,'width':0,'height':0,'fill':0}
+              circular=[c for c in comps if 5<=c['width']<=24 and 5<=c['height']<=24 and .72<=c['width']/max(c['height'],1)<=1.38 and .18<=c['fill']<=.82]
+              report={'changedRatio':changed_count/(w*h),'severeRatio':sum(v>48 for v in severe)/(w*h),'maxRowRatio':row,'maxColumnRatio':col,'largest':largest,'componentCount':len(comps),'circularCandidates':len(circular),'orangeRatio':orange/max(changed_count,1),'brightOrangeRatio':bright_orange/max(changed_count,1)}
+              if report['changedRatio']<0.00015: raise SystemExit(f'{label}: no visible work {report}')
+              if kind=='wire':
+                  if largest['width']/w>.10 or largest['height']/h>.10 or row>.22 or col>.18: raise SystemExit(f'{label}: tube, floating connector or crossing band {report}')
+                  if report['circularCandidates']>2: raise SystemExit(f'{label}: circular anchors detected {report}')
+              else:
+                  if largest['width']/w>.16 or row>.18: raise SystemExit(f'{label}: broad or horizontal deadwood ribbon {report}')
+                  if report['brightOrangeRatio']>.035: raise SystemExit(f'{label}: glowing orange deadwood detected {report}')
+              return report
+
+          def exact_delta(a,b):
+              d=ImageChops.difference(a,b).convert('L'); values=list(d.getdata()); return {'mean':ImageStat.Stat(d).mean[0],'changedRatio':sum(v>4 for v in values)/len(values)}
+
+          def main():
+              a=args(); root=Path(a.root)
+              base=load(root,'authentic-v5-base-artwork.png'); wire=load(root,'authentic-v5-wire-artwork.png'); dead=load(root,'authentic-v5-deadwood-fresh-artwork.png'); paused=load(root,'authentic-v5-deadwood-paused-artwork.png'); offline=load(root,'authentic-v5-offline-artwork.png')
+              report={'wire':analyse(base,wire,'wire','wire'),'deadwood':analyse(base,dead,'deadwood','deadwood'),'pausePhysicalDelta':exact_delta(dead,paused),'offlinePhysicalDelta':exact_delta(dead,offline)}
+              if report['pausePhysicalDelta']['changedRatio']>.001 or report['offlinePhysicalDelta']['changedRatio']>.001: raise SystemExit(f'physical work changed across pause/offline: {report}')
+              output=root/a.output; output.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8'); print(json.dumps(report,ensure_ascii=False))
+          if __name__=='__main__': main()
+          PY
+
+      - name: Install, typecheck, generate, build and run deterministic contracts
+        working-directory: next
+        run: |
+          set -euxo pipefail
+          npm ci
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run build
+          python -m py_compile scripts/generate-photoreal-v6-assets.py scripts/visual-audit-v6.py
+
+      - name: Install iPhone WebKit
+        working-directory: next
+        run: npx playwright install --with-deps webkit
+
+      - name: Run complete existing flow and v6 photographed-artwork audit
+        working-directory: next
+        run: |
+          set -euxo pipefail
+          setsid npm run preview >/tmp/photoreal-v6-direct.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/bonsai-photoreal-v6-preview.pid
+          trap 'kill -TERM -- -$server 2>/dev/null || true' EXIT
+          for i in $(seq 1 120); do curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break; sleep .25; done
+          npm run test:smoke
+          node tests/seasonal-v4.mjs
+          npm run test:photoreal
+          python scripts/visual-audit-v6.py --output photoreal-v6-direct-visual-audit.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-photoreal-v6-direct-audit
+          path: |
+            next/test-artifacts
+            /tmp/photoreal-v6-direct.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Commit implemented v6 source and remove transfer experiments
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          rm -rf next/node_modules next/dist next/test-artifacts next/.test-cjs next/scripts/__pycache__
+          rm -rf .photoreal-v6-payload
+          rm -f .photoreal-v6-source.patch.xz .photoreal-v6-source.ready .photoreal-v6-final.patch.xz .photoreal-v6-final.ready
+          rm -f .photoreal-v6-*.ready
+          find .github/workflows -maxdepth 1 -type f \( -name 'apply-photoreal-v6*.yml' -o -name 'diagnose-photoreal-v6.yml' -o -name 'export-*photoreal-v6*.yml' -o -name 'finalize-photoreal-v6-source.yml' -o -name 'materialize-photoreal-v6-source.yml' -o -name 'commit-photoreal-v6-candidate.yml' -o -name 'report-photoreal-v6*.yml' -o -name 'summarize-photoreal-v6-gates.yml' -o -name 'update-photoreal-v6-pr-status.yml' -o -name 'implement-photoreal-v6-direct.yml' \) -delete
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m '針金・神・舎利を写真へ密着させるPhotoreal Craft v6を実装'
+          git push origin HEAD:agent/photoreal-craft-v6
+          sha=$(git rev-parse HEAD)
+          gh pr edit 10 --repo "$GITHUB_REPOSITORY" --title 'Photoreal Craft v6：実装・WebKit監査PASS／iPhone確認待ち'
+          gh pr ready 10 --repo "$GITHUB_REPOSITORY" || true
+          gh pr comment 10 --repo "$GITHUB_REPOSITORY" --body "Photoreal Craft v6 direct implementation: PASS\n\n- implementation SHA: \`${sha}\`\n- TypeScript / Vite / existing smoke / seasonal / WebKit lifecycle: PASS\n- thin independent wire faces, photo-derived jin/shari WebPs and strengthened pixel audit: PASS\n- main and public v5 remain unchanged pending the user's iPhone visual confirmation."
