@@ -22,10 +22,12 @@ jobs:
           set +e
           out=/tmp/photoreal-v6-diagnostic
           mkdir -p "$out"
+          cp .photoreal-v6-source.patch.xz "$out/source-original.xz" 2>/dev/null || true
+          cp .photoreal-v6-payload/changes.patch.xz "$out/changes-original.xz" 2>/dev/null || true
           cat .photoreal-v6-payload/bin-* > "$out/assembled-bins.xz" 2>"$out/assembled-bins-cat.log"
           for spec in \
-            source:.photoreal-v6-source.patch.xz \
-            changes:.photoreal-v6-payload/changes.patch.xz \
+            source:$out/source-original.xz \
+            changes:$out/changes-original.xz \
             assembled:$out/assembled-bins.xz \
             final:.photoreal-v6-final.patch.xz; do
             name="${spec%%:*}"
