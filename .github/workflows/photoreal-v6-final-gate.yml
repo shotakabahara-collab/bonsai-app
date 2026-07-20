@@ -1,0 +1,98 @@
+name: Photoreal Craft v6 final gate
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths:
+      - 'next/tests/photoreal-v6.mjs'
+      - 'next/src/BonsaiStage.tsx'
+      - 'next/public/assets/kuromatsu/craft-v6/**'
+      - 'next/scripts/visual-audit-v6.py'
+      - '.github/workflows/photoreal-v6-final-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: photoreal-craft-v6-final-gate
+  cancel-in-progress: true
+
+jobs:
+  final-webkit-and-artwork-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Verify implementation is committed, not transported
+        run: |
+          set -euxo pipefail
+          test -f next/tests/photoreal-v6.mjs
+          test -f next/tests/photoreal-v6-unit.mjs
+          test -f next/scripts/visual-audit-v6.py
+          test -f next/src/BonsaiStage.tsx
+          test "$(find next/public/assets/kuromatsu/craft-v6 -type f -name '*.webp' | wc -l)" -ge 12
+          test ! -e .photoreal-v6-source.patch.xz
+          test ! -d .photoreal-v6-payload
+          git diff --check
+
+      - name: Install, typecheck, unit-audit and production build
+        working-directory: next
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run build
+
+      - name: Install iPhone WebKit and image audit tools
+        working-directory: next
+        run: |
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Run complete 390x844 DPR3 regression and offline restart
+        working-directory: next
+        run: |
+          set -euxo pipefail
+          setsid npm run preview >/tmp/bonsai-photoreal-v6-final.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/bonsai-photoreal-v6-preview.pid
+          trap 'kill -TERM -- -$server 2>/dev/null || true' EXIT
+          for i in $(seq 1 120); do
+            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break
+            sleep .25
+          done
+          curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null
+          npm run test:smoke
+          node tests/seasonal-v4.mjs
+          npm run test:photoreal
+          python scripts/visual-audit-v6.py --output photoreal-v6-final-visual-audit.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-photoreal-craft-v6-final-gate
+          path: |
+            next/test-artifacts
+            /tmp/bonsai-photoreal-v6-final.log
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Mark PR ready and record the automated result
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr ready 10 --repo "$GITHUB_REPOSITORY" || true
+          gh pr comment 10 --repo "$GITHUB_REPOSITORY" --body "Photoreal Craft v6 final gate: PASS\n\n- audited SHA: \`${GITHUB_SHA}\`\n- TypeScript / unit / Vite build: PASS\n- 390×844 DPR 3 WebKit smoke: PASS\n- seasonal persistence: PASS\n- wire / jin / shari / interruption: PASS\n- complete offline restart: PASS\n- tube, floating line, bright ribbon and circular-marker pixel audit: PASS\n\nmainと公開版は、PR統合後の公開URL監査とユーザーのiPhone再確認まで切り替えません。"
