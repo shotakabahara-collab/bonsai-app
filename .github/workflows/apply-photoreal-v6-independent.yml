@@ -1,0 +1,172 @@
+name: Apply Photoreal Craft v6 independent lane
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths:
+      - '.photoreal-v6-independent.ready'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: photoreal-v6-independent-lane
+  cancel-in-progress: true
+
+jobs:
+  implement-now:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6
+          fetch-depth: 0
+
+      - name: Commit normalized candidate source immediately when absent
+        run: |
+          set -euxo pipefail
+          if test -f next/tests/photoreal-v6.mjs && test -f next/scripts/visual-audit-v6.py; then
+            echo 'v6 implementation already exists on the PR branch'
+            exit 0
+          fi
+          mkdir -p /tmp/v6-now
+          if compgen -G '.photoreal-v6-payload/bin-*' >/dev/null; then
+            cat .photoreal-v6-payload/bin-* > /tmp/v6-now/assembled.patch.xz
+          fi
+          candidates=(.photoreal-v6-source.patch.xz .photoreal-v6-payload/changes.patch.xz /tmp/v6-now/assembled.patch.xz .photoreal-v6-final.patch.xz)
+          git fetch origin main
+          git worktree add --detach /tmp/v6-now-main origin/main
+          cat > /tmp/v6-now/normalize.py <<'PY'
+          import re, sys
+          from pathlib import Path
+          src, dst = map(Path, sys.argv[1:3])
+          text = src.read_bytes().decode('latin1')
+          allowed = ('next/', '.github/workflows/deploy-react-v1.yml', '.github/workflows/photoreal-craft-v6-ci.yml', '.github/workflows/photoreal-v6-final-gate.yml')
+          def norm(p):
+              p=p.strip().strip('"')
+              if p=='/dev/null': return p
+              p=p.removeprefix('a/').removeprefix('b/')
+              for marker in ('next/','.github/workflows/'):
+                  i=p.find(marker)
+                  if i>=0 and p[i:].startswith(allowed): return p[i:]
+              return None
+          out=[]
+          for sec in re.split(r'(?=^diff --git )', text, flags=re.M):
+              if not sec.startswith('diff --git '): continue
+              lines=sec.splitlines(keepends=True)
+              m=re.match(r'diff --git\s+"?a/(.+?)"?\s+"?b/(.+?)"?\s*$', lines[0].rstrip())
+              if not m: continue
+              old,new=norm(m.group(1)),norm(m.group(2)); chosen=new or old
+              if not chosen or not chosen.startswith(allowed): continue
+              oldh='/dev/null' if old=='/dev/null' else f'a/{old or chosen}'
+              newh='/dev/null' if new=='/dev/null' else f'b/{new or chosen}'
+              fixed=[f'diff --git {oldh} {newh}\n']
+              for line in lines[1:]:
+                  body=line.rstrip('\r\n'); ending=line[len(body):]
+                  if body.startswith('--- '):
+                      raw=body[4:].split('\t',1)[0]; q=norm(raw); body='--- /dev/null' if raw=='/dev/null' else f'--- a/{q or chosen}'
+                  elif body.startswith('+++ '):
+                      raw=body[4:].split('\t',1)[0]; q=norm(raw); body='+++ /dev/null' if raw=='/dev/null' else f'+++ b/{q or chosen}'
+                  fixed.append(body+ending)
+              out.append(''.join(fixed))
+          dst.write_bytes(''.join(out).encode('latin1'))
+          PY
+          selected=''
+          for candidate in "${candidates[@]}"; do
+            test -f "$candidate" || continue
+            xz -t "$candidate" || continue
+            raw="/tmp/v6-now/$(basename "$candidate" .xz).raw.patch"
+            normalized="/tmp/v6-now/$(basename "$candidate" .xz).normalized.patch"
+            xz -dc "$candidate" > "$raw"
+            python /tmp/v6-now/normalize.py "$raw" "$normalized"
+            grep -Fq 'next/src/BonsaiStage.tsx' "$normalized" || continue
+            grep -Fq 'next/tests/photoreal-v6.mjs' "$normalized" || continue
+            cd /tmp/v6-now-main
+            git reset --hard origin/main
+            git clean -fdx
+            git apply --check --binary "$normalized" || continue
+            selected="$normalized"
+            break
+          done
+          test -n "$selected"
+          cd /tmp/v6-now-main
+          git reset --hard origin/main
+          git clean -fdx
+          git apply --binary --whitespace=nowarn "$selected"
+          git diff --check
+          test -f next/tests/photoreal-v6.mjs
+          test -f next/tests/photoreal-v6-unit.mjs
+          test -f next/scripts/visual-audit-v6.py
+          test "$(find next/public/assets/kuromatsu/craft-v6 -type f -name '*.webp' | wc -l)" -ge 12
+          cd "$GITHUB_WORKSPACE"
+          rm -rf next
+          cp -a /tmp/v6-now-main/next ./next
+          rm -rf next/node_modules next/dist next/test-artifacts next/.test-cjs next/scripts/__pycache__
+          for wf in deploy-react-v1.yml photoreal-craft-v6-ci.yml photoreal-v6-final-gate.yml; do
+            test -f "/tmp/v6-now-main/.github/workflows/$wf" && cp "/tmp/v6-now-main/.github/workflows/$wf" ".github/workflows/$wf" || true
+          done
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add next .github/workflows/deploy-react-v1.yml .github/workflows/photoreal-craft-v6-ci.yml .github/workflows/photoreal-v6-final-gate.yml 2>/dev/null || git add next .github/workflows
+          git commit -m 'Photoreal Craft v6の実装ソースをDraft PRへ確定'
+          git push origin HEAD:agent/photoreal-craft-v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Validate committed implementation
+        working-directory: next
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run build
+          python -m py_compile scripts/visual-audit-v6.py
+
+      - name: Install WebKit and Pillow
+        working-directory: next
+        run: |
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Run complete iPhone-equivalent and artwork audit
+        working-directory: next
+        run: |
+          set -euxo pipefail
+          setsid npm run preview >/tmp/photoreal-v6-independent.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/bonsai-photoreal-v6-preview.pid
+          trap 'kill -TERM -- -$server 2>/dev/null || true' EXIT
+          for i in $(seq 1 120); do curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break; sleep .25; done
+          npm run test:smoke
+          node tests/seasonal-v4.mjs
+          npm run test:photoreal
+          python scripts/visual-audit-v6.py --output photoreal-v6-independent-audit.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-photoreal-v6-independent-audit
+          path: |
+            next/test-artifacts
+            /tmp/photoreal-v6-independent.log
+            /tmp/v6-now
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Record success on PR without merging
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(git rev-parse HEAD)
+          gh pr edit 10 --repo "$GITHUB_REPOSITORY" --title 'Photoreal Craft v6：実装・自動監査PASS／iPhone確認待ち'
+          gh pr ready 10 --repo "$GITHUB_REPOSITORY" || true
+          gh pr comment 10 --repo "$GITHUB_REPOSITORY" --body "Photoreal Craft v6 independent gate: PASS\n\n- implementation SHA: \`${sha}\`\n- TypeScript / unit / Vite / WebKit / persistence / offline / artwork audit: PASS\n- main and public v5 remain unchanged pending iPhone review."
