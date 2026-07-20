@@ -36,16 +36,21 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import hashlib
-          path = Path('.wire-v7/payload-003')
-          target = '67f5d3a741b25ea74b7b871742ab1d61d82e239c'
           alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-          data = path.read_text(encoding='ascii')
+          targets = {
+              '.wire-v7/payload-003': ['67f5d3a741b25ea74b7b871742ab1d61d82e239c'],
+              '.wire-v7/payload-004': ['449078c4f93cb7368a888d0a7c259860a2649124', '2329da08d0554ed10f80a41babc4755e4e465be9'],
+              '.wire-v7/payload-005': ['0d5dea317d4f3fbbf296fe10334339d33be7aff9', '89c3b3a622a6c4604583e84253ee719b974b35d7', '0498fc58568bc297d97718adc97c340666779176'],
+              '.wire-v7/payload-006': ['58bef780d85004fd6b511ab5fa568b852e5b9dfe'],
+          }
           def blob_sha(value: str) -> str:
               raw = value.encode('ascii')
               return hashlib.sha1(f'blob {len(raw)}\0'.encode() + raw).hexdigest()
-          if blob_sha(data) != target:
-              chars = list(data)
-              found = None
+          def repair(value: str, target: str, label: str) -> str:
+              if blob_sha(value) == target:
+                  print(label, 'already exact')
+                  return value
+              chars = list(value)
               for index, original in enumerate(chars):
                   for replacement in alphabet:
                       if replacement == original:
@@ -53,15 +58,21 @@ jobs:
                       chars[index] = replacement
                       candidate = ''.join(chars)
                       if blob_sha(candidate) == target:
-                          found = candidate
-                          break
+                          print(label, 'repaired at', index, original, '->', replacement)
+                          return candidate
                   chars[index] = original
-                  if found is not None:
-                      break
-              if found is None:
-                  raise SystemExit('payload-003 could not be repaired as a single-character transfer error')
-              path.write_text(found, encoding='ascii')
-          assert blob_sha(path.read_text(encoding='ascii')) == target
+              raise SystemExit(f'{label} could not be repaired as a single-character transfer error; got {blob_sha(value)} expected {target}')
+          for file_name, expected_parts in targets.items():
+              path = Path(file_name)
+              data = path.read_text(encoding='ascii')
+              expected_size = 4000 if len(expected_parts) == 1 and file_name != '.wire-v7/payload-006' else None
+              if len(expected_parts) > 1:
+                  assert len(data) == 4000 * len(expected_parts), (file_name, len(data))
+                  parts = [data[i * 4000:(i + 1) * 4000] for i in range(len(expected_parts))]
+              else:
+                  parts = [data]
+              repaired = [repair(part, target, f'{file_name}[{index}]') for index, (part, target) in enumerate(zip(parts, expected_parts))]
+              path.write_text(''.join(repaired), encoding='ascii')
           PY
           cat .wire-v7/payload-* | tr -d '\r\n' > /tmp/wire-v7-payload.b64
           test "$(wc -c < /tmp/wire-v7-payload.b64)" -eq 62236
