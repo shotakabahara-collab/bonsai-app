@@ -1,22 +1,21 @@
 name: Apply and preflight Photoreal Craft v6
 
 on:
-  pull_request:
-    branches: [main]
+  push:
+    branches: [agent/photoreal-craft-v6]
     paths:
-      - '.photoreal-v6-payload/ready'
+      - '.photoreal-v6-source.ready'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: apply-photoreal-craft-v6
+  group: apply-photoreal-craft-v6-source
   cancel-in-progress: false
 
 jobs:
   apply-audit-and-commit:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
@@ -28,13 +27,11 @@ jobs:
       - name: Apply SHA-verified Photoreal Craft v6 source
         run: |
           set -euxo pipefail
-          cat .photoreal-v6-payload/bin-* > /tmp/photoreal-v6.patch.xz
-          test "$(wc -c < /tmp/photoreal-v6.patch.xz)" -eq 17572
-          echo 'ee0ff926de4965eb5b93ec0f59a6231bae468f1c766c04b2129bcb020776956c  /tmp/photoreal-v6.patch.xz' | sha256sum -c -
-          xz -t /tmp/photoreal-v6.patch.xz
-          xz -dc /tmp/photoreal-v6.patch.xz > /tmp/photoreal-v6.patch
-          git apply --check /tmp/photoreal-v6.patch
-          git apply /tmp/photoreal-v6.patch
+          echo '3fb9b84369e984d01557f0e55b3c107ad882d98bfd3248c33243d15d2d3ca09d  .photoreal-v6-source.patch.xz' | sha256sum -c -
+          xz -t .photoreal-v6-source.patch.xz
+          xz -dc .photoreal-v6-source.patch.xz > /tmp/photoreal-v6-source.patch
+          git apply --check /tmp/photoreal-v6-source.patch
+          git apply --whitespace=error /tmp/photoreal-v6-source.patch
           git diff --check
 
       - uses: actions/setup-node@v4
@@ -43,28 +40,17 @@ jobs:
           cache: npm
           cache-dependency-path: next/package-lock.json
 
-      - name: Install exact dependencies
-        working-directory: next
-        run: npm ci 2>&1 | tee /tmp/photoreal-v6-install.log
-
-      - name: TypeScript typecheck
-        working-directory: next
-        run: npm run typecheck 2>&1 | tee /tmp/photoreal-v6-typecheck.log
-
-      - name: Deterministic model audit
-        working-directory: next
-        run: npm run test:photoreal:unit 2>&1 | tee /tmp/photoreal-v6-unit.log
-
-      - name: Vite production build
-        working-directory: next
-        run: npm run build 2>&1 | tee /tmp/photoreal-v6-build.log
-
-      - name: Validate browser and image audit scripts
+      - name: Install, typecheck, model audit and production build
         working-directory: next
         run: |
-          node --check tests/smoke.mjs 2>&1 | tee /tmp/photoreal-v6-smoke-syntax.log
-          node --check tests/authentic-v5.mjs 2>&1 | tee /tmp/photoreal-v6-browser-syntax.log
-          python -m py_compile scripts/visual-audit-v6.py 2>&1 | tee /tmp/photoreal-v6-python-syntax.log
+          npm ci
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run build
+          node --check tests/smoke.mjs
+          node --check tests/seasonal-v4.mjs
+          node --check tests/authentic-v5.mjs
+          python -m py_compile scripts/visual-audit-v6.py
 
       - name: Install iPhone WebKit and image audit tools
         working-directory: next
@@ -75,38 +61,45 @@ jobs:
       - name: Start verified production preview
         working-directory: next
         run: |
-          setsid npm run preview >/tmp/bonsai-photoreal-v6-preview.log 2>&1 &
+          npm run preview >/tmp/bonsai-photoreal-v6-preview.log 2>&1 &
           server=$!
           echo "$server" >/tmp/bonsai-photoreal-v6-preview.pid
-          for i in $(seq 1 100); do
-            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
+          ready=0
+          for i in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null; then
+              ready=1
+              break
+            fi
             sleep .25
           done
-          cat /tmp/bonsai-photoreal-v6-preview.log
-          exit 1
+          if test "$ready" != 1; then
+            cat /tmp/bonsai-photoreal-v6-preview.log
+            ps -ef | grep -E 'vite|node' || true
+            exit 1
+          fi
 
       - name: Run existing 390x844 DPR3 WebKit regression
         working-directory: next
-        run: npm run test:smoke 2>&1 | tee /tmp/photoreal-v6-smoke.log
+        run: npm run test:smoke
 
       - name: Run seasonal persistence regression
         working-directory: next
-        run: node tests/seasonal-v4.mjs 2>&1 | tee /tmp/photoreal-v6-seasonal.log
+        run: node tests/seasonal-v4.mjs
 
       - name: Run photoreal work, interruption and offline audit
         working-directory: next
-        run: npm run test:photoreal 2>&1 | tee /tmp/photoreal-v6-browser.log
+        run: npm run test:photoreal
 
       - name: Reject tubes, floating work, bright ribbons and circular markers
         working-directory: next
-        run: python scripts/visual-audit-v6.py --output photoreal-v6-preflight-visual-audit.json 2>&1 | tee /tmp/photoreal-v6-visual.log
+        run: python scripts/visual-audit-v6.py --output photoreal-v6-preflight-visual-audit.json
 
       - name: Stop preview
         if: always()
         run: |
           if test -f /tmp/bonsai-photoreal-v6-preview.pid; then
             server="$(cat /tmp/bonsai-photoreal-v6-preview.pid)"
-            kill -TERM -- "-$server" 2>/dev/null || kill "$server" 2>/dev/null || true
+            kill "$server" 2>/dev/null || true
           fi
 
       - uses: actions/upload-artifact@v4
@@ -116,18 +109,22 @@ jobs:
           path: |
             next/test-artifacts
             /tmp/bonsai-photoreal-v6-preview.log
-            /tmp/photoreal-v6-*.log
           if-no-files-found: warn
           retention-days: 14
 
       - name: Commit only the audited application source
         run: |
+          rm -rf next/.test-cjs next/scripts/__pycache__
           rm -rf .photoreal-v6-payload
+          rm -f .photoreal-v6-source.patch.xz .photoreal-v6-source.ready
+          rm -f .photoreal-v6-final.patch.xz .photoreal-v6-final.ready
           rm -f .github/workflows/apply-photoreal-v6.yml
+          rm -f .github/workflows/finalize-photoreal-v6-source.yml
+          rm -f .github/workflows/export-photoreal-v6-source.yml
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A -- next .github/workflows .photoreal-v6-payload
+          git add -A
           git status --short
-          git commit -m '針金・神・舎利の実機視覚品質をv6へ修正'
-          git push origin 'HEAD:agent/photoreal-craft-v6'
+          git commit -m '針金・神・舎利を写真座標へ密着させるPhotoreal Craft v6を実装'
+          git push origin HEAD:agent/photoreal-craft-v6
