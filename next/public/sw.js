@@ -1,4 +1,5 @@
-const VERSION = 'bonsai-authentic-consequences-v5';
+// Photographed wire, jin and shari raster assets are part of the immutable offline artwork shell.
+const VERSION = 'bonsai-photoreal-craft-v7';
 const CACHE = `${VERSION}-shell`;
 const INDEX = '/bonsai-app/index.html';
 const CORE = [
@@ -10,7 +11,43 @@ const CORE = [
   '/bonsai-app/assets/kuromatsu/base/starter.webp',
   '/bonsai-app/assets/kuromatsu/base/blue.webp',
   '/bonsai-app/assets/kuromatsu/base/moon.webp',
-  '/bonsai-app/assets/kuromatsu/base/old.webp'
+  '/bonsai-app/assets/kuromatsu/base/old.webp',
+  '/bonsai-app/assets/kuromatsu/wire-photo-v7/apex-light.webp',
+  '/bonsai-app/assets/kuromatsu/wire-photo-v7/apex-strong.webp',
+  '/bonsai-app/assets/kuromatsu/wire-photo-v7/firstLeft-light.webp',
+  '/bonsai-app/assets/kuromatsu/wire-photo-v7/firstLeft-strong.webp',
+  '/bonsai-app/assets/kuromatsu/wire-photo-v7/secondRight-light.webp',
+  '/bonsai-app/assets/kuromatsu/wire-photo-v7/secondRight-strong.webp',
+  '/bonsai-app/assets/kuromatsu/wire-photo-v7/thirdLeft-light.webp',
+  '/bonsai-app/assets/kuromatsu/wire-photo-v7/thirdLeft-strong.webp',
+  '/bonsai-app/assets/kuromatsu/wire-photo-v7/back-light.webp',
+  '/bonsai-app/assets/kuromatsu/wire-photo-v7/back-strong.webp',
+  '/bonsai-app/assets/kuromatsu/wire-photo-v7/front-light.webp',
+  '/bonsai-app/assets/kuromatsu/wire-photo-v7/front-strong.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-left-l1.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-left-l2.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-left-l3.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-right-l1.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-right-l2.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-right-l3.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-apex-l1.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-apex-l2.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-apex-l3.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-firstLeft-l1.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-firstLeft-l2.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-firstLeft-l3.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-secondRight-l1.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-secondRight-l2.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-secondRight-l3.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-thirdLeft-l1.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-thirdLeft-l2.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-thirdLeft-l3.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-back-l1.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-back-l2.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-back-l3.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-front-l1.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-front-l2.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-front-l3.webp'
 ];
 
 async function fetchAndCache(cache, url, options = {}) {

@@ -4,6 +4,11 @@ import fs from 'node:fs';
 fs.mkdirSync('test-artifacts', { recursive: true });
 const baseURL = process.env.BONSAI_BASE_URL || 'http://127.0.0.1:4173/bonsai-app/';
 const DAY = 86_400_000;
+const ARTWORK_CAPTURE_STYLE = `
+  .topbar, .bottom-nav, .completion-dock, .wire-status-tag,
+  .deadwood-status-tag, .dead-tree-status-tag, .wall-caption,
+  .wall-mode > button, .toast { visibility: hidden !important; }
+`;
 const selectedBrowser = process.env.BONSAI_BROWSER === 'chromium' ? chromium : webkit;
 const launchOptions = process.env.BONSAI_BROWSER === 'chromium'
   ? { headless: true, executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', args: ['--no-sandbox', '--disable-dev-shm-usage'] }
@@ -39,7 +44,7 @@ try {
   await browser.close();
 }
 
-console.log('BONSAI authentic work/consequences v5: PASS');
+console.log('BONSAI photoreal craft v6: PASS');
 
 async function auditDangerousPruning() {
   report.phase = 'dangerous pruning launch';
@@ -172,8 +177,12 @@ async function auditPhotographicWorkAndInterruption() {
   await page.goto(new URL(`index.html?authentic-visual=${Date.now()}`, baseURL).href, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await waitForApp(page);
   await page.screenshot({ path: 'test-artifacts/authentic-v5-base.png', fullPage: false });
-  await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-base-artwork.png' });
+  await captureArtwork(page, '.bonsai-stage [data-testid="bonsai-photo-canvas"]', 'test-artifacts/authentic-v5-base-artwork.png');
   await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-stage-base.png' });
+  await page.getByRole('button', { name: '鑑賞モード' }).click();
+  await page.waitForSelector('.wall-mode .wall-stage');
+  await captureArtwork(page, '.wall-stage [data-testid="bonsai-photo-canvas"]', 'test-artifacts/photoreal-v6-wall-base-artwork.png');
+  await page.getByRole('button', { name: '鑑賞を終了' }).click();
 
   report.phase = 'photographic wire';
   await page.getByRole('button', { name: '部位針金' }).click();
@@ -182,25 +191,73 @@ async function auditPhotographicWorkAndInterruption() {
   await page.getByRole('button', { name: '右へ' }).click();
   await page.getByRole('button', { name: 'この部位へかける' }).click();
   await page.waitForSelector('[data-testid="photoreal-wire"]');
-  await page.waitForSelector('[data-testid="wire-branch-occlusion"]');
-  const wireVisual = await page.evaluate(() => ({
-    renderer: document.querySelector('.bonsai-stage')?.getAttribute('data-renderer'),
-    frontPaths: [...document.querySelectorAll('[data-testid="photoreal-wire"] .wire-turn-front')].map(node => ({ d: node.getAttribute('d'), style: node.getAttribute('style') })),
-    backPaths: document.querySelectorAll('.wire-turn-back').length,
-    glints: document.querySelectorAll('.wire-turn-glint').length,
-    occlusions: document.querySelectorAll('[data-testid="wire-branch-occlusion"]').length,
-    lineElements: document.querySelectorAll('.authentic-work-layer line').length,
-    status: document.querySelector('.wire-status-tag')?.textContent ?? ''
-  }));
-  if (wireVisual.renderer !== 'authentic-state-v5' || wireVisual.frontPaths.length < 3 || wireVisual.backPaths < 6 || wireVisual.glints < 3 || wireVisual.occlusions < 1 || wireVisual.lineElements !== 0) {
-    throw new Error(`Photographic wire structure is incomplete: ${JSON.stringify(wireVisual)}`);
-  }
-  if (wireVisual.frontPaths.some(item => !item.d?.includes('C') || !item.style?.includes('url('))) {
-    throw new Error(`Wire contains a non-curved or flat-color turn: ${JSON.stringify(wireVisual.frontPaths)}`);
+  const wireVisual = await page.evaluate(() => {
+    const stage = document.querySelector('.bonsai-stage');
+    const workLayer = stage?.querySelector('.authentic-work-layer');
+    const precisionLayer = stage?.querySelector('.precision-prune-svg');
+    const groups = [...document.querySelectorAll('[data-testid="photoreal-wire"]')].map(node => {
+      const raster = node.querySelector('image.wire-raster');
+      return {
+        part: node.getAttribute('data-wire-part'),
+        intensity: node.getAttribute('data-wire-intensity'),
+        direction: node.getAttribute('data-wire-direction'),
+        progress: Number(node.getAttribute('data-wire-progress')),
+        progressBand: Number(node.getAttribute('data-wire-progress-band')),
+        status: node.getAttribute('data-wire-status'),
+        asset: node.getAttribute('data-wire-asset'),
+        imageHref: raster?.getAttribute('href'),
+        rasterCount: node.querySelectorAll('image.wire-raster').length,
+        width: raster?.getAttribute('width'),
+        height: raster?.getAttribute('height'),
+        preserveAspectRatio: raster?.getAttribute('preserveAspectRatio'),
+        opacity: raster ? getComputedStyle(raster).opacity : ''
+      };
+    });
+    return {
+      renderer: stage?.getAttribute('data-renderer'),
+      groups,
+      legacySvgTurns: document.querySelectorAll('.wire-turn-front,.wire-turn-back,.wire-coil-metal,[data-testid="wire-back-pass"]').length,
+      lineElements: document.querySelectorAll('.authentic-work-layer line').length,
+      circleElements: document.querySelectorAll('.precision-prune-svg circle').length,
+      workAspect: workLayer?.getAttribute('preserveAspectRatio'),
+      precisionAspect: precisionLayer?.getAttribute('preserveAspectRatio'),
+      imageFit: getComputedStyle(stage?.querySelector('.bonsai-photo')).objectFit,
+      statusText: document.querySelector('.wire-status-tag')?.textContent ?? ''
+    };
+  });
+  const wireGroup = wireVisual.groups[0];
+  if (wireVisual.renderer !== 'photoreal-craft-v7' || wireVisual.groups.length !== 1 || wireGroup.part !== 'secondRight' || wireGroup.intensity !== 'strong' || wireGroup.rasterCount !== 1 || wireGroup.width !== '900' || wireGroup.height !== '1500' || wireGroup.preserveAspectRatio !== 'none' || !wireGroup.asset?.includes('/wire-photo-v7/secondRight-strong.webp') || wireGroup.imageHref !== wireGroup.asset || !Number.isFinite(wireGroup.progress) || !Number.isInteger(wireGroup.progressBand) || wireVisual.legacySvgTurns !== 0 || wireVisual.lineElements !== 0 || wireVisual.circleElements !== 0 || wireVisual.workAspect !== 'xMidYMid meet' || wireVisual.precisionAspect !== 'xMidYMid meet' || wireVisual.imageFit !== 'contain') {
+    throw new Error(`Photographed wire v7 is incomplete or detached: ${JSON.stringify(wireVisual)}`);
   }
   await page.screenshot({ path: 'test-artifacts/authentic-v5-wire.png', fullPage: false });
-  await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-wire-artwork.png' });
+  await captureArtwork(page, '.bonsai-stage [data-testid="bonsai-photo-canvas"]', 'test-artifacts/authentic-v5-wire-artwork.png');
   await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-stage-wire.png' });
+
+  report.phase = 'wire time progression';
+  await page.evaluate(nowValue => {
+    const game = JSON.parse(localStorage.getItem('bonsai:v2'));
+    const tree = game.bonsai.find(item => item.id === game.activeBonsaiId);
+    const wire = tree.parts.secondRight.wire;
+    wire.appliedAt = nowValue - 7 * 86400000;
+    wire.readyAt = nowValue + 7 * 86400000;
+    localStorage.setItem('bonsai:v2', JSON.stringify(game));
+  }, Date.now());
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+  await waitForApp(page);
+  const wireProgressVisual = await page.evaluate(() => {
+    const group = document.querySelector('[data-testid="photoreal-wire"][data-wire-part="secondRight"]');
+    const raster = group?.querySelector('image.wire-raster');
+    return {
+      progress: Number(group?.getAttribute('data-wire-progress')),
+      band: Number(group?.getAttribute('data-wire-progress-band')),
+      opacity: raster ? getComputedStyle(raster).opacity : '',
+      filter: raster ? getComputedStyle(raster).filter : ''
+    };
+  });
+  if (wireProgressVisual.progress < 45 || wireProgressVisual.progress > 55 || wireProgressVisual.band !== 2 || wireProgressVisual.opacity === wireGroup.opacity) {
+    throw new Error(`Wire training time did not alter the photographic state: ${JSON.stringify({ wireGroup, wireProgressVisual })}`);
+  }
+  report.wireProgress = wireProgressVisual;
 
   report.phase = 'wire interruption';
   await page.getByRole('button', { name: '部位針金' }).click();
@@ -220,33 +277,99 @@ async function auditPhotographicWorkAndInterruption() {
   report.phase = 'photographic jin';
   await page.getByRole('button', { name: /神・舎利/ }).click();
   page.once('dialog', dialog => dialog.accept());
-  await page.getByRole('button', { name: 'この枝で神の工程を始める' }).click();
+  await page.getByRole('button', { name: /この枝で神の第1強度を始める/ }).click();
   await page.waitForSelector('[data-testid="photoreal-deadwood"]');
 
   report.phase = 'photographic shari';
   await page.getByRole('button', { name: /神・舎利/ }).click();
   page.once('dialog', dialog => dialog.accept());
-  await page.getByRole('button', { name: '右側から始める' }).click();
+  await page.getByRole('button', { name: /右側・第1強度を始める/ }).click();
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="photoreal-deadwood"]').length === 2, { timeout: 5000 });
   const deadwoodVisual = await page.evaluate(() => ({
-    groups: [...document.querySelectorAll('[data-testid="photoreal-deadwood"]')].map(node => ({
-      kind: node.classList.contains('deadwood-jin') ? 'jin' : node.classList.contains('deadwood-shari') ? 'shari' : 'unknown',
-      stage: node.getAttribute('data-stage'),
-      paused: node.getAttribute('data-paused'),
-      barkEdges: node.querySelectorAll('.deadwood-bark-edge').length,
-      liveEdges: node.querySelectorAll('.deadwood-live-edge').length,
-      cores: node.querySelectorAll('.deadwood-wood-core').length,
-      grains: node.querySelectorAll('.deadwood-grain').length
-    })),
+    groups: [...document.querySelectorAll('[data-testid="photoreal-deadwood"]')].map(node => {
+      const raster = node.querySelector('image.deadwood-raster');
+      return {
+        kind: node.getAttribute('data-deadwood-kind'),
+        stage: node.getAttribute('data-stage'),
+        paused: node.getAttribute('data-paused'),
+        level: Number(node.getAttribute('data-deadwood-level')),
+        progress: Number(node.getAttribute('data-deadwood-progress')),
+        progressBand: Number(node.getAttribute('data-deadwood-progress-band')),
+        asset: node.getAttribute('data-deadwood-asset'),
+        rasterCount: node.querySelectorAll('image.deadwood-raster').length,
+        width: raster?.getAttribute('width'),
+        height: raster?.getAttribute('height'),
+        preserveAspectRatio: raster?.getAttribute('preserveAspectRatio'),
+        vectorPieces: node.querySelectorAll('.deadwood-bark-edge, .deadwood-live-edge, .deadwood-wood-core, .deadwood-grain, .deadwood-bark-island, .jin-torn-end, .deadwood-svg-path').length,
+        filter: raster ? getComputedStyle(raster).filter : ''
+      };
+    }),
     lineElements: document.querySelectorAll('.authentic-work-layer line').length,
+    circleElements: document.querySelectorAll('.precision-prune-svg circle').length,
     status: document.querySelector('.deadwood-status-tag')?.textContent ?? ''
   }));
-  if (deadwoodVisual.groups.length !== 2 || !deadwoodVisual.groups.some(group => group.kind === 'jin') || !deadwoodVisual.groups.some(group => group.kind === 'shari') || deadwoodVisual.groups.some(group => group.stage !== 'fresh' || group.barkEdges < 1 || group.liveEdges < 1 || group.cores < 1 || group.grains < 2) || deadwoodVisual.lineElements !== 0) {
-    throw new Error(`Photographic deadwood structure is incomplete: ${JSON.stringify(deadwoodVisual)}`);
+  const jinVisual = deadwoodVisual.groups.find(group => group.kind === 'jin');
+  const shariVisual = deadwoodVisual.groups.find(group => group.kind === 'shari');
+  const invalidRaster = deadwoodVisual.groups.some(group =>
+    group.stage !== 'fresh' || group.level !== 1 || group.rasterCount !== 1 || group.width !== '900' || group.height !== '1500' ||
+    group.preserveAspectRatio !== 'none' || group.vectorPieces !== 0 || !group.asset?.includes('/deadwood-photo-v6/') ||
+    !Number.isFinite(group.progress) || group.progress < 0 || group.progress > 100 || !Number.isInteger(group.progressBand) ||
+    !group.filter || group.filter === 'none'
+  );
+  if (deadwoodVisual.groups.length !== 2 || !jinVisual || !shariVisual || invalidRaster || !jinVisual.asset?.includes('/jin-thirdLeft-l1.webp') || !shariVisual.asset?.includes('/shari-right-l1.webp') || deadwoodVisual.lineElements !== 0 || deadwoodVisual.circleElements !== 0) {
+    throw new Error(`Photographed deadwood strength/time state is incomplete: ${JSON.stringify(deadwoodVisual)}`);
   }
   await page.screenshot({ path: 'test-artifacts/authentic-v5-deadwood-fresh.png', fullPage: false });
-  await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-deadwood-fresh-artwork.png' });
+  await captureArtwork(page, '.bonsai-stage [data-testid="bonsai-photo-canvas"]', 'test-artifacts/authentic-v5-deadwood-fresh-artwork.png');
   await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-stage-deadwood-fresh.png' });
+
+  report.phase = 'deadwood strength and time progression';
+  await page.evaluate(nowValue => {
+    const game = JSON.parse(localStorage.getItem('bonsai:v2'));
+    const tree = game.bonsai.find(item => item.id === game.activeBonsaiId);
+    for (const project of tree.craft.deadwoodProjects) {
+      project.level = 3;
+      project.stage = 'weathering';
+      project.stageStartedAt = nowValue - 9 * 86400000;
+      project.readyAt = nowValue + 9 * 86400000;
+      delete project.pausedAt;
+      delete project.remainingMs;
+    }
+    localStorage.setItem('bonsai:v2', JSON.stringify(game));
+  }, Date.now());
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+  await waitForApp(page);
+  const progressedDeadwood = await page.evaluate(() => [...document.querySelectorAll('[data-testid="photoreal-deadwood"]')].map(node => {
+    const raster = node.querySelector('image.deadwood-raster');
+    return {
+      kind: node.getAttribute('data-deadwood-kind'),
+      level: Number(node.getAttribute('data-deadwood-level')),
+      progress: Number(node.getAttribute('data-deadwood-progress')),
+      band: Number(node.getAttribute('data-deadwood-progress-band')),
+      asset: node.getAttribute('data-deadwood-asset'),
+      filter: raster ? getComputedStyle(raster).filter : ''
+    };
+  }));
+  if (progressedDeadwood.length !== 2 || progressedDeadwood.some(item => item.level !== 3 || item.progress < 45 || item.progress > 55 || item.band !== 2 || !item.asset?.includes('-l3.webp')) || progressedDeadwood.every(item => deadwoodVisual.groups.some(initial => initial.kind === item.kind && initial.filter === item.filter))) {
+    throw new Error(`Deadwood strength/time did not change the photographed state: ${JSON.stringify(progressedDeadwood)}`);
+  }
+  report.deadwoodStrengthProgress = progressedDeadwood;
+  await captureArtwork(page, '.bonsai-stage [data-testid="bonsai-photo-canvas"]', 'test-artifacts/photoreal-v7-deadwood-level3-mid-artwork.png');
+  await page.evaluate(nowValue => {
+    const game = JSON.parse(localStorage.getItem('bonsai:v2'));
+    const tree = game.bonsai.find(item => item.id === game.activeBonsaiId);
+    for (const project of tree.craft.deadwoodProjects) {
+      project.level = 1;
+      project.stage = 'fresh';
+      project.stageStartedAt = nowValue;
+      project.readyAt = nowValue + 0.7 * 86400000;
+      delete project.pausedAt;
+      delete project.remainingMs;
+    }
+    localStorage.setItem('bonsai:v2', JSON.stringify(game));
+  }, Date.now());
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+  await waitForApp(page);
 
   report.phase = 'deadwood interruption';
   await page.getByRole('button', { name: /神・舎利/ }).click();
@@ -261,7 +384,7 @@ async function auditPhotographicWorkAndInterruption() {
   await page.getByRole('button', { name: '閉じる' }).click();
   await page.waitForSelector('[data-testid="photoreal-deadwood"][data-paused="true"]');
   await page.screenshot({ path: 'test-artifacts/authentic-v5-deadwood-paused.png', fullPage: false });
-  await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-deadwood-paused-artwork.png' });
+  await captureArtwork(page, '.bonsai-stage [data-testid="bonsai-photo-canvas"]', 'test-artifacts/authentic-v5-deadwood-paused-artwork.png');
   await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-stage-deadwood-paused.png' });
 
   const pausedSave = await page.evaluate(() => {
@@ -296,6 +419,64 @@ async function auditPhotographicWorkAndInterruption() {
   report.deadwood = { visual: deadwoodVisual, paused: pausedSave, resumed: resumedSave };
   await page.getByRole('button', { name: '閉じる' }).click();
 
+  report.phase = 'combined iPhone wall artwork';
+  await page.evaluate(nowValue => {
+    const game = JSON.parse(localStorage.getItem('bonsai:v2'));
+    const tree = game.bonsai.find(item => item.id === game.activeBonsaiId);
+    for (const [partId, direction] of [['apex', 'down'], ['firstLeft', 'left'], ['secondRight', 'right']]) {
+      tree.parts[partId].wire = {
+        intensity: 'strong', direction, appliedAt: nowValue, readyAt: nowValue + 86400000,
+        progress: 0, status: 'training', lastRiskAt: nowValue
+      };
+    }
+    localStorage.setItem('bonsai:v2', JSON.stringify(game));
+  }, Date.now());
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+  await waitForApp(page);
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="photoreal-wire"]').length === 3);
+  await page.getByRole('button', { name: '鑑賞モード' }).click();
+  await page.waitForSelector('.wall-mode .wall-stage');
+  const combinedVisual = await page.evaluate(() => {
+    const stage = document.querySelector('.wall-mode .wall-stage');
+    const canvas = stage.querySelector('[data-testid="bonsai-photo-canvas"]');
+    const image = stage.querySelector('.bonsai-photo');
+    const work = stage.querySelector('.authentic-work-layer');
+    return {
+      renderer: stage.getAttribute('data-renderer'),
+      wireGroups: stage.querySelectorAll('[data-testid="photoreal-wire"]').length,
+      deadwoodGroups: stage.querySelectorAll('[data-testid="photoreal-deadwood"]').length,
+      deadwoodRasters: stage.querySelectorAll('image.deadwood-raster').length,
+      legacyPhotoOcclusions: stage.querySelectorAll('[data-testid="wire-branch-occlusion"]').length,
+      circleElements: stage.querySelectorAll('circle').length,
+      wireRasters: stage.querySelectorAll('image.wire-raster').length,
+      wireAssets: [...stage.querySelectorAll('[data-testid="photoreal-wire"]')].map(node => node.getAttribute('data-wire-asset')),
+      canvasRect: canvas.getBoundingClientRect().toJSON(),
+      imageRect: image.getBoundingClientRect().toJSON(),
+      workRect: work.getBoundingClientRect().toJSON(),
+      aspect: work.getAttribute('preserveAspectRatio'),
+      natural: [image.naturalWidth, image.naturalHeight],
+      status: stage.querySelector('.wire-status-tag')?.textContent ?? ''
+    };
+  });
+  const rectDelta = Math.max(
+    Math.abs(combinedVisual.canvasRect.x - combinedVisual.imageRect.x),
+    Math.abs(combinedVisual.canvasRect.y - combinedVisual.imageRect.y),
+    Math.abs(combinedVisual.canvasRect.width - combinedVisual.imageRect.width),
+    Math.abs(combinedVisual.canvasRect.height - combinedVisual.imageRect.height),
+    Math.abs(combinedVisual.canvasRect.x - combinedVisual.workRect.x),
+    Math.abs(combinedVisual.canvasRect.y - combinedVisual.workRect.y),
+    Math.abs(combinedVisual.canvasRect.width - combinedVisual.workRect.width),
+    Math.abs(combinedVisual.canvasRect.height - combinedVisual.workRect.height)
+  );
+  if (combinedVisual.renderer !== 'photoreal-craft-v7' || combinedVisual.wireGroups !== 3 || combinedVisual.wireRasters !== 3 || combinedVisual.deadwoodGroups !== 2 || combinedVisual.deadwoodRasters !== 2 || combinedVisual.legacyPhotoOcclusions !== 0 || combinedVisual.circleElements !== 0 || combinedVisual.wireAssets.some(asset => !asset?.includes('/wire-photo-v7/')) || combinedVisual.aspect !== 'xMidYMid meet' || combinedVisual.natural[0] < 800 || combinedVisual.natural[1] < 1400 || rectDelta > .6 || !combinedVisual.status.includes('3枝')) {
+    throw new Error(`Combined iPhone artwork is not registered to one photograph canvas: ${JSON.stringify({ combinedVisual, rectDelta })}`);
+  }
+  report.combinedVisual = combinedVisual;
+  await page.screenshot({ path: 'test-artifacts/photoreal-v6-combined-wall.png', fullPage: false });
+  await page.getByRole('button', { name: '鑑賞を終了' }).click();
+  await page.waitForSelector('.wall-mode', { state: 'detached', timeout: 5000 });
+  await captureArtwork(page, '.bonsai-stage [data-testid="bonsai-photo-canvas"]', 'test-artifacts/photoreal-v6-combined-artwork.png');
+
   report.phase = 'offline restart';
   await page.waitForFunction(async () => {
     if (!('serviceWorker' in navigator)) return false;
@@ -310,7 +491,7 @@ async function auditPhotographicWorkAndInterruption() {
 
   const webkitCache = await page.evaluate(async () => {
     const cacheNames = await caches.keys();
-    const cacheName = cacheNames.find(name => name === 'bonsai-authentic-consequences-v5-shell');
+    const cacheName = cacheNames.find(name => name === 'bonsai-photoreal-craft-v7-shell');
     const dynamicAssets = [...document.querySelectorAll('script[src],link[rel="stylesheet"][href]')]
       .map(node => new URL(node.getAttribute('src') || node.getAttribute('href'), location.href).pathname)
       .filter(pathname => pathname.startsWith('/bonsai-app/assets/'));
@@ -326,12 +507,12 @@ async function auditPhotographicWorkAndInterruption() {
   if (process.env.BONSAI_PUBLIC === '1') {
     report.offline = { webkitCache, mode: 'public-cache-verification' };
     await page.screenshot({ path: 'test-artifacts/authentic-v5-offline.png', fullPage: false });
-    await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-offline-artwork.png' });
+    await captureArtwork(page, '.bonsai-stage [data-testid="bonsai-photo-canvas"]', 'test-artifacts/authentic-v5-offline-artwork.png');
     await context.close();
   } else {
     let previewPid = 0;
     try {
-      previewPid = Number(fs.readFileSync('/tmp/bonsai-authentic-v5-preview.pid', 'utf8').trim());
+      previewPid = Number(fs.readFileSync('/tmp/bonsai-photoreal-v6-preview.pid', 'utf8').trim());
     } catch {}
     if (!Number.isInteger(previewPid) || previewPid <= 1) {
       for (const entry of fs.readdirSync('/proc')) {
@@ -375,18 +556,23 @@ async function auditPhotographicWorkAndInterruption() {
       app: Boolean(document.querySelector('[data-testid="app-shell"]')),
       image: document.querySelector('.bonsai-stage img')?.getAttribute('src'),
       renderer: document.querySelector('.bonsai-stage')?.getAttribute('data-renderer'),
-      deadwoodCount: document.querySelectorAll('[data-testid="photoreal-deadwood"]').length
+      deadwoodCount: document.querySelectorAll('[data-testid="photoreal-deadwood"]').length,
+      wireCount: document.querySelectorAll('[data-testid="photoreal-wire"]').length
     }));
     webkitRestart.navigationError = navigationError;
     webkitRestart.serverReachable = serverReachable;
-    if (webkitRestart.serverReachable || !webkitRestart.app || webkitRestart.renderer !== 'authentic-state-v5' || webkitRestart.deadwoodCount !== 2) {
+    if (webkitRestart.serverReachable || !webkitRestart.app || webkitRestart.renderer !== 'photoreal-craft-v7' || webkitRestart.deadwoodCount !== 2 || webkitRestart.wireCount !== 3) {
       throw new Error(`WebKit offline restart did not preserve the work state: ${JSON.stringify(webkitRestart)}`);
     }
     report.offline = { webkitCache, webkitRestart };
     await offlinePage.screenshot({ path: 'test-artifacts/authentic-v5-offline.png', fullPage: false });
-    await offlinePage.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-offline-artwork.png' });
+    await captureArtwork(offlinePage, '.bonsai-stage [data-testid="bonsai-photo-canvas"]', 'test-artifacts/authentic-v5-offline-artwork.png');
     await context.close();
   }
+}
+
+async function captureArtwork(page, selector, path) {
+  await page.locator(selector).screenshot({ path, style: ARTWORK_CAPTURE_STYLE });
 }
 
 function attachErrors(page) {

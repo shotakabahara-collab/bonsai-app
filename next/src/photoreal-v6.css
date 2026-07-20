@@ -1,0 +1,226 @@
+/* Photoreal Craft v6 — all work is registered to the 900×1500 master photograph. */
+.photoreal-craft-v6 {
+  isolation: isolate;
+}
+
+.photoreal-craft-v6 .bonsai-photo-canvas {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  background: #0a120d;
+}
+
+.photoreal-craft-v6 .bonsai-photo,
+.photoreal-craft-v6 .precision-prune-svg,
+.photoreal-craft-v6 .authentic-work-layer {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.photoreal-craft-v6 .bonsai-photo {
+  z-index: 0;
+  object-fit: contain;
+  object-position: center;
+}
+
+.photoreal-craft-v6 .stage-vignette {
+  z-index: 2;
+}
+
+.photoreal-craft-v6 .part-visual {
+  z-index: 3;
+}
+
+.photoreal-craft-v6 .precision-prune-svg {
+  z-index: 4;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.photoreal-craft-v6 .authentic-work-layer {
+  z-index: 5;
+  overflow: hidden;
+  opacity: 1;
+  pointer-events: none;
+}
+
+.photoreal-craft-v6 .part-hotspot {
+  z-index: 8;
+}
+
+/* Wire v7 is a photographed transparent state, not repeated SVG S marks. */
+.photoreal-craft-v6 .wire-photo-state {
+  pointer-events: none;
+  isolation: isolate;
+}
+
+.photoreal-craft-v6 .wire-raster {
+  width: 900px;
+  height: 1500px;
+  opacity: .96;
+  pointer-events: none;
+  image-rendering: auto;
+  transform: translateZ(0);
+  filter: saturate(1.02) brightness(1.01) contrast(1.03);
+}
+
+.photoreal-craft-v6 .wire-progress-0 .wire-raster { opacity: .91; filter: saturate(1.08) brightness(1.04) contrast(1.01); }
+.photoreal-craft-v6 .wire-progress-1 .wire-raster { opacity: .94; filter: saturate(1.03) brightness(1.01) contrast(1.04); }
+.photoreal-craft-v6 .wire-progress-2 .wire-raster { opacity: .96; filter: saturate(.96) brightness(.98) contrast(1.06); }
+.photoreal-craft-v6 .wire-progress-3 .wire-raster { opacity: .97; filter: saturate(.88) brightness(.95) contrast(1.08); }
+.photoreal-craft-v6 .wire-status-overdue .wire-raster { opacity: .98; filter: saturate(.76) brightness(.89) contrast(1.14); }
+
+/* Deadwood is muted wood, not a luminous orange ribbon. */
+.photoreal-craft-v6 .deadwood-effect {
+  pointer-events: none;
+  isolation: isolate;
+}
+
+
+/* Jin and shari are photographed transparent layers, not vector ribbons. */
+.photoreal-craft-v6 .deadwood-raster {
+  width: 900px;
+  height: 1500px;
+  opacity: .98;
+  pointer-events: none;
+  image-rendering: auto;
+  transform: translateZ(0);
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-fresh .deadwood-raster {
+  filter: saturate(.92) brightness(1.01) contrast(1.05);
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-drying .deadwood-raster {
+  filter: saturate(.76) brightness(1.02) contrast(1.07);
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-carving .deadwood-raster {
+  filter: saturate(.61) brightness(1.04) contrast(1.09);
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-preserving .deadwood-raster {
+  filter: saturate(.34) brightness(1.10) contrast(1.06);
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-weathering .deadwood-raster {
+  filter: saturate(.18) brightness(1.07) contrast(1.09);
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-mature .deadwood-raster {
+  filter: saturate(.08) brightness(1.08) contrast(1.12);
+}
+
+.photoreal-craft-v6 .deadwood-shari-outline,
+.photoreal-craft-v6 .deadwood-jin-outline,
+.photoreal-craft-v6 .deadwood-jin-core,
+.photoreal-craft-v6 .deadwood-shari-live-edge,
+.photoreal-craft-v6 .deadwood-jin-live-edge,
+.photoreal-craft-v6 .deadwood-grain {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.photoreal-craft-v6 .deadwood-shari-outline,
+.photoreal-craft-v6 .deadwood-jin-outline {
+  stroke: rgba(35, 24, 17, .68);
+  opacity: .62;
+  filter: drop-shadow(.35px .5px .3px rgba(0, 0, 0, .38));
+}
+
+.photoreal-craft-v6 .deadwood-shari-outline {
+  stroke-width: .75;
+}
+
+.photoreal-craft-v6 .deadwood-shari-fill {
+  stroke: none;
+  opacity: .46;
+  mix-blend-mode: normal;
+}
+
+.photoreal-craft-v6 .deadwood-jin-core {
+  opacity: .72;
+}
+
+.photoreal-craft-v6 .deadwood-photo-texture {
+  mix-blend-mode: soft-light;
+  opacity: .56;
+}
+
+.photoreal-craft-v6 .deadwood-live-edge {
+  stroke: rgba(68, 42, 28, .66);
+  stroke-width: .85;
+  opacity: .64;
+}
+
+.photoreal-craft-v6 .deadwood-grain {
+  stroke: rgba(61, 54, 43, .46);
+  stroke-dasharray: 17 5 8 4;
+  stroke-width: .58;
+  opacity: .54;
+}
+
+.photoreal-craft-v6 .deadwood-grain-b {
+  stroke: rgba(230, 224, 204, .30);
+  stroke-dasharray: 8 7 20 5;
+  stroke-width: .45;
+}
+
+.photoreal-craft-v6 .deadwood-bark-island {
+  fill: rgba(50, 34, 24, .72);
+  stroke: rgba(18, 12, 9, .45);
+  stroke-width: .45;
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-fresh .deadwood-shari-fill,
+.photoreal-craft-v6 .deadwood-effect.stage-fresh .deadwood-jin-core {
+  opacity: .50;
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-fresh .deadwood-live-edge {
+  stroke: rgba(104, 55, 37, .72);
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-fresh .deadwood-grain {
+  opacity: .24;
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-drying .deadwood-grain {
+  opacity: .38;
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-weathering .deadwood-grain,
+.photoreal-craft-v6 .deadwood-effect.stage-mature .deadwood-grain {
+  opacity: .66;
+}
+
+.photoreal-craft-v6 .jin-torn-end {
+  stroke: rgba(54, 43, 31, .58);
+  stroke-width: .72;
+  filter: none;
+}
+
+.photoreal-craft-v6 .precision-cut-scar-natural {
+  fill: rgba(137, 91, 55, .68);
+  stroke: rgba(49, 29, 18, .74);
+  stroke-width: .72;
+  vector-effect: non-scaling-stroke;
+}
+
+.photoreal-craft-v6 .authentic-prune-veil {
+  fill: rgba(4, 12, 7, .48);
+  mix-blend-mode: multiply;
+}
+
+.photoreal-craft-v6 .wire-status-tag,
+.photoreal-craft-v6 .deadwood-status-tag,
+.photoreal-craft-v6 .dead-tree-status-tag {
+  z-index: 10;
+}
