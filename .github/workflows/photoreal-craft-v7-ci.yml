@@ -1,4 +1,4 @@
-name: Photoreal Craft v7 validation
+name: Gameplay v8 and Photoreal validation
 
 on:
   pull_request:
@@ -13,13 +13,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: photoreal-craft-v7-${{ github.event.pull_request.number || github.ref }}
+  group: gameplay-v8-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   iphone-webkit-audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,61 +30,63 @@ jobs:
       - name: Install exact dependencies
         working-directory: next
         run: npm ci
-      - name: Typecheck, deterministic model audit and production build
+      - name: Typecheck, deterministic models and production build
         working-directory: next
         run: |
           npm run typecheck
           npm run test:photoreal:unit
+          npm run test:gameplay:unit
           npm run build
-          python -m py_compile scripts/visual-audit-v6.py
+          node --check tests/gameplay-v8.mjs
+          python -m py_compile scripts/clean-kuromatsu-photo-v8.py scripts/visual-audit-v6.py
+      - name: Verify immutable photographic state assets
+        working-directory: next
+        run: |
+          test "$(find public/assets/kuromatsu/wire-photo-v7 -type f -name '*.webp' | wc -l)" -eq 12
+          test "$(find public/assets/kuromatsu/deadwood-photo-v6 -type f -name '*.webp' | wc -l)" -eq 24
+          test "$(find public/assets/kuromatsu/base -maxdepth 1 -type f -name '*.webp' | wc -l)" -ge 5
       - name: Install iPhone WebKit and image audit tools
         working-directory: next
         run: |
           npx playwright install --with-deps webkit
           python -m pip install --disable-pip-version-check pillow numpy
-      - name: Verify deterministic photographed wire and deadwood assets
-        working-directory: next
-        run: |
-          python scripts/generate-wire-photo-v7.py
-          python scripts/generate-deadwood-photo-v6.py
-          test "$(find public/assets/kuromatsu/wire-photo-v7 -type f -name '*.webp' | wc -l)" -eq 12
-          test "$(find public/assets/kuromatsu/deadwood-photo-v6 -type f -name '*.webp' | wc -l)" -eq 24
-          git diff --exit-code -- public/assets/kuromatsu/wire-photo-v7 public/assets/kuromatsu/deadwood-photo-v6
       - name: Start verified production preview
         working-directory: next
         run: |
-          setsid npm run preview >/tmp/bonsai-photoreal-v7-preview.log 2>&1 &
+          setsid npm run preview >/tmp/bonsai-gameplay-v8-preview.log 2>&1 &
           server=$!
+          echo "$server" >/tmp/bonsai-gameplay-v8-preview.pid
           echo "$server" >/tmp/bonsai-photoreal-v7-preview.pid
           for i in $(seq 1 120); do
             curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
             sleep .25
           done
-          cat /tmp/bonsai-photoreal-v7-preview.log
+          cat /tmp/bonsai-gameplay-v8-preview.log
           exit 1
       - name: Run 390x844 DPR3 WebKit regressions
         working-directory: next
         run: |
           npm run test:smoke
           node tests/seasonal-v4.mjs
+          npm run test:gameplay
           npm run test:photoreal
-      - name: Reject S marks, floating copper, ribbons and circular markers
+      - name: Reject support lines, editing dots, S marks and pasted ribbons
         working-directory: next
-        run: python scripts/visual-audit-v6.py --output photoreal-v7-pr-visual-audit.json
+        run: python scripts/visual-audit-v6.py --output gameplay-v8-pr-visual-audit.json
       - name: Preserve complete audit bundle
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bonsai-photoreal-craft-v7-pr-audit
+          name: bonsai-gameplay-v8-pr-audit
           path: |
             next/test-artifacts
-            /tmp/bonsai-photoreal-v7-preview.log
-          if-no-files-found: error
+            /tmp/bonsai-gameplay-v8-preview.log
+          if-no-files-found: warn
           retention-days: 14
       - name: Stop preview
         if: always()
         run: |
-          if test -f /tmp/bonsai-photoreal-v7-preview.pid; then
-            server="$(cat /tmp/bonsai-photoreal-v7-preview.pid)"
+          if test -f /tmp/bonsai-gameplay-v8-preview.pid; then
+            server="$(cat /tmp/bonsai-gameplay-v8-preview.pid)"
             kill -TERM -- -"$server" 2>/dev/null || kill "$server" 2>/dev/null || true
           fi

@@ -226,7 +226,7 @@ async function auditPhotographicWorkAndInterruption() {
     };
   });
   const wireGroup = wireVisual.groups[0];
-  if (wireVisual.renderer !== 'photoreal-craft-v7' || wireVisual.groups.length !== 1 || wireGroup.part !== 'secondRight' || wireGroup.intensity !== 'strong' || wireGroup.rasterCount !== 1 || wireGroup.width !== '900' || wireGroup.height !== '1500' || wireGroup.preserveAspectRatio !== 'none' || !wireGroup.asset?.includes('/wire-photo-v7/secondRight-strong.webp') || wireGroup.imageHref !== wireGroup.asset || !Number.isFinite(wireGroup.progress) || !Number.isInteger(wireGroup.progressBand) || wireVisual.legacySvgTurns !== 0 || wireVisual.lineElements !== 0 || wireVisual.circleElements !== 0 || wireVisual.workAspect !== 'xMidYMid meet' || wireVisual.precisionAspect !== 'xMidYMid meet' || wireVisual.imageFit !== 'contain') {
+  if (wireVisual.renderer !== 'gameplay-v8' || wireVisual.groups.length !== 1 || wireGroup.part !== 'secondRight' || wireGroup.intensity !== 'strong' || wireGroup.rasterCount !== 1 || wireGroup.width !== '900' || wireGroup.height !== '1500' || wireGroup.preserveAspectRatio !== 'none' || !wireGroup.asset?.includes('/wire-photo-v7/secondRight-strong.webp') || wireGroup.imageHref !== wireGroup.asset || !Number.isFinite(wireGroup.progress) || !Number.isInteger(wireGroup.progressBand) || wireVisual.legacySvgTurns !== 0 || wireVisual.lineElements !== 0 || wireVisual.circleElements !== 0 || wireVisual.workAspect !== 'xMidYMid meet' || wireVisual.precisionAspect != null || wireVisual.imageFit !== 'contain') {
     throw new Error(`Photographed wire v7 is incomplete or detached: ${JSON.stringify(wireVisual)}`);
   }
   await page.screenshot({ path: 'test-artifacts/authentic-v5-wire.png', fullPage: false });
@@ -468,7 +468,7 @@ async function auditPhotographicWorkAndInterruption() {
     Math.abs(combinedVisual.canvasRect.width - combinedVisual.workRect.width),
     Math.abs(combinedVisual.canvasRect.height - combinedVisual.workRect.height)
   );
-  if (combinedVisual.renderer !== 'photoreal-craft-v7' || combinedVisual.wireGroups !== 3 || combinedVisual.wireRasters !== 3 || combinedVisual.deadwoodGroups !== 2 || combinedVisual.deadwoodRasters !== 2 || combinedVisual.legacyPhotoOcclusions !== 0 || combinedVisual.circleElements !== 0 || combinedVisual.wireAssets.some(asset => !asset?.includes('/wire-photo-v7/')) || combinedVisual.aspect !== 'xMidYMid meet' || combinedVisual.natural[0] < 800 || combinedVisual.natural[1] < 1400 || rectDelta > .6 || !combinedVisual.status.includes('3枝')) {
+  if (combinedVisual.renderer !== 'gameplay-v8' || combinedVisual.wireGroups !== 3 || combinedVisual.wireRasters !== 3 || combinedVisual.deadwoodGroups !== 2 || combinedVisual.deadwoodRasters !== 2 || combinedVisual.legacyPhotoOcclusions !== 0 || combinedVisual.circleElements !== 0 || combinedVisual.wireAssets.some(asset => !asset?.includes('/wire-photo-v7/')) || combinedVisual.aspect !== 'xMidYMid meet' || combinedVisual.natural[0] < 800 || combinedVisual.natural[1] < 1400 || rectDelta > .6 || !combinedVisual.status.includes('3枝')) {
     throw new Error(`Combined iPhone artwork is not registered to one photograph canvas: ${JSON.stringify({ combinedVisual, rectDelta })}`);
   }
   report.combinedVisual = combinedVisual;
@@ -491,7 +491,7 @@ async function auditPhotographicWorkAndInterruption() {
 
   const webkitCache = await page.evaluate(async () => {
     const cacheNames = await caches.keys();
-    const cacheName = cacheNames.find(name => name === 'bonsai-photoreal-craft-v7-shell');
+    const cacheName = cacheNames.find(name => name === 'bonsai-gameplay-v8-shell');
     const dynamicAssets = [...document.querySelectorAll('script[src],link[rel="stylesheet"][href]')]
       .map(node => new URL(node.getAttribute('src') || node.getAttribute('href'), location.href).pathname)
       .filter(pathname => pathname.startsWith('/bonsai-app/assets/'));
@@ -561,7 +561,7 @@ async function auditPhotographicWorkAndInterruption() {
     }));
     webkitRestart.navigationError = navigationError;
     webkitRestart.serverReachable = serverReachable;
-    if (webkitRestart.serverReachable || !webkitRestart.app || webkitRestart.renderer !== 'photoreal-craft-v7' || webkitRestart.deadwoodCount !== 2 || webkitRestart.wireCount !== 3) {
+    if (webkitRestart.serverReachable || !webkitRestart.app || webkitRestart.renderer !== 'gameplay-v8' || webkitRestart.deadwoodCount !== 2 || webkitRestart.wireCount !== 3) {
       throw new Error(`WebKit offline restart did not preserve the work state: ${JSON.stringify(webkitRestart)}`);
     }
     report.offline = { webkitCache, webkitRestart };

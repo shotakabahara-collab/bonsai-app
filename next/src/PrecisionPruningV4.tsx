@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { BonsaiStage } from './BonsaiStage';
 import type { BonsaiState } from './model';
 import {
@@ -26,6 +26,7 @@ export function PrecisionPruningV4({ bonsai, onClose, onApply }: {
   const [siteId, setSiteId] = useState<PruningSiteId>('apexLeader');
   const [technique, setTechnique] = useState<PruningTechnique>('needleThin');
   const sites = pruningSitesForGroup(bonsai.craft, group);
+  const allSites = useMemo(() => PRUNING_GROUPS.flatMap(item => pruningSitesForGroup(bonsai.craft, item.id)), [bonsai.craft]);
   const selected = sites.find(site => site.id === siteId) ?? sites[0];
   const selectedState = selected?.state;
   const overview = useMemo(() => seasonalOverview(bonsai), [bonsai]);
@@ -36,6 +37,21 @@ export function PrecisionPruningV4({ bonsai, onClose, onApply }: {
     setGroup(next);
     const first = PRUNING_SITES.find(site => site.group === next);
     if (first) setSiteId(first.id);
+  };
+
+  const chooseSiteFromPhoto = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('button')) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width * 100;
+    const y = (event.clientY - rect.top) / rect.height * 100;
+    const nearest = allSites
+      .filter(site => !site.state.removed && !site.blocked)
+      .map(site => ({ site, distance: (site.x - x) ** 2 + (site.y - y) ** 2 * .8 }))
+      .sort((a, b) => a.distance - b.distance)[0]?.site;
+    if (!nearest) return;
+    setGroup(nearest.group);
+    setSiteId(nearest.id);
   };
 
   const apply = () => {
@@ -67,7 +83,7 @@ export function PrecisionPruningV4({ bonsai, onClose, onApply }: {
           <p>適期・樹勢・局所健康は実行禁止ではなく、作業後の結果へ反映します。成立しない部位・技法だけ実行できません。</p>
         </section>
 
-        <div className="precision-stage-wrap">
+        <div className="precision-stage-wrap" data-direct-pick="true" onPointerUp={chooseSiteFromPhoto}>
           <BonsaiStage bonsai={bonsai} className="care-stage" />
           {sites.map(site => (
             <button
@@ -83,6 +99,7 @@ export function PrecisionPruningV4({ bonsai, onClose, onApply }: {
             </button>
           ))}
         </div>
+        <p className="precision-stage-tap-hint">画像の枝先・葉棚・枝元を直接タップして選択</p>
 
         <div className="precision-group-tabs" aria-label="枝系統">
           {PRUNING_GROUPS.map(item => (

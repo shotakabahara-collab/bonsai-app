@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   PARTS,
   diseaseName,
@@ -93,14 +93,36 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
   const deadwoodProjects = bonsai.craft.deadwoodProjects;
   const unfinishedDeadwood = activeDeadwoodProjects(bonsai);
   const photo = failed ? FALLBACK[bonsai.species] : source;
+  const selectedDefinition = PARTS.find(part => part.id === selectedPart);
+  const selectPartFromPhoto = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!interactive || !onSelectPart) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('button')) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const photoAspect = 900 / 1500;
+    const boxAspect = rect.width / rect.height;
+    const renderedWidth = boxAspect > photoAspect ? rect.height * photoAspect : rect.width;
+    const renderedHeight = boxAspect > photoAspect ? rect.height : rect.width / photoAspect;
+    const offsetX = (rect.width - renderedWidth) / 2;
+    const offsetY = (rect.height - renderedHeight) / 2;
+    const x = (event.clientX - rect.left - offsetX) / renderedWidth * 100;
+    const y = (event.clientY - rect.top - offsetY) / renderedHeight * 100;
+    if (x < 0 || x > 100 || y < 0 || y > 100) return;
+    const nearest = PARTS.reduce((best, part) => {
+      const distance = (part.x - x) ** 2 + (part.y - y) ** 2 * .82;
+      return !best || distance < best.distance ? { part, distance } : best;
+    }, undefined as { part: (typeof PARTS)[number]; distance: number } | undefined);
+    if (nearest) onSelectPart(nearest.part.id);
+  };
 
   return (
     <figure
-      className={`bonsai-stage photoreal-craft-v6 photoreal-craft-v7 ${dead ? 'bonsai-dead' : ''} ${className}`}
+      className={`bonsai-stage photoreal-craft-v6 photoreal-craft-v7 gameplay-v8-stage ${dead ? 'bonsai-dead' : ''} ${className}`}
       aria-label={`${bonsai.name}の現在の姿`}
-      data-renderer="photoreal-craft-v7"
+      data-renderer="gameplay-v8"
+      data-photo-cleaned={bonsai.species === 'pine' && !failed ? 'true' : 'not-applicable'}
     >
-      <div className="bonsai-photo-canvas" data-testid="bonsai-photo-canvas">
+      <div className={`bonsai-photo-canvas ${interactive ? 'direct-part-picker' : ''}`} data-testid="bonsai-photo-canvas" onPointerUp={selectPartFromPhoto}>
         <img
           className="bonsai-photo"
           src={photo}
@@ -124,6 +146,7 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
           );
         })}
 
+        {interactive && (
         <svg className="precision-prune-svg" viewBox="0 0 900 1500" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
           <defs>
             <filter id={`${id}-leaf-fade`} x="-40%" y="-40%" width="180%" height="180%">
@@ -157,6 +180,7 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
             );
           })}
         </svg>
+        )}
 
         <svg
           className={`wire-layer authentic-work-layer ${interactive ? 'wire-layer-editing' : 'wire-layer-viewing'}`}
@@ -256,11 +280,15 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
           )}
         </svg>
 
+        {interactive && selectedDefinition && (
+          <div className="direct-part-selection" style={{ left: `${selectedDefinition.x}%`, top: `${selectedDefinition.y}%` }} aria-hidden="true"><span>{selectedDefinition.name}</span></div>
+        )}
+        {interactive && <div className="direct-pick-hint">写真をタップして部位を選択</div>}
         {interactive && PARTS.map(part => (
           <button
             type="button"
             key={part.id}
-            className={`part-hotspot ${selectedPart === part.id ? 'selected' : ''}`}
+            className={`part-hotspot part-hit-zone ${selectedPart === part.id ? 'selected' : ''}`}
             style={{ left: `${part.x}%`, top: `${part.y}%` }}
             aria-label={`${part.name}を選択`}
             onClick={() => onSelectPart?.(part.id)}
