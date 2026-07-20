@@ -1,0 +1,82 @@
+name: Inspect photographed wire v7 payload
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6-final]
+    paths: ['.github/workflows/inspect-wire-v7-payload.yml']
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/inspect-wire-v7-payload.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6-final
+          fetch-depth: 1
+      - name: Inspect exact transfer bytes
+        run: |
+          python - <<'PY' | tee /tmp/wire-v7-payload-diagnostic.txt
+          from pathlib import Path
+          import base64, gzip, hashlib, json
+          alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+          expected = {
+              'payload-000': ['88291e5a2048c266a69ee0875aafee709013f9da'],
+              'payload-001': ['f37909f7446ba4febe7bdf9938088c6c4091d3c7'],
+              'payload-002': ['fcd5091b0f121a14e5073cf6ff3b965f07a4df4f'],
+              'payload-003': ['67f5d3a741b25ea74b7b871742ab1d61d82e239c'],
+              'payload-004': ['449078c4f93cb7368a888d0a7c259860a2649124', '2329da08d0554ed10f80a41babc4755e4e465be9'],
+              'payload-005': ['0d5dea317d4f3fbbf296fe10334339d33be7aff9', '89c3b3a622a6c4604583e84253ee719b974b35d7', '0498fc58568bc297d97718adc97c340666779176'],
+              'payload-006': ['58bef780d85004fd6b511ab5fa568b852e5b9dfe'],
+          }
+          def sha(value: str) -> str:
+              raw = value.encode('ascii')
+              return hashlib.sha1(f'blob {len(raw)}\0'.encode()+raw).hexdigest()
+          def one_edit(value: str, target: str):
+              if sha(value) == target: return {'exact': True}
+              chars=list(value)
+              for i, old in enumerate(chars):
+                  for new in alphabet:
+                      if new == old: continue
+                      chars[i]=new
+                      if sha(''.join(chars)) == target:
+                          return {'exact': False, 'repair': [i, old, new]}
+                  chars[i]=old
+              return {'exact': False, 'repair': None}
+          report={}
+          joined=''
+          for name, targets in expected.items():
+              value=(Path('.wire-v7')/name).read_text(encoding='ascii')
+              joined += value
+              size=4000 if len(targets)>1 else len(value)
+              parts=[value[i*4000:(i+1)*4000] for i in range(len(targets))] if len(targets)>1 else [value]
+              report[name]={'length':len(value),'wholeSha':sha(value),'parts':[]}
+              for index,(part,target) in enumerate(zip(parts,targets)):
+                  report[name]['parts'].append({'index':index,'length':len(part),'sha':sha(part),'target':target,'oneEdit':one_edit(part,target)})
+          report['joinedLength']=len(joined)
+          try:
+              raw=base64.b64decode(joined, validate=True)
+              report['decodedLength']=len(raw)
+              report['decodedSha256']=hashlib.sha256(raw).hexdigest()
+              try:
+                  gzip.decompress(raw)
+                  report['gzip']='ok'
+              except Exception as error:
+                  report['gzip']=repr(error)
+          except Exception as error:
+              report['decode']=repr(error)
+          print(json.dumps(report,indent=2,ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wire-v7-payload-diagnostic
+          path: /tmp/wire-v7-payload-diagnostic.txt
+          if-no-files-found: error
+          retention-days: 3
