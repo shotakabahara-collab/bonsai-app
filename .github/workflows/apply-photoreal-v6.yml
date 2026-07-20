@@ -40,7 +40,7 @@ jobs:
           git apply --whitespace=error .photoreal-v6-final-text.patch
           git diff --check
 
-      - name: Calibrate natural bark islands and fresh deadwood opacity
+      - name: Calibrate photographed work and identical artwork captures
         run: |
           python <<'PY'
           from pathlib import Path
@@ -61,6 +61,49 @@ jobs:
           assert style.count('opacity: .68;') == 1, 'fresh shari opacity anchor changed'
           style = style.replace('opacity: .58;', 'opacity: .50;').replace('opacity: .68;', 'opacity: .52;')
           css.write_text(style, encoding='utf-8')
+
+          test_path = Path('next/tests/authentic-v5.mjs')
+          test = test_path.read_text(encoding='utf-8')
+          day_anchor = "const DAY = 86_400_000;\n"
+          assert test.count(day_anchor) == 1, 'DAY anchor changed'
+          test = test.replace(day_anchor, day_anchor + """const ARTWORK_CAPTURE_STYLE = `\n  .topbar, .bottom-nav, .completion-dock, .wire-status-tag,\n  .deadwood-status-tag, .dead-tree-status-tag, .wall-caption,\n  .wall-mode > button, .toast { visibility: hidden !important; }\n`;\n""")
+
+          replacements = {
+            "  await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-base-artwork.png' });":
+              "  await captureArtwork(page, '.bonsai-stage [data-testid=\"bonsai-photo-canvas\"]', 'test-artifacts/authentic-v5-base-artwork.png');",
+            "  await page.locator('.wall-stage [data-testid=\"bonsai-photo-canvas\"]').screenshot({ path: 'test-artifacts/photoreal-v6-wall-base-artwork.png' });":
+              "  await captureArtwork(page, '.wall-stage [data-testid=\"bonsai-photo-canvas\"]', 'test-artifacts/photoreal-v6-wall-base-artwork.png');",
+            "  await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-wire-artwork.png' });":
+              "  await captureArtwork(page, '.bonsai-stage [data-testid=\"bonsai-photo-canvas\"]', 'test-artifacts/authentic-v5-wire-artwork.png');",
+            "  await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-deadwood-fresh-artwork.png' });":
+              "  await captureArtwork(page, '.bonsai-stage [data-testid=\"bonsai-photo-canvas\"]', 'test-artifacts/authentic-v5-deadwood-fresh-artwork.png');",
+            "  await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-deadwood-paused-artwork.png' });":
+              "  await captureArtwork(page, '.bonsai-stage [data-testid=\"bonsai-photo-canvas\"]', 'test-artifacts/authentic-v5-deadwood-paused-artwork.png');",
+            "  await page.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-offline-artwork.png' });":
+              "  await captureArtwork(page, '.bonsai-stage [data-testid=\"bonsai-photo-canvas\"]', 'test-artifacts/authentic-v5-offline-artwork.png');",
+            "    await offlinePage.locator('.bonsai-stage').screenshot({ path: 'test-artifacts/authentic-v5-offline-artwork.png' });":
+              "    await captureArtwork(offlinePage, '.bonsai-stage [data-testid=\"bonsai-photo-canvas\"]', 'test-artifacts/authentic-v5-offline-artwork.png');",
+          }
+          for old, new in replacements.items():
+            assert test.count(old) == 1, old
+            test = test.replace(old, new)
+
+          combined_old = """  await page.locator('.wall-stage [data-testid=\"bonsai-photo-canvas\"]').screenshot({ path: 'test-artifacts/photoreal-v6-combined-artwork.png' });
+  await page.getByRole('button', { name: '鑑賞を終了' }).click();"""
+          combined_new = """  await page.getByRole('button', { name: '鑑賞を終了' }).click();
+  await page.waitForSelector('.wall-mode', { state: 'detached', timeout: 5000 });
+  await captureArtwork(page, '.bonsai-stage [data-testid=\"bonsai-photo-canvas\"]', 'test-artifacts/photoreal-v6-combined-artwork.png');"""
+          assert test.count(combined_old) == 1, 'combined artwork capture anchor changed'
+          test = test.replace(combined_old, combined_new)
+
+          helper_anchor = "function attachErrors(page) {"
+          helper = """async function captureArtwork(page, selector, path) {
+  await page.locator(selector).screenshot({ path, style: ARTWORK_CAPTURE_STYLE });
+}
+
+function attachErrors(page) {"""
+          assert test.count(helper_anchor) == 1, 'capture helper anchor changed'
+          test_path.write_text(test.replace(helper_anchor, helper), encoding='utf-8')
           PY
           git diff --check
 
