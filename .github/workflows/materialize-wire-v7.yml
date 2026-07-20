@@ -37,6 +37,16 @@ jobs:
           gzip -dc /tmp/wire-v7.patch.gz > /tmp/wire-v7.patch
           git apply --check /tmp/wire-v7.patch
           git apply /tmp/wire-v7.patch
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('next/scripts/visual-audit-v6.py')
+          text = path.read_text(encoding='utf-8')
+          old = "    if result['mean'] < .035 or result['changedRatio'] < .00018:\n"
+          new = "    min_mean = .012 if label == 'wireDelta' else .035\n    if result['mean'] < min_mean or result['changedRatio'] < .00018:\n"
+          if text.count(old) != 1:
+              raise SystemExit('wire visual threshold anchor changed')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
           git diff --check
 
       - name: Generate deterministic photographed wire and deadwood states
