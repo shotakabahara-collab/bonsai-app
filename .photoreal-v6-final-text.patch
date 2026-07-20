@@ -1,0 +1,506 @@
+diff --git a/.github/workflows/deploy-react-v1.yml b/.github/workflows/deploy-react-v1.yml
+index 6be0f86..72d7872 100644
+--- a/.github/workflows/deploy-react-v1.yml
++++ b/.github/workflows/deploy-react-v1.yml
+@@ -49,7 +49,7 @@ jobs:
+         working-directory: next
+         run: |
+           npx playwright install --with-deps webkit
+-          python -m pip install --disable-pip-version-check pillow
++          python -m pip install --disable-pip-version-check pillow numpy
+ 
+       - name: Run local migration, existing flow, seasonal and authentic work audits
+         working-directory: next
+@@ -121,7 +121,7 @@ jobs:
+           {
+             npm ci
+             npx playwright install --with-deps webkit
+-            python -m pip install --disable-pip-version-check pillow
++            python -m pip install --disable-pip-version-check pillow numpy
+           } 2>&1 | tee /tmp/public-install.log
+ 
+       - name: Wait until GitHub Pages serves photoreal craft v6
+diff --git a/.github/workflows/photoreal-craft-v6-ci.yml b/.github/workflows/photoreal-craft-v6-ci.yml
+new file mode 100644
+index 0000000..e0445f6
+--- /dev/null
++++ b/.github/workflows/photoreal-craft-v6-ci.yml
+@@ -0,0 +1,82 @@
++name: Photoreal Craft v6 validation
++
++on:
++  pull_request:
++    branches: [main]
++    paths:
++      - 'next/**'
++      - '.github/workflows/photoreal-craft-v6-ci.yml'
++      - '.github/workflows/deploy-react-v1.yml'
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++concurrency:
++  group: photoreal-craft-v6-${{ github.event.pull_request.number || github.ref }}
++  cancel-in-progress: true
++
++jobs:
++  iphone-webkit-audit:
++    runs-on: ubuntu-latest
++    timeout-minutes: 45
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: '22'
++          cache: npm
++          cache-dependency-path: next/package-lock.json
++      - name: Install exact dependencies
++        working-directory: next
++        run: npm ci
++      - name: Typecheck, deterministic model audit and production build
++        working-directory: next
++        run: |
++          npm run typecheck
++          npm run test:photoreal:unit
++          npm run build
++          python -m py_compile scripts/visual-audit-v6.py
++      - name: Install iPhone WebKit and image audit tools
++        working-directory: next
++        run: |
++          npx playwright install --with-deps webkit
++          python -m pip install --disable-pip-version-check pillow numpy
++      - name: Start verified production preview
++        working-directory: next
++        run: |
++          setsid npm run preview >/tmp/bonsai-photoreal-v6-preview.log 2>&1 &
++          server=$!
++          echo "$server" >/tmp/bonsai-photoreal-v6-preview.pid
++          for i in $(seq 1 120); do
++            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
++            sleep .25
++          done
++          cat /tmp/bonsai-photoreal-v6-preview.log
++          exit 1
++      - name: Run 390x844 DPR3 WebKit regressions
++        working-directory: next
++        run: |
++          npm run test:smoke
++          node tests/seasonal-v4.mjs
++          npm run test:photoreal
++      - name: Reject tubes, floating work, bright ribbons and circular markers
++        working-directory: next
++        run: python scripts/visual-audit-v6.py --output photoreal-v6-pr-visual-audit.json
++      - name: Preserve complete audit bundle
++        if: always()
++        uses: actions/upload-artifact@v4
++        with:
++          name: bonsai-photoreal-craft-v6-pr-audit
++          path: |
++            next/test-artifacts
++            /tmp/bonsai-photoreal-v6-preview.log
++          if-no-files-found: error
++          retention-days: 14
++      - name: Stop preview
++        if: always()
++        run: |
++          if test -f /tmp/bonsai-photoreal-v6-preview.pid; then
++            server="$(cat /tmp/bonsai-photoreal-v6-preview.pid)"
++            kill -TERM -- -"$server" 2>/dev/null || kill "$server" 2>/dev/null || true
++          fi
+diff --git a/next/scripts/visual-audit-v6.py b/next/scripts/visual-audit-v6.py
+new file mode 100644
+index 0000000..83dacd3
+--- /dev/null
++++ b/next/scripts/visual-audit-v6.py
+@@ -0,0 +1,180 @@
++from __future__ import annotations
++
++import argparse
++import json
++from collections import deque
++from pathlib import Path
++
++import numpy as np
++from PIL import Image, ImageChops, ImageStat
++
++
++def parse_args() -> argparse.Namespace:
++    parser = argparse.ArgumentParser(description='Audit Photoreal Craft v6 iPhone artwork captures.')
++    parser.add_argument('--root', default='test-artifacts')
++    parser.add_argument('--output', default='photoreal-v6-visual-audit.json')
++    return parser.parse_args()
++
++
++def load_artwork(path: Path) -> Image.Image:
++    if not path.exists() or path.stat().st_size < 120_000:
++        raise SystemExit(f'{path.name}: missing or suspiciously small')
++    image = Image.open(path).convert('RGB')
++    width, height = image.size
++    if width < 600 or height < 800:
++        raise SystemExit(f'{path.name}: unexpected artwork size {image.size}')
++    return image
++
++
++def image_health(image: Image.Image, name: str, size_bytes: int) -> dict[str, object]:
++    sample = image.resize((120, 176)).convert('L')
++    values = np.asarray(sample, dtype=np.uint8)
++    stat = ImageStat.Stat(sample)
++    result = {
++        'size': list(image.size),
++        'bytes': size_bytes,
++        'mean': stat.mean[0],
++        'variance': stat.var[0],
++        'brightRatio': float(np.mean(values > 45)),
++        'nearWhiteRatio': float(np.mean(values > 248)),
++    }
++    if stat.mean[0] < 17 or stat.var[0] < 230 or result['brightRatio'] < .05:
++        raise SystemExit(f'{name}: blank or hidden photographed artwork {result}')
++    return result
++
++
++def connected_components(mask: np.ndarray) -> list[dict[str, int | float]]:
++    height, width = mask.shape
++    seen = np.zeros_like(mask, dtype=bool)
++    components: list[dict[str, int | float]] = []
++    for y0, x0 in zip(*np.nonzero(mask & ~seen)):
++        if seen[y0, x0]:
++            continue
++        queue = deque([(int(y0), int(x0))])
++        seen[y0, x0] = True
++        count = 0
++        min_x = max_x = int(x0)
++        min_y = max_y = int(y0)
++        while queue:
++            y, x = queue.popleft()
++            count += 1
++            min_x = min(min_x, x)
++            max_x = max(max_x, x)
++            min_y = min(min_y, y)
++            max_y = max(max_y, y)
++            for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)):
++                ny, nx = y + dy, x + dx
++                if 0 <= ny < height and 0 <= nx < width and mask[ny, nx] and not seen[ny, nx]:
++                    seen[ny, nx] = True
++                    queue.append((ny, nx))
++        bbox_w = max_x - min_x + 1
++        bbox_h = max_y - min_y + 1
++        components.append({
++            'pixels': count,
++            'width': bbox_w,
++            'height': bbox_h,
++            'fill': count / max(1, bbox_w * bbox_h),
++        })
++    return sorted(components, key=lambda item: int(item['pixels']), reverse=True)
++
++
++def compare_state(base: Image.Image, changed: Image.Image, label: str) -> dict[str, object]:
++    if changed.size != base.size:
++        raise SystemExit(f'{label}: artwork size changed {base.size} -> {changed.size}')
++    # Downsample enough to absorb antialiasing but preserve bands and giant tubes.
++    base_small = base.resize((300, 500), Image.Resampling.LANCZOS)
++    changed_small = changed.resize((300, 500), Image.Resampling.LANCZOS)
++    delta_rgb = np.asarray(ImageChops.difference(base_small, changed_small), dtype=np.uint8)
++    delta = np.max(delta_rgb, axis=2)
++    changed_mask = delta > 7
++    severe_mask = delta > 55
++    components = connected_components(changed_mask)
++    largest = components[0] if components else {'pixels': 0, 'width': 0, 'height': 0, 'fill': 0.0}
++    row_ratio = np.mean(changed_mask, axis=1)
++    column_ratio = np.mean(changed_mask, axis=0)
++
++    changed_arr = np.asarray(changed_small, dtype=np.uint8)
++    red, green, blue = changed_arr[..., 0], changed_arr[..., 1], changed_arr[..., 2]
++    bright_orange = (red > 185) & (green > 80) & (green < 175) & (blue < 95) & ((red.astype(int) - green.astype(int)) > 45)
++    pale_band = (delta > 30) & (red > 210) & (green > 190) & (blue > 165)
++
++    result: dict[str, object] = {
++        'mean': float(np.mean(delta)),
++        'changedRatio': float(np.mean(changed_mask)),
++        'severeRatio': float(np.mean(severe_mask)),
++        'maxRowRatio': float(np.max(row_ratio)),
++        'maxColumnRatio': float(np.max(column_ratio)),
++        'largestComponent': largest,
++        'componentCount': len(components),
++        'brightOrangeRatio': float(np.mean(bright_orange & changed_mask)),
++        'paleBandRatio': float(np.mean(pale_band)),
++    }
++    if result['mean'] < .035 or result['changedRatio'] < .00018:
++        raise SystemExit(f'{label}: work produced no visible state change {result}')
++    if result['changedRatio'] > .16 or result['severeRatio'] > .075:
++        raise SystemExit(f'{label}: effect is implausibly broad {result}')
++    if result['maxRowRatio'] > .56 or result['maxColumnRatio'] > .48:
++        raise SystemExit(f'{label}: work crosses too much of the photograph {result}')
++    if int(largest['width']) > 150 or int(largest['height']) > 360:
++        raise SystemExit(f'{label}: giant connected tube or ribbon detected {result}')
++    if result['brightOrangeRatio'] > .004 or result['paleBandRatio'] > .018:
++        raise SystemExit(f'{label}: luminous orange or pale pasted ribbon detected {result}')
++
++    circular = [item for item in components if 5 <= int(item['width']) <= 44 and 5 <= int(item['height']) <= 44 and .72 <= float(item['width']) / max(1, float(item['height'])) <= 1.38 and float(item['fill']) > .5]
++    result['circularMarkerCandidates'] = circular[:8]
++    if len(circular) > 2:
++        raise SystemExit(f'{label}: circular marker/halo candidates detected {result}')
++    return result
++
++
++def compare_identity(first: Image.Image, second: Image.Image, label: str) -> dict[str, float]:
++    if first.size != second.size:
++        raise SystemExit(f'{label}: artwork size changed')
++    delta = np.asarray(ImageChops.difference(first, second).resize((300, 500)).convert('L'), dtype=np.uint8)
++    result = {'mean': float(np.mean(delta)), 'changedRatio': float(np.mean(delta > 5))}
++    if result['mean'] > .12 or result['changedRatio'] > .0015:
++        raise SystemExit(f'{label}: irreversible physical work changed unexpectedly {result}')
++    return result
++
++
++def main() -> None:
++    args = parse_args()
++    root = Path(args.root)
++    names = [
++        'authentic-v5-base-artwork.png',
++        'authentic-v5-wire-artwork.png',
++        'authentic-v5-deadwood-fresh-artwork.png',
++        'authentic-v5-deadwood-paused-artwork.png',
++        'photoreal-v6-combined-artwork.png',
++        'authentic-v5-offline-artwork.png',
++    ]
++    images: dict[str, Image.Image] = {}
++    report: dict[str, object] = {}
++    for name in names:
++        path = root / name
++        image = load_artwork(path)
++        images[name] = image
++        report[name] = image_health(image, name, path.stat().st_size)
++
++    base = images['authentic-v5-base-artwork.png']
++    report['wireDelta'] = compare_state(base, images['authentic-v5-wire-artwork.png'], 'wireDelta')
++    report['deadwoodDelta'] = compare_state(base, images['authentic-v5-deadwood-fresh-artwork.png'], 'deadwoodDelta')
++    report['combinedDelta'] = compare_state(base, images['photoreal-v6-combined-artwork.png'], 'combinedDelta')
++    report['pauseAppearanceDelta'] = compare_identity(
++        images['authentic-v5-deadwood-fresh-artwork.png'],
++        images['authentic-v5-deadwood-paused-artwork.png'],
++        'pauseAppearanceDelta',
++    )
++    report['offlineAppearanceDelta'] = compare_identity(
++        images['photoreal-v6-combined-artwork.png'],
++        images['authentic-v5-offline-artwork.png'],
++        'offlineAppearanceDelta',
++    )
++
++    output = root / args.output
++    output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
++    print(json.dumps(report, ensure_ascii=False))
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/next/src/photoreal-v6.css b/next/src/photoreal-v6.css
+new file mode 100644
+index 0000000..a4ddfb4
+--- /dev/null
++++ b/next/src/photoreal-v6.css
+@@ -0,0 +1,204 @@
++/* Photoreal Craft v6 — all work is registered to the 900×1500 master photograph. */
++.photoreal-craft-v6 {
++  isolation: isolate;
++}
++
++.photoreal-craft-v6 .bonsai-photo-canvas {
++  position: absolute;
++  inset: 0;
++  overflow: hidden;
++  width: 100%;
++  height: 100%;
++  background: #0a120d;
++}
++
++.photoreal-craft-v6 .bonsai-photo,
++.photoreal-craft-v6 .precision-prune-svg,
++.photoreal-craft-v6 .authentic-work-layer {
++  position: absolute;
++  inset: 0;
++  display: block;
++  width: 100%;
++  height: 100%;
++}
++
++.photoreal-craft-v6 .bonsai-photo {
++  z-index: 0;
++  object-fit: contain;
++  object-position: center;
++}
++
++.photoreal-craft-v6 .stage-vignette {
++  z-index: 2;
++}
++
++.photoreal-craft-v6 .part-visual {
++  z-index: 3;
++}
++
++.photoreal-craft-v6 .precision-prune-svg {
++  z-index: 4;
++  overflow: hidden;
++  pointer-events: none;
++}
++
++.photoreal-craft-v6 .authentic-work-layer {
++  z-index: 5;
++  overflow: hidden;
++  opacity: 1;
++  pointer-events: none;
++}
++
++.photoreal-craft-v6 .part-hotspot {
++  z-index: 8;
++}
++
++/* A visible half-turn is deliberately short.  No path connects one turn to the next. */
++.photoreal-craft-v6 .wire-turn-back,
++.photoreal-craft-v6 .wire-turn-front {
++  fill: none;
++  vector-effect: non-scaling-stroke;
++  stroke-linecap: round;
++  stroke-linejoin: round;
++}
++
++.photoreal-craft-v6 .wire-turn-back {
++  stroke-width: 1.05;
++  opacity: .32;
++}
++
++.photoreal-craft-v6 .wire-turn-front {
++  stroke-width: 1.35;
++  opacity: .82;
++  filter: drop-shadow(.35px .5px .32px rgba(17, 9, 5, .54));
++}
++
++.photoreal-craft-v6 .wire-group-strong .wire-turn-back {
++  stroke-width: 1.55;
++  opacity: .36;
++}
++
++.photoreal-craft-v6 .wire-group-strong .wire-turn-front {
++  stroke-width: 2.05;
++  opacity: .88;
++}
++
++/* Deadwood is muted wood, not a luminous orange ribbon. */
++.photoreal-craft-v6 .deadwood-effect {
++  pointer-events: none;
++  isolation: isolate;
++}
++
++.photoreal-craft-v6 .deadwood-shari-outline,
++.photoreal-craft-v6 .deadwood-jin-outline,
++.photoreal-craft-v6 .deadwood-jin-core,
++.photoreal-craft-v6 .deadwood-shari-live-edge,
++.photoreal-craft-v6 .deadwood-jin-live-edge,
++.photoreal-craft-v6 .deadwood-grain {
++  fill: none;
++  vector-effect: non-scaling-stroke;
++  stroke-linecap: round;
++  stroke-linejoin: round;
++}
++
++.photoreal-craft-v6 .deadwood-shari-outline,
++.photoreal-craft-v6 .deadwood-jin-outline {
++  stroke: rgba(35, 24, 17, .68);
++  opacity: .62;
++  filter: drop-shadow(.35px .5px .3px rgba(0, 0, 0, .38));
++}
++
++.photoreal-craft-v6 .deadwood-shari-outline {
++  stroke-width: .75;
++}
++
++.photoreal-craft-v6 .deadwood-shari-fill {
++  stroke: none;
++  opacity: .58;
++  mix-blend-mode: normal;
++}
++
++.photoreal-craft-v6 .deadwood-jin-core {
++  opacity: .72;
++}
++
++.photoreal-craft-v6 .deadwood-photo-texture {
++  mix-blend-mode: luminosity;
++  opacity: .42;
++}
++
++.photoreal-craft-v6 .deadwood-live-edge {
++  stroke: rgba(68, 42, 28, .66);
++  stroke-width: .85;
++  opacity: .64;
++}
++
++.photoreal-craft-v6 .deadwood-grain {
++  stroke: rgba(61, 54, 43, .46);
++  stroke-dasharray: 17 5 8 4;
++  stroke-width: .58;
++  opacity: .54;
++}
++
++.photoreal-craft-v6 .deadwood-grain-b {
++  stroke: rgba(230, 224, 204, .30);
++  stroke-dasharray: 8 7 20 5;
++  stroke-width: .45;
++}
++
++.photoreal-craft-v6 .deadwood-bark-island {
++  fill: rgba(50, 34, 24, .72);
++  stroke: rgba(18, 12, 9, .45);
++  stroke-width: .45;
++}
++
++.photoreal-craft-v6 .deadwood-effect.stage-fresh .deadwood-shari-fill,
++.photoreal-craft-v6 .deadwood-effect.stage-fresh .deadwood-jin-core {
++  opacity: .68;
++}
++
++.photoreal-craft-v6 .deadwood-effect.stage-fresh .deadwood-live-edge {
++  stroke: rgba(104, 55, 37, .72);
++}
++
++.photoreal-craft-v6 .deadwood-effect.stage-fresh .deadwood-grain {
++  opacity: .24;
++}
++
++.photoreal-craft-v6 .deadwood-effect.stage-drying .deadwood-grain {
++  opacity: .38;
++}
++
++.photoreal-craft-v6 .deadwood-effect.stage-weathering .deadwood-grain,
++.photoreal-craft-v6 .deadwood-effect.stage-mature .deadwood-grain {
++  opacity: .66;
++}
++
++.photoreal-craft-v6 .jin-torn-end {
++  stroke: rgba(54, 43, 31, .58);
++  stroke-width: .72;
++  filter: none;
++}
++
++.photoreal-craft-v6 .precision-cut-scar-natural {
++  fill: rgba(137, 91, 55, .68);
++  stroke: rgba(49, 29, 18, .74);
++  stroke-width: .72;
++  vector-effect: non-scaling-stroke;
++}
++
++.photoreal-craft-v6 .authentic-prune-veil {
++  fill: rgba(4, 12, 7, .48);
++  mix-blend-mode: multiply;
++}
++
++.photoreal-craft-v6 .wire-status-tag,
++.photoreal-craft-v6 .deadwood-status-tag,
++.photoreal-craft-v6 .dead-tree-status-tag {
++  z-index: 10;
++}
++
++@media (max-width: 520px) {
++  .photoreal-craft-v6 .wire-turn-front { stroke-width: 1.22; }
++  .photoreal-craft-v6 .wire-group-strong .wire-turn-front { stroke-width: 1.82; }
++}
