@@ -40,6 +40,30 @@ jobs:
           git apply --whitespace=error .photoreal-v6-final-text.patch
           git diff --check
 
+      - name: Calibrate natural bark islands and fresh deadwood opacity
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          stage = Path('next/src/BonsaiStage.tsx')
+          text = stage.read_text(encoding='utf-8')
+          old_left = """    'M400 738 C405 721 410 704 415 687 C413 707 409 725 404 742 Z'\n  ],"""
+          new_left = """    'M400 738 C405 721 410 704 415 687 C413 707 409 725 404 742 Z',\n    'M447 620 C451 607 455 594 459 581 C458 596 455 610 451 624 Z'\n  ],"""
+          old_right = """    'M416 738 C421 721 426 704 431 687 C429 707 425 725 420 742 Z'\n  ]"""
+          new_right = """    'M416 738 C421 721 426 704 431 687 C429 707 425 725 420 742 Z',\n    'M463 620 C467 607 471 594 475 581 C474 596 471 610 467 624 Z'\n  ]"""
+          assert text.count(old_left) == 1, 'left shari bark-island anchor changed'
+          assert text.count(old_right) == 1, 'right shari bark-island anchor changed'
+          stage.write_text(text.replace(old_left, new_left).replace(old_right, new_right), encoding='utf-8')
+
+          css = Path('next/src/photoreal-v6.css')
+          style = css.read_text(encoding='utf-8')
+          assert style.count('opacity: .58;') == 1, 'base shari opacity anchor changed'
+          assert style.count('opacity: .68;') == 1, 'fresh shari opacity anchor changed'
+          style = style.replace('opacity: .58;', 'opacity: .50;').replace('opacity: .68;', 'opacity: .52;')
+          css.write_text(style, encoding='utf-8')
+          PY
+          git diff --check
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -115,14 +139,14 @@ jobs:
       - name: Commit only the audited application source
         run: |
           rm -rf next/.test-cjs next/scripts/__pycache__
-          rm -rf .photoreal-v6-payload .photoreal-v6-direct
-          rm -f .photoreal-v6-source.patch.xz .photoreal-v6-source.ready
-          rm -f .photoreal-v6-final.patch.xz .photoreal-v6-final.ready
-          rm -f .photoreal-v6-final-text.patch
-          rm -f .github/workflows/apply-photoreal-v6.yml
+          rm -rf .photoreal-v6-*
+          rm -f .github/workflows/apply-photoreal-v6*.yml
+          rm -f .github/workflows/commit-photoreal-v6-candidate.yml
           rm -f .github/workflows/diagnose-photoreal-v6.yml
           rm -f .github/workflows/export-applied-photoreal-v6.yml
           rm -f .github/workflows/export-photoreal-v6-source.yml
+          rm -f .github/workflows/photoreal-v6-final-gate.yml
+          rm -f .github/workflows/report-photoreal-v6-status.yml
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
