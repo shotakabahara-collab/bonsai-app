@@ -33,7 +33,7 @@ jobs:
       - name: Reassemble and verify the exact v6 source snapshot
         run: |
           set -euxo pipefail
-          cat .v6-final/src-* > /tmp/photoreal-v6-source.tar.gz.b64
+          cat .v6-final/src-* | tr -d '\r\n' > /tmp/photoreal-v6-source.tar.gz.b64
           test "$(wc -c < /tmp/photoreal-v6-source.tar.gz.b64)" -eq 42000
           base64 -d /tmp/photoreal-v6-source.tar.gz.b64 > /tmp/photoreal-v6-source.tar.gz
           echo '6f19d747e2cbe00d7e5ba9b2dbd006ba41ee444bde49d15310bdd734e7507652  /tmp/photoreal-v6-source.tar.gz' | sha256sum -c -
