@@ -1,0 +1,130 @@
+name: Publish Photoreal Craft v6 review evidence
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths:
+      - '.photoreal-v6-evidence.ready'
+      - 'next/tests/photoreal-v6.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: photoreal-v6-review-evidence
+  cancel-in-progress: true
+
+jobs:
+  capture-and-publish:
+    if: github.actor != 'github-actions[bot]' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6
+          fetch-depth: 0
+
+      - name: Verify committed v6 source
+        run: |
+          test -f next/tests/photoreal-v6.mjs
+          test -f next/scripts/visual-audit-v6.py
+          test -d next/public/assets/kuromatsu/craft-v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Build and install WebKit
+        working-directory: next
+        run: |
+          npm ci
+          npm run typecheck
+          npm run build
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Capture the complete iPhone-equivalent visual state
+        working-directory: next
+        run: |
+          set -euxo pipefail
+          setsid npm run preview >/tmp/bonsai-photoreal-v6-evidence.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/bonsai-photoreal-v6-preview.pid
+          trap 'kill -TERM -- -$server 2>/dev/null || true' EXIT
+          for i in $(seq 1 120); do
+            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break
+            sleep .25
+          done
+          npm run test:photoreal
+          python scripts/visual-audit-v6.py --output photoreal-v6-review-visual-audit.json
+
+      - name: Prepare compact review images in the repository
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          import json, shutil
+
+          source = Path('next/test-artifacts')
+          target = Path('docs/photoreal-v6')
+          target.mkdir(parents=True, exist_ok=True)
+          candidates = sorted(source.glob('*.png'))
+          selected = []
+          keywords = ('wire', 'deadwood', 'combined', 'composite', 'offline', 'stage')
+          for keyword in keywords:
+              match = next((p for p in candidates if keyword in p.name.lower() and p not in selected), None)
+              if match:
+                  selected.append(match)
+          if not selected:
+              raise SystemExit('No v6 review captures were produced')
+          manifest = []
+          for index, path in enumerate(selected[:8], 1):
+              image = Image.open(path).convert('RGB')
+              if image.width > 1170:
+                  height = round(image.height * 1170 / image.width)
+                  image = image.resize((1170, height), Image.Resampling.LANCZOS)
+              name = f'{index:02d}-{path.stem}.webp'
+              output = target / name
+              image.save(output, 'WEBP', quality=88, method=6)
+              manifest.append({'source': path.name, 'file': name, 'size': list(image.size), 'bytes': output.stat().st_size})
+          audit = source / 'photoreal-v6-review-visual-audit.json'
+          if audit.exists():
+              shutil.copy2(audit, target / 'visual-audit.json')
+          (target / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+          git diff --check
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-photoreal-v6-iphone-review
+          path: |
+            next/test-artifacts
+            docs/photoreal-v6
+            /tmp/bonsai-photoreal-v6-evidence.log
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Commit review evidence and add links to the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/photoreal-v6
+          git commit -m 'Photoreal Craft v6のiPhone相当レビュー画像を保存'
+          git push origin HEAD:agent/photoreal-craft-v6
+          sha=$(git rev-parse HEAD)
+          links=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path('docs/photoreal-v6/manifest.json').read_text())
+          for item in data:
+              print(f"- [{item['source']}](https://github.com/shotakabahara-collab/bonsai-app/blob/agent/photoreal-craft-v6/docs/photoreal-v6/{item['file']}?raw=1)")
+          PY
+          )
+          gh pr comment 10 --repo "$GITHUB_REPOSITORY" --body "Photoreal Craft v6 iPhone-equivalent review evidence\n\n- evidence SHA: \`${sha}\`\n- viewport: 390×844 / DPR 3 WebKit\n- production remains v5; these are PR-only review images.\n\n${links}"
