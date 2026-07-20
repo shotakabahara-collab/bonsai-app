@@ -55,14 +55,15 @@ jobs:
           for name, targets in expected.items():
               value=(Path('.wire-v7')/name).read_text(encoding='ascii')
               joined += value
-              size=4000 if len(targets)>1 else len(value)
               parts=[value[i*4000:(i+1)*4000] for i in range(len(targets))] if len(targets)>1 else [value]
               report[name]={'length':len(value),'wholeSha':sha(value),'parts':[]}
               for index,(part,target) in enumerate(zip(parts,targets)):
                   report[name]['parts'].append({'index':index,'length':len(part),'sha':sha(part),'target':target,'oneEdit':one_edit(part,target)})
           report['joinedLength']=len(joined)
+          Path('/tmp/wire-v7-corrupt.b64').write_text(joined,encoding='ascii')
           try:
               raw=base64.b64decode(joined, validate=True)
+              Path('/tmp/wire-v7-corrupt.tar.gz').write_bytes(raw)
               report['decodedLength']=len(raw)
               report['decodedSha256']=hashlib.sha256(raw).hexdigest()
               try:
@@ -77,6 +78,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: wire-v7-payload-diagnostic
-          path: /tmp/wire-v7-payload-diagnostic.txt
+          path: |
+            /tmp/wire-v7-payload-diagnostic.txt
+            /tmp/wire-v7-corrupt.b64
+            /tmp/wire-v7-corrupt.tar.gz
+            .wire-v7
           if-no-files-found: error
           retention-days: 3
