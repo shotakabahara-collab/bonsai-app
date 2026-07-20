@@ -1,0 +1,32 @@
+name: Export current wire v7 candidate source
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6-final]
+    paths: ['.github/workflows/export-wire-v7-source.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6-final
+          fetch-depth: 1
+      - name: Archive exact branch source
+        run: |
+          tar --exclude=.git --exclude=next/node_modules --exclude=next/dist --exclude=next/test-artifacts -czf /tmp/bonsai-wire-v7-source.tar.gz .
+          sha256sum /tmp/bonsai-wire-v7-source.tar.gz > /tmp/bonsai-wire-v7-source.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-wire-v7-source
+          path: |
+            /tmp/bonsai-wire-v7-source.tar.gz
+            /tmp/bonsai-wire-v7-source.sha256
+          if-no-files-found: error
+          retention-days: 3
