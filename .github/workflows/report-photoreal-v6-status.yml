@@ -1,0 +1,46 @@
+name: Report Photoreal Craft v6 implementation status
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths:
+      - '.photoreal-v6-report.ready'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6
+          fetch-depth: 0
+      - name: Inspect committed implementation
+        id: inspect
+        run: |
+          if test -f next/tests/photoreal-v6.mjs \
+            && test -f next/tests/photoreal-v6-unit.mjs \
+            && test -f next/scripts/visual-audit-v6.py \
+            && test -d next/public/assets/kuromatsu/craft-v6; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+            echo "assets=$(find next/public/assets/kuromatsu/craft-v6 -type f -name '*.webp' | wc -l)" >> "$GITHUB_OUTPUT"
+          else
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+            echo 'assets=0' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Comment implementation status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRESENT: ${{ steps.inspect.outputs.present }}
+          ASSETS: ${{ steps.inspect.outputs.assets }}
+        run: |
+          if test "$PRESENT" = true; then
+            gh pr comment 10 --repo "$GITHUB_REPOSITORY" --body "Photoreal Craft v6 source status: COMMITTED\n\n- branch SHA: \`${GITHUB_SHA}\`\n- raster craft WebP assets: ${ASSETS}\n- source tests and visual audit files: present\n\nThe final WebKit gate remains the authority for Ready/merge status."
+          else
+            gh pr comment 10 --repo "$GITHUB_REPOSITORY" --body "Photoreal Craft v6 source status: NOT YET COMMITTED at \`${GITHUB_SHA}\`. The source-application gates are still running or require repair."
+            exit 1
+          fi
