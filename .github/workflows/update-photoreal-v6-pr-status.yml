@@ -1,0 +1,35 @@
+name: Update Photoreal Craft v6 PR status
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths:
+      - 'next/tests/photoreal-v6.mjs'
+      - '.github/workflows/update-photoreal-v6-pr-status.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  update-status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6
+      - name: Update PR title when implementation source is committed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if test -f next/tests/photoreal-v6.mjs \
+            && test -f next/tests/photoreal-v6-unit.mjs \
+            && test -f next/scripts/visual-audit-v6.py \
+            && test -d next/public/assets/kuromatsu/craft-v6; then
+            gh pr edit 10 --repo "$GITHUB_REPOSITORY" --title 'Photoreal Craft v6：実装済み・最終監査中'
+            gh pr comment 10 --repo "$GITHUB_REPOSITORY" --body "Photoreal Craft v6 application source is committed at \`${GITHUB_SHA}\`. The PR remains unmerged while the final WebKit and photographed-artwork gates run."
+          else
+            gh pr edit 10 --repo "$GITHUB_REPOSITORY" --title 'Photoreal Craft v6：実装ペイロード修復中'
+            exit 1
+          fi
