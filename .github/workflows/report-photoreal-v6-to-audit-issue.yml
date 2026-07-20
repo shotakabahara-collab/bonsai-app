@@ -1,0 +1,74 @@
+name: Report Photoreal Craft v6 to production audit issue
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths:
+      - '.photoreal-v6-issue-report.ready'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6
+      - name: Wait for latest independent implementation gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 72); do
+            status=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow 'Apply Photoreal Craft v6 independent lane' --branch agent/photoreal-craft-v6 --limit 1 --json status --jq '.[0].status // "missing"')
+            test "$status" = completed && break
+            sleep 10
+          done
+          run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow 'Apply Photoreal Craft v6 independent lane' --branch agent/photoreal-craft-v6 --limit 1 --json databaseId,headSha,status,conclusion,url --jq '.[0]')
+          conclusion=$(printf '%s' "$run" | jq -r '.conclusion // "missing"')
+          run_sha=$(printf '%s' "$run" | jq -r '.headSha // "unknown"')
+          run_url=$(printf '%s' "$run" | jq -r '.url // ""')
+          source=false
+          assets=0
+          if test -f next/tests/photoreal-v6.mjs && test -f next/scripts/visual-audit-v6.py && test -d next/public/assets/kuromatsu/craft-v6; then
+            source=true
+            assets=$(find next/public/assets/kuromatsu/craft-v6 -type f -name '*.webp' | wc -l)
+          fi
+          if test "$source" = true && test "$conclusion" = success; then
+            title='BONSAI Photoreal Craft v6: PR監査PASS / iPhone確認待ち'
+            state='open'
+            summary='v6 implementation and automated PR audit passed. Production remains v5 until iPhone confirmation.'
+          elif test "$source" = true; then
+            title='BONSAI Photoreal Craft v6: 実装済み / 自動監査修正中'
+            state='open'
+            summary='v6 source is committed, but at least one automated gate still requires correction.'
+          else
+            title='BONSAI Photoreal Craft v6: 実装ペイロード修復中'
+            state='open'
+            summary='v6 source has not yet been committed; transport/application repair remains active.'
+          fi
+          body=$(cat <<EOF
+# BONSAI Photoreal Craft v6 implementation status
+
+- PR: #10
+- PR branch: \`agent/photoreal-craft-v6\`
+- branch SHA inspected: \`${GITHUB_SHA}\`
+- implementation source present: \`${source}\`
+- raster craft WebP assets: \`${assets}\`
+- latest independent gate: \`${conclusion}\`
+- gate input SHA: \`${run_sha}\`
+- gate run: ${run_url}
+- public release remains: \`bonsai-authentic-consequences-v5\`
+
+${summary}
+
+The issue remains open. No main merge or Pages switch is allowed before all automated gates and the user's iPhone visual review pass.
+EOF
+          )
+          gh issue edit 1 --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" --add-label '' 2>/dev/null || gh issue edit 1 --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          test "$source" = true
