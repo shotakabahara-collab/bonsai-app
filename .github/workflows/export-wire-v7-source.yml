@@ -1,40 +1,141 @@
-name: Export current wire v7 candidate source
+name: Materialize and audit photographed wire v7
 
 on:
   push:
     branches: [agent/photoreal-craft-v6-final]
-    paths: ['.github/workflows/export-wire-v7-source.yml']
-  pull_request:
-    branches: [main]
-    paths: ['.github/workflows/export-wire-v7-source.yml']
+    paths:
+      - '.wire-v7/ready'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: materialize-wire-photo-v7
+  cancel-in-progress: false
 
 jobs:
-  export:
+  materialize-audit-and-commit:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/photoreal-craft-v6-final
-          fetch-depth: 1
-      - name: Archive exact branch source
+          fetch-depth: 0
+
+      - name: Decode and verify exact implementation payload
         run: |
-          tar --exclude=.git --exclude=next/node_modules --exclude=next/dist --exclude=next/test-artifacts -czf /tmp/bonsai-wire-v7-source.tar.gz .
-          sha256sum /tmp/bonsai-wire-v7-source.tar.gz > /tmp/bonsai-wire-v7-source.sha256
-          git show -s --format=%T HEAD > /tmp/bonsai-wire-v7-base-tree.sha
-          git rev-parse HEAD > /tmp/bonsai-wire-v7-parent.sha
-      - uses: actions/upload-artifact@v4
+          set -euxo pipefail
+          cat .wire-v7/payload-* | tr -d '\r\n' > /tmp/wire-v7-payload.b64
+          test "$(wc -c < /tmp/wire-v7-payload.b64)" -eq 62236
+          base64 -d /tmp/wire-v7-payload.b64 > /tmp/wire-v7-payload.tar.gz
+          echo '573663dfba00fd8701ad138109db3808f988058183c760673f937d730fe3e1f7  /tmp/wire-v7-payload.tar.gz' | sha256sum -c -
+          tar -tzf /tmp/wire-v7-payload.tar.gz
+
+      - name: Materialize source and deterministic photographed states
+        run: |
+          set -euxo pipefail
+          tar -xzf /tmp/wire-v7-payload.tar.gz -C .
+          rm -rf next/public/assets/kuromatsu/wire-photo-v7 next/public/assets/kuromatsu/deadwood-photo-v6
+          python -m pip install --disable-pip-version-check pillow numpy
+          python next/scripts/generate-wire-photo-v7.py
+          python next/scripts/generate-deadwood-photo-v6.py
+          find next/public/assets/kuromatsu/wire-photo-v7 -type f -name '*.webp' -print0 | sort -z | xargs -0 sha256sum > /tmp/wire-v7-first.sha256
+          find next/public/assets/kuromatsu/deadwood-photo-v6 -type f -name '*.webp' -print0 | sort -z | xargs -0 sha256sum > /tmp/deadwood-v6-first.sha256
+          rm -rf next/public/assets/kuromatsu/wire-photo-v7 next/public/assets/kuromatsu/deadwood-photo-v6
+          python next/scripts/generate-wire-photo-v7.py
+          python next/scripts/generate-deadwood-photo-v6.py
+          find next/public/assets/kuromatsu/wire-photo-v7 -type f -name '*.webp' -print0 | sort -z | xargs -0 sha256sum > /tmp/wire-v7-second.sha256
+          find next/public/assets/kuromatsu/deadwood-photo-v6 -type f -name '*.webp' -print0 | sort -z | xargs -0 sha256sum > /tmp/deadwood-v6-second.sha256
+          diff -u /tmp/wire-v7-first.sha256 /tmp/wire-v7-second.sha256
+          diff -u /tmp/deadwood-v6-first.sha256 /tmp/deadwood-v6-second.sha256
+          test "$(find next/public/assets/kuromatsu/wire-photo-v7 -type f -name '*.webp' | wc -l)" -eq 12
+          test "$(find next/public/assets/kuromatsu/deadwood-photo-v6 -type f -name '*.webp' | wc -l)" -eq 24
+          test ! -e next/public/assets/kuromatsu/deadwood-photo-v6/jin-apex.webp
+          grep -Fq 'wire-photo-v7' next/src/BonsaiStage.tsx
+          grep -Fq 'data-wire-progress-band' next/src/BonsaiStage.tsx
+          grep -Fq 'progressBand' next/src/craft-v3.ts
+          git diff --check
+
+      - uses: actions/setup-node@v4
         with:
-          name: bonsai-wire-v7-source
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Typecheck, deterministic contracts and production build
+        working-directory: next
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run build
+          node --check tests/smoke.mjs
+          node --check tests/authentic-v5.mjs
+          python -m py_compile scripts/generate-wire-photo-v7.py scripts/generate-deadwood-photo-v6.py scripts/visual-audit-v6.py
+
+      - name: Install iPhone WebKit
+        working-directory: next
+        run: npx playwright install --with-deps webkit
+
+      - name: Start verified production preview
+        working-directory: next
+        run: |
+          setsid npm run preview >/tmp/bonsai-wire-v7-preview.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/bonsai-wire-v7-preview.pid
+          for i in $(seq 1 120); do
+            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
+            sleep .25
+          done
+          cat /tmp/bonsai-wire-v7-preview.log
+          exit 1
+
+      - name: Run 390x844 DPR3 WebKit regressions
+        working-directory: next
+        run: |
+          npm run test:smoke
+          node tests/seasonal-v4.mjs
+          npm run test:photoreal
+
+      - name: Reject S marks, floating copper, ribbons, markers and state drift
+        working-directory: next
+        run: python scripts/visual-audit-v6.py --output wire-photo-v7-visual-audit.json
+
+      - name: Preserve candidate screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-wire-photo-v7-candidate-audit
           path: |
-            /tmp/bonsai-wire-v7-source.tar.gz
-            /tmp/bonsai-wire-v7-source.sha256
-            /tmp/bonsai-wire-v7-base-tree.sha
-            /tmp/bonsai-wire-v7-parent.sha
-          if-no-files-found: error
-          retention-days: 3
+            next/test-artifacts
+            /tmp/bonsai-wire-v7-preview.log
+            /tmp/wire-v7-first.sha256
+            /tmp/wire-v7-second.sha256
+            /tmp/deadwood-v6-first.sha256
+            /tmp/deadwood-v6-second.sha256
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop preview
+        if: always()
+        run: |
+          if test -f /tmp/bonsai-wire-v7-preview.pid; then
+            server="$(cat /tmp/bonsai-wire-v7-preview.pid)"
+            kill -TERM -- -"$server" 2>/dev/null || kill "$server" 2>/dev/null || true
+          fi
+
+      - name: Commit only the audited implementation
+        run: |
+          rm -rf .wire-v7
+          rm -f .github/workflows/export-wire-v7-source.yml
+          rm -rf next/.test-cjs next/scripts/__pycache__ next/dist next/test-artifacts
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git status --short
+          git commit -m '針金を写真状態レイヤーへ再実装し神舎利の強度時間差を追加'
+          git push origin HEAD:agent/photoreal-craft-v6-final
