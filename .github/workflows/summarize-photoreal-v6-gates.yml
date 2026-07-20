@@ -1,0 +1,44 @@
+name: Summarize Photoreal Craft v6 gates
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths:
+      - '.photoreal-v6-summarize.ready'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+jobs:
+  summarize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6
+      - name: Wait for and summarize final gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            status=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow 'Photoreal Craft v6 final gate' --branch agent/photoreal-craft-v6 --limit 1 --json status --jq '.[0].status // "missing"')
+            test "$status" = completed && break
+            sleep 10
+          done
+          row=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow 'Photoreal Craft v6 final gate' --branch agent/photoreal-craft-v6 --limit 1 --json databaseId,headSha,status,conclusion,url --jq '.[0]')
+          conclusion=$(printf '%s' "$row" | jq -r '.conclusion // "missing"')
+          sha=$(printf '%s' "$row" | jq -r '.headSha // "unknown"')
+          url=$(printf '%s' "$row" | jq -r '.url // ""')
+          if test "$conclusion" = success; then
+            gh pr edit 10 --repo "$GITHUB_REPOSITORY" --title 'Photoreal Craft v6：自動監査PASS・iPhone確認待ち'
+            gh pr ready 10 --repo "$GITHUB_REPOSITORY" || true
+            gh pr comment 10 --repo "$GITHUB_REPOSITORY" --body "Photoreal Craft v6 final gate: PASS\n\n- audited SHA: \`${sha}\`\n- run: ${url}\n- source, TypeScript, build, WebKit, persistence, offline restart and photographed-artwork audit: PASS\n\nThe PR is ready, but main/public remain unchanged until the new image is checked on the user's iPhone."
+          else
+            gh pr edit 10 --repo "$GITHUB_REPOSITORY" --title 'Photoreal Craft v6：実装済み・自動監査修正中'
+            gh pr comment 10 --repo "$GITHUB_REPOSITORY" --body "Photoreal Craft v6 final gate: ${conclusion}\n\n- audited SHA: \`${sha}\`\n- run: ${url}\n\nThe PR remains unmerged. The failing gate must be corrected before any production switch."
+            exit 1
+          fi
