@@ -1,38 +1,159 @@
-import { advanceTime, createGame, migrateLegacy, normalizeGame, type GameState } from './model';
+import { advanceTime, createGame, migrateLegacy, normalizeGame, type GameState, type SpeciesId } from './model';
 import { advanceSeasonalGame } from './seasonal-craft-v4';
 
 const STORAGE_KEY = 'bonsai:v2';
 const LEGACY_KEY = 'bonsai_live_1';
+const ACTIVE_SLOT_KEY = 'bonsai:active-slot';
+const SLOT_PREFIX = 'bonsai:v2:slot:';
 export const GAME_UPDATED_EVENT = 'bonsai:game-updated';
 
-export function loadGame(): GameState {
-  try {
-    const current = localStorage.getItem(STORAGE_KEY);
-    if (current) return advanceForLoad(normalizeGame(JSON.parse(current)));
-  } catch (error) {
-    backupCorrupt(STORAGE_KEY, error);
-  }
+export type SaveSlotId = 1 | 2 | 3;
 
+export interface SaveSlotSummary {
+  id: SaveSlotId;
+  active: boolean;
+  started: boolean;
+  playerName: string;
+  treeName: string;
+  species?: SpeciesId;
+  updatedAt: number;
+}
+
+function slotKey(slot: SaveSlotId): string {
+  return `${SLOT_PREFIX}${slot}`;
+}
+
+function validSlot(value: unknown): SaveSlotId {
+  const parsed = Number(value);
+  return parsed === 2 || parsed === 3 ? parsed : 1;
+}
+
+export function activeSaveSlot(): SaveSlotId {
   try {
-    const legacy = localStorage.getItem(LEGACY_KEY);
-    if (legacy) {
-      const migrated = advanceForLoad(migrateLegacy(JSON.parse(legacy)));
-      persistGame(migrated);
-      return migrated;
+    return validSlot(localStorage.getItem(ACTIVE_SLOT_KEY));
+  } catch {
+    return 1;
+  }
+}
+
+export function setActiveSaveSlot(slot: SaveSlotId): void {
+  try {
+    localStorage.setItem(ACTIVE_SLOT_KEY, String(slot));
+  } catch (error) {
+    console.warn('[BONSAI slot selection]', error);
+  }
+}
+
+function rawForSlot(slot: SaveSlotId): string | null {
+  const direct = localStorage.getItem(slotKey(slot));
+  const canonical = localStorage.getItem(STORAGE_KEY);
+  // The canonical bonsai:v2 key remains the active slot's compatibility mirror.
+  // Prefer it for the active slot so older builds, audits and safe-mode recovery
+  // can still write the current game without silently losing that update.
+  if (slot === activeSaveSlot() && canonical) return canonical;
+  if (direct) return direct;
+  // Gameplay v8 adopts the original bonsai:v2 save as slot 1 exactly once.
+  return slot === 1 ? canonical : null;
+}
+
+export function listSaveSlots(): SaveSlotSummary[] {
+  const current = activeSaveSlot();
+  return ([1, 2, 3] as SaveSlotId[]).map(id => {
+    try {
+      const raw = rawForSlot(id);
+      if (!raw) return { id, active: id === current, started: false, playerName: '', treeName: '', updatedAt: 0 };
+      const game = normalizeGame(JSON.parse(raw));
+      const bonsai = game.bonsai.find(item => item.id === game.activeBonsaiId) ?? game.bonsai[0];
+      return {
+        id,
+        active: id === current,
+        started: game.started && Boolean(bonsai),
+        playerName: game.playerName,
+        treeName: bonsai?.name ?? '',
+        species: bonsai?.species,
+        updatedAt: Math.max(game.createdAt, ...game.bonsai.map(item => item.lastUpdatedAt))
+      };
+    } catch (error) {
+      backupCorrupt(slotKey(id), error);
+      return { id, active: id === current, started: false, playerName: '', treeName: '', updatedAt: 0 };
+    }
+  });
+}
+
+export function loadGame(slot: SaveSlotId = activeSaveSlot()): GameState {
+  try {
+    const current = rawForSlot(slot);
+    if (current) {
+      const loaded = advanceForLoad(normalizeGame(JSON.parse(current)), slot);
+      const direct = localStorage.getItem(slotKey(slot));
+      const canonical = localStorage.getItem(STORAGE_KEY);
+      const activeCanonicalChanged = slot === activeSaveSlot() && Boolean(canonical) && canonical !== direct;
+      // Persisting here completes adoption and folds compatibility-key changes
+      // back into the active slot before the next slot switch.
+      if (!direct || activeCanonicalChanged) persistGame(loaded, slot);
+      return loaded;
     }
   } catch (error) {
-    backupCorrupt(LEGACY_KEY, error);
+    backupCorrupt(slotKey(slot), error);
+  }
+
+  if (slot === 1) {
+    try {
+      const legacy = localStorage.getItem(LEGACY_KEY);
+      if (legacy) {
+        const migrated = advanceForLoad(migrateLegacy(JSON.parse(legacy)), slot);
+        persistGame(migrated, slot);
+        return migrated;
+      }
+    } catch (error) {
+      backupCorrupt(LEGACY_KEY, error);
+    }
   }
 
   return createGame();
 }
 
-export function persistGame(game: GameState): GameState {
+export function switchSaveSlot(slot: SaveSlotId): GameState {
+  try {
+    // Replace the compatibility mirror before changing the active marker so the
+    // previous slot cannot be mistaken for the newly selected one.
+    const target = localStorage.getItem(slotKey(slot));
+    if (target) localStorage.setItem(STORAGE_KEY, target);
+    else localStorage.removeItem(STORAGE_KEY);
+  } catch (error) {
+    console.warn('[BONSAI slot mirror switch]', error);
+  }
+  setActiveSaveSlot(slot);
+  const game = loadGame(slot);
+  const persisted = persistGame(game, slot);
+  window.dispatchEvent(new CustomEvent<GameState>(GAME_UPDATED_EVENT, { detail: persisted }));
+  return persisted;
+}
+
+export function resetSaveSlot(slot: SaveSlotId = activeSaveSlot()): GameState {
+  try {
+    localStorage.removeItem(slotKey(slot));
+    if (slot === activeSaveSlot()) {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(LEGACY_KEY);
+    }
+  } catch (error) {
+    console.warn('[BONSAI reset slot]', error);
+  }
+  setActiveSaveSlot(slot);
+  return persistGame(createGame(), slot);
+}
+
+export function persistGame(game: GameState, slot: SaveSlotId = activeSaveSlot()): GameState {
   const normalized = normalizeGame(game);
   const seasonal = advanceSeasonalGame(normalized).game;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(seasonal));
-    mirrorLegacy(seasonal);
+    localStorage.setItem(slotKey(slot), JSON.stringify(seasonal));
+    if (slot === activeSaveSlot()) {
+      // Keep the canonical key as a mirror for existing builds and migration audits.
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(seasonal));
+      mirrorLegacy(seasonal);
+    }
     window.dispatchEvent(new CustomEvent<GameState>(GAME_UPDATED_EVENT, { detail: seasonal }));
   } catch (error) {
     console.error('[BONSAI save]', error);
@@ -40,13 +161,16 @@ export function persistGame(game: GameState): GameState {
   return seasonal;
 }
 
-function advanceForLoad(game: GameState): GameState {
+function advanceForLoad(game: GameState, slot: SaveSlotId): GameState {
   const timed = advanceTime(game);
   const seasonal = advanceSeasonalGame(timed);
   if (seasonal.changed) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(seasonal.game));
-      mirrorLegacy(seasonal.game);
+      localStorage.setItem(slotKey(slot), JSON.stringify(seasonal.game));
+      if (slot === activeSaveSlot()) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(seasonal.game));
+        mirrorLegacy(seasonal.game);
+      }
     } catch (error) {
       console.warn('[BONSAI seasonal save]', error);
     }
@@ -66,7 +190,10 @@ function backupCorrupt(key: string, error: unknown): void {
 
 function mirrorLegacy(game: GameState): void {
   const bonsai = game.bonsai.find(item => item.id === game.activeBonsaiId) ?? game.bonsai[0];
-  if (!bonsai) return;
+  if (!bonsai) {
+    localStorage.removeItem(LEGACY_KEY);
+    return;
+  }
   const legacy = {
     started: game.started,
     name: game.playerName,

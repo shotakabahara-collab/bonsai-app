@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BonsaiStage } from './BonsaiStage';
 import { DeadwoodLifecycleSheet, WireLifecycleStatus } from './CraftPanels';
 import { PrecisionPruningV4 } from './PrecisionPruningV4';
+import { JourneyCard, SaveSlotSheet, StoryOnboarding, TutorialReplay } from './GameplayV8';
 import {
   advanceDeadwoodProjectInGame,
   pauseDeadwoodProjectInGame,
@@ -45,7 +46,16 @@ import {
   type TabId,
   type WireDirection
 } from './model';
-import { loadGame, persistGame, repairRuntimeCaches } from './storage';
+import {
+  activeSaveSlot,
+  listSaveSlots,
+  loadGame,
+  persistGame,
+  repairRuntimeCaches,
+  resetSaveSlot,
+  switchSaveSlot,
+  type SaveSlotId
+} from './storage';
 
 const NAV: Array<{ id: TabId; label: string; icon: string }> = [
   { id: 'grow', label: '育成', icon: '🌿' },
@@ -71,6 +81,10 @@ export default function App() {
   const [showResult, setShowResult] = useState<ShowResult | null>(null);
   const [toast, setToast] = useState('');
   const [newTreeSpecies, setNewTreeSpecies] = useState<SpeciesId | null>(null);
+  const [saveSlot, setSaveSlot] = useState<SaveSlotId>(() => activeSaveSlot());
+  const [saveSlots, setSaveSlots] = useState(() => listSaveSlots());
+  const [saveSheetOpen, setSaveSheetOpen] = useState(false);
+  const [tutorialReplay, setTutorialReplay] = useState(false);
 
   const bonsai = activeBonsai(game);
   const commit = useCallback((next: GameState | ((current: GameState) => GameState), message?: string) => {
@@ -78,6 +92,7 @@ export default function App() {
       const value = typeof next === 'function' ? next(current) : next;
       return persistGame(value);
     });
+    queueMicrotask(() => setSaveSlots(listSaveSlots()));
     if (message) {
       setToast(message);
       window.setTimeout(() => setToast(''), 1800);
@@ -140,7 +155,7 @@ export default function App() {
           <div className="brand">BONSAI</div>
           <div className="eyebrow">{titleForReputation(game.reputation)}・{game.playerName}</div>
         </div>
-        <div className="money">¥{game.money.toLocaleString('ja-JP')}</div>
+        <div className="topbar-actions"><div className="money">¥{game.money.toLocaleString('ja-JP')}</div><button className="save-menu-button" type="button" aria-label="セーブデータと設定" onClick={() => { setSaveSlots(listSaveSlots()); setSaveSheetOpen(true); }}>☰</button></div>
       </header>
 
       <main className="app-main">
@@ -155,6 +170,7 @@ export default function App() {
             onWater={() => commit(current => waterBonsai(current), '水やりを記録しました')}
             onOpenCare={mode => { setCareMode(mode); setSelectedPart(mode === 'deadwood' ? 'trunk' : 'apex'); }}
             onWall={() => setWallMode(true)}
+             onOpenShow={() => setTab('show')}
             onAddTree={() => setNewTreeSpecies('pine')}
           />
         )}
@@ -310,66 +326,47 @@ export default function App() {
         </div>
       )}
 
+      {saveSheetOpen && (
+        <SaveSlotSheet
+          currentSlot={saveSlot}
+          slots={saveSlots}
+          onClose={() => setSaveSheetOpen(false)}
+          onReplay={() => { setSaveSheetOpen(false); setTutorialReplay(true); }}
+          onSwitch={slotId => {
+            const next = switchSaveSlot(slotId);
+            setSaveSlot(slotId);
+            setGame(next);
+            setTab('grow');
+            setCareMode(null);
+            setSaveSlots(listSaveSlots());
+            setSaveSheetOpen(false);
+            setToast(next.started ? `セーブ${slotId}へ切り替えました` : `セーブ${slotId}で新しい物語を始めます`);
+            window.setTimeout(() => setToast(''), 1800);
+          }}
+          onReset={slotId => {
+            if (!window.confirm(`セーブ${slotId}の現在データを完全に消去し、師匠との出会いから始めます。元に戻せません。`)) return;
+            const next = resetSaveSlot(slotId);
+            setSaveSlot(slotId);
+            setGame(next);
+            setTab('grow');
+            setCareMode(null);
+            setSaveSlots(listSaveSlots());
+            setSaveSheetOpen(false);
+          }}
+        />
+      )}
+      {tutorialReplay && <TutorialReplay onClose={() => setTutorialReplay(false)} />}
+
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   );
 }
 
 function Onboarding({ onStart }: { onStart: (player: string, mentor: string, species: SpeciesId, tree: string) => void }) {
-  const [step, setStep] = useState(0);
-  const [player, setPlayer] = useState('');
-  const [tree, setTree] = useState('');
-  const [species, setSpecies] = useState<SpeciesId>('pine');
-  const [mentor, setMentor] = useState('gensai');
-  return (
-    <main className="onboarding" data-testid="onboarding">
-      <div className="onboard-brand">BONSAI</div>
-      <div className="eyebrow">育てた時間が、作品になる。</div>
-      {step === 0 && (
-        <section className="onboard-panel">
-          <h1>最初の一本を選ぶ</h1>
-          <p>実時間の10倍で季節と樹齢が進みます。剪定は取り消せません。</p>
-          <div className="species-grid">
-            {(Object.keys(SPECIES) as SpeciesId[]).map(id => (
-              <button key={id} type="button" className={species === id ? 'selected' : ''} onClick={() => setSpecies(id)}>
-                <span>{SPECIES[id].emoji}</span>
-                <b>{SPECIES[id].name}</b>
-                <small>{SPECIES[id].subtitle}</small>
-              </button>
-            ))}
-          </div>
-          <button className="primary-button" type="button" onClick={() => setStep(1)}>師匠を選ぶ</button>
-        </section>
-      )}
-      {step === 1 && (
-        <section className="onboard-panel">
-          <h1>師匠を選ぶ</h1>
-          <p>師匠はチュートリアルと作品づくりの助言を担当します。</p>
-          <div className="mentor-list">
-            {PEOPLE.slice(0, 3).map(person => (
-              <button key={person.id} type="button" className={mentor === person.id ? 'selected' : ''} onClick={() => setMentor(person.id)}>
-                <span>{person.emoji}</span><div><b>{person.name}</b><small>{person.role}</small><em>「{person.quote}」</em></div>
-              </button>
-            ))}
-          </div>
-          <button className="primary-button" type="button" onClick={() => setStep(2)}>名前を決める</button>
-          <button className="ghost-button" type="button" onClick={() => setStep(0)}>戻る</button>
-        </section>
-      )}
-      {step === 2 && (
-        <section className="onboard-panel">
-          <h1>盆栽師として始める</h1>
-          <label>盆栽師名<input value={player} onChange={event => setPlayer(event.target.value)} placeholder="あなた" maxLength={30} /></label>
-          <label>作品の銘<input value={tree} onChange={event => setTree(event.target.value)} placeholder={`${SPECIES[species].name}・若樹`} maxLength={40} /></label>
-          <button className="primary-button" data-testid="start-game" type="button" onClick={() => onStart(player, mentor, species, tree)}>育成を始める</button>
-          <button className="ghost-button" type="button" onClick={() => setStep(1)}>戻る</button>
-        </section>
-      )}
-    </main>
-  );
+  return <StoryOnboarding onStart={onStart} />;
 }
 
-function GrowPage({ game, bonsai, alerts, mentorName, mentorTip, onSelectBonsai, onWater, onOpenCare, onWall, onAddTree }: {
+function GrowPage({ game, bonsai, alerts, mentorName, mentorTip, onSelectBonsai, onWater, onOpenCare, onWall, onOpenShow, onAddTree }: {
   game: GameState;
   bonsai: NonNullable<ReturnType<typeof activeBonsai>>;
   alerts: string[];
@@ -379,6 +376,7 @@ function GrowPage({ game, bonsai, alerts, mentorName, mentorTip, onSelectBonsai,
   onWater: () => void;
   onOpenCare: (mode: CareMode) => void;
   onWall: () => void;
+  onOpenShow: () => void;
   onAddTree: () => void;
 }) {
   const m = metrics(bonsai);
@@ -408,6 +406,18 @@ function GrowPage({ game, bonsai, alerts, mentorName, mentorTip, onSelectBonsai,
       </article>
       {alerts.length > 0 && <div className="alert-card"><b>作品に異変があります</b>{alerts.map(alert => <span key={alert}>{alert}</span>)}<button type="button" onClick={() => onOpenCare('health')}>診断と処置</button></div>}
       <div className="mentor-card"><div className="mentor-avatar">👴</div><div><b>師匠 {mentorName}</b><p>「{mentorTip}」</p></div></div>
+      <JourneyCard
+        game={game}
+        bonsai={bonsai}
+        onAction={action => {
+          if (action === 'water') onWater();
+          else if (action === 'prune') onOpenCare('prune');
+          else if (action === 'wire') onOpenCare('wire');
+          else if (action === 'deadwood') onOpenCare('deadwood');
+          else if (action === 'show') onOpenShow();
+          else onWall();
+        }}
+      />
       <div className="secondary-actions"><button type="button" onClick={() => onOpenCare('health')}>🩺 病害虫・健康</button><button type="button" onClick={() => onOpenCare('deadwood')}>🪵 神・舎利</button></div>
       <div className="stats-row"><div><small>名声</small><b>{game.reputation}</b></div><div><small>育成枠</small><b>{game.bonsai.length}/{slots}</b></div><div><small>受賞</small><b>{bonsai.awards.length}</b></div></div>
     </section>

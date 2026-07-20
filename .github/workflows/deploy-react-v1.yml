@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  BONSAI_RELEASE: bonsai-photoreal-craft-v7
+  BONSAI_RELEASE: bonsai-gameplay-v8
 
 jobs:
   build-and-audit:
@@ -132,7 +132,7 @@ jobs:
             python -m pip install --disable-pip-version-check pillow numpy
           } 2>&1 | tee /tmp/public-install.log
 
-      - name: Wait until GitHub Pages serves photoreal craft v7
+      - name: Wait until GitHub Pages serves gameplay v8
         id: wait
         if: steps.install.outcome == 'success'
         continue-on-error: true
@@ -266,10 +266,10 @@ jobs:
               repo: context.repo.repo,
               issue_number: 1,
               title: passed
-                ? 'BONSAI photoreal craft v7: AUTOMATED PASS / iPhone確認待ち'
-                : 'BONSAI photoreal craft v7 production audit: FAIL',
+                ? 'BONSAI gameplay v8: AUTOMATED PASS / iPhone確認待ち'
+                : 'BONSAI gameplay v8 production audit: FAIL',
               body: [
-                '# BONSAI Photoreal Craft v7 本番監査', '',
+                '# BONSAI Gameplay v8 本番監査', '',
                 `- release SHA: \`${context.sha}\``,
                 '- deployed release: `bonsai-photoreal-craft-v7`',
                 `- Pages URL: ${page}`,

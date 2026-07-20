@@ -243,7 +243,7 @@ try {
       wire: game.bonsai.find(item => item.id === game.activeBonsaiId).parts.secondRight.wire
     };
   });
-  if (report.wireVisual.photorealGroups < 1 || report.wireVisual.rasterCount < 1 || !report.wireVisual.asset.includes('/wire-photo-v7/secondRight-light.webp') || !Number.isFinite(report.wireVisual.progress) || !Number.isInteger(report.wireVisual.progressBand) || report.wireVisual.legacySvgTurns !== 0 || report.wireVisual.lineElements !== 0 || report.wireVisual.continuousLines !== 0 || report.wireVisual.circleElements !== 0 || report.wireVisual.preserveAspectRatio !== 'xMidYMid meet' || report.wireVisual.rasterAspect !== 'none' || report.wireVisual.renderer !== 'photoreal-craft-v7' || !report.wireVisual.status.includes('整姿中') || report.wireVisual.wire?.direction !== 'right') {
+  if (report.wireVisual.photorealGroups < 1 || report.wireVisual.rasterCount < 1 || !report.wireVisual.asset.includes('/wire-photo-v7/secondRight-light.webp') || !Number.isFinite(report.wireVisual.progress) || !Number.isInteger(report.wireVisual.progressBand) || report.wireVisual.legacySvgTurns !== 0 || report.wireVisual.lineElements !== 0 || report.wireVisual.continuousLines !== 0 || report.wireVisual.circleElements !== 0 || report.wireVisual.preserveAspectRatio !== 'xMidYMid meet' || report.wireVisual.rasterAspect !== 'none' || report.wireVisual.renderer !== 'gameplay-v8' || !report.wireVisual.status.includes('整姿中') || report.wireVisual.wire?.direction !== 'right') {
     throw new Error(`Photographed wire v7 is not registered to the branch photograph: ${JSON.stringify(report.wireVisual)}`);
   }
   await page.screenshot({ path: 'test-artifacts/02b-wire-coils.png', fullPage: false });

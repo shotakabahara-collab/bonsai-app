@@ -1,5 +1,5 @@
 // Photographed wire, jin and shari raster assets are part of the immutable offline artwork shell.
-const VERSION = 'bonsai-photoreal-craft-v7';
+const VERSION = 'bonsai-gameplay-v8';
 const CACHE = `${VERSION}-shell`;
 const INDEX = '/bonsai-app/index.html';
 const CORE = [
