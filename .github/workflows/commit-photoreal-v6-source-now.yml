@@ -1,0 +1,101 @@
+name: Commit Photoreal Craft v6 source now
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths:
+      - '.photoreal-v6-source-now.ready'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: photoreal-v6-source-now
+  cancel-in-progress: true
+
+jobs:
+  commit-source:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6
+          fetch-depth: 0
+
+      - name: Materialize the reviewed v6 implementation source
+        run: |
+          set -euxo pipefail
+          if ! test -f next/tests/photoreal-v6.mjs; then
+            git fetch origin main
+            git checkout origin/main -- next
+            test -f .github/workflows/implement-photoreal-v6-direct.yml
+            python -m pip install --disable-pip-version-check pyyaml
+            python <<'PY'
+          from pathlib import Path
+          import subprocess
+          import yaml
+
+          recipe = Path('.github/workflows/implement-photoreal-v6-direct.yml')
+          workflow = yaml.safe_load(recipe.read_text(encoding='utf-8'))
+          names = [
+              'Write the v6 photographed wire and deadwood renderer',
+              'Write and run the deterministic transparent WebP generator',
+              'Connect v6 renderer, tests and scripts to the existing application',
+          ]
+          by_name = {step.get('name'): step for step in workflow['jobs']['implement-test-commit']['steps']}
+          for name in names:
+              step = by_name.get(name)
+              if not step or not step.get('run'):
+                  raise SystemExit(f'missing direct implementation recipe: {name}')
+              subprocess.run(['bash', '-euo', 'pipefail', '-c', step['run']], check=True)
+          PY
+          fi
+          sed -i '/visibility: hidden !important;/d' next/src/photoreal-craft-v6.css
+          git diff --check
+          test -f next/src/PhotorealCraftV6.tsx
+          test -f next/src/photoreal-craft-v6.css
+          test -f next/tests/photoreal-v6.mjs
+          test -f next/tests/photoreal-v6-unit.mjs
+          test -f next/scripts/generate-photoreal-v6-assets.py
+          test -f next/scripts/visual-audit-v6.py
+          test "$(find next/public/assets/kuromatsu/craft-v6 -type f -name '*.webp' | wc -l)" -eq 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Require typecheck, unit contracts and production build before committing
+        working-directory: next
+        run: |
+          set -euxo pipefail
+          npm ci
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run build
+          python -m py_compile scripts/generate-photoreal-v6-assets.py scripts/visual-audit-v6.py
+
+      - name: Commit the implementation and remove transfer-only files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          rm -rf next/node_modules next/dist next/test-artifacts next/.test-cjs next/scripts/__pycache__
+          rm -rf .photoreal-v6-payload
+          rm -f .photoreal-v6-source.patch.xz .photoreal-v6-source.ready .photoreal-v6-final.patch.xz .photoreal-v6-final.ready
+          rm -f .photoreal-v6-*.ready
+          find .github/workflows -maxdepth 1 -type f \( -name 'apply-photoreal-v6*.yml' -o -name 'diagnose-photoreal-v6.yml' -o -name 'export-*photoreal-v6*.yml' -o -name 'finalize-photoreal-v6-source.yml' -o -name 'materialize-photoreal-v6-source.yml' -o -name 'commit-photoreal-v6-candidate.yml' -o -name 'commit-photoreal-v6-source-now.yml' -o -name 'report-photoreal-v6*.yml' -o -name 'summarize-photoreal-v6-gates.yml' -o -name 'update-photoreal-v6-pr-status.yml' -o -name 'implement-photoreal-v6-direct.yml' -o -name 'implement-photoreal-v6-direct2.yml' \) -delete
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Photoreal Craft v6の実装ソースを確定'
+          git push origin HEAD:agent/photoreal-craft-v6
+          sha=$(git rev-parse HEAD)
+          gh pr edit 10 --repo "$GITHUB_REPOSITORY" --title 'Photoreal Craft v6：実装済み・最終WebKit監査中'
+          gh pr comment 10 --repo "$GITHUB_REPOSITORY" --body "Photoreal Craft v6 source committed.\n\n- implementation SHA: \`${sha}\`\n- TypeScript: PASS\n- deterministic v6 geometry/assets contracts: PASS\n- Vite production build: PASS\n\nThe PR stays unmerged while the full 390×844 DPR 3 WebKit, persistence, offline and photographed-artwork gates run."
