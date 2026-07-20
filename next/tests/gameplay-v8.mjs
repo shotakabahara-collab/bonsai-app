@@ -9,7 +9,11 @@ const report = { phase: 'start', slots: null, onboarding: null, visuals: null, d
 try {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 });
   const page = await context.newPage();
-  await page.addInitScript(() => localStorage.clear());
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('bonsai:gameplay-v8-test-initialized') === '1') return;
+    localStorage.clear();
+    sessionStorage.setItem('bonsai:gameplay-v8-test-initialized', '1');
+  });
   await page.goto(new URL(`index.html?gameplay-v8=${Date.now()}`, baseURL).href, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
   report.phase = 'story onboarding';
