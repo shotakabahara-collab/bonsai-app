@@ -1,0 +1,41 @@
+name: Export applied Photoreal Craft v6 source
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths:
+      - '.github/workflows/export-applied-photoreal-v6.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-applied-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6
+          fetch-depth: 0
+      - name: Apply SHA-verified final source patch
+        run: |
+          set -euxo pipefail
+          echo '34c9c45cd2bf35491341271e1ab1c347335fbf06465c474bee19621bbbbc496d  .photoreal-v6-final.patch.xz' | sha256sum -c -
+          xz -t .photoreal-v6-final.patch.xz
+          xz -dc .photoreal-v6-final.patch.xz | git apply --whitespace=error
+          git diff --check
+      - name: Archive the applied working tree
+        run: |
+          rm -rf .photoreal-v6-export
+          mkdir -p .photoreal-v6-export
+          git diff --binary > .photoreal-v6-export/applied-source.patch
+          tar --exclude=.git --exclude=next/node_modules --exclude=next/dist --exclude=next/test-artifacts --exclude=.photoreal-v6-export -czf .photoreal-v6-export/applied-source.tar.gz .
+          sha256sum .photoreal-v6-export/applied-source.tar.gz .photoreal-v6-export/applied-source.patch > .photoreal-v6-export/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-photoreal-v6-applied-source
+          path: .photoreal-v6-export
+          if-no-files-found: error
+          retention-days: 3
