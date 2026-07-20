@@ -1,0 +1,126 @@
+name: Rebuild photographed jin and shari v6
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6-final]
+    paths: ['.github/workflows/rebuild-deadwood-photo-v6.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rebuild-deadwood-photo-v6
+  cancel-in-progress: false
+
+jobs:
+  rebuild-audit-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6-final
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate deterministic photographed jin and shari layers
+        run: |
+          python -m pip install --disable-pip-version-check pillow numpy
+          rm -rf next/public/assets/kuromatsu/deadwood-photo-v6
+          python next/scripts/generate-deadwood-photo-v6.py
+          find next/public/assets/kuromatsu/deadwood-photo-v6 -type f -name '*.webp' -print0 | sort -z | xargs -0 sha256sum > /tmp/deadwood-assets-first.sha256
+          rm -rf next/public/assets/kuromatsu/deadwood-photo-v6
+          python next/scripts/generate-deadwood-photo-v6.py
+          find next/public/assets/kuromatsu/deadwood-photo-v6 -type f -name '*.webp' -print0 | sort -z | xargs -0 sha256sum > /tmp/deadwood-assets-second.sha256
+          diff -u /tmp/deadwood-assets-first.sha256 /tmp/deadwood-assets-second.sha256
+          test "$(find next/public/assets/kuromatsu/deadwood-photo-v6 -type f -name '*.webp' | wc -l)" -eq 12
+
+      - name: Replace only jin and shari with photographed raster states
+        run: |
+          python next/scripts/apply-deadwood-photo-v6.py
+          git diff --check
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Typecheck, deterministic contracts and production build
+        working-directory: next
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run build
+          node --check tests/smoke.mjs
+          node --check tests/seasonal-v4.mjs
+          node --check tests/authentic-v5.mjs
+          python -m py_compile scripts/generate-deadwood-photo-v6.py scripts/apply-deadwood-photo-v6.py scripts/visual-audit-v6.py
+
+      - name: Install iPhone WebKit
+        working-directory: next
+        run: npx playwright install --with-deps webkit
+
+      - name: Start verified production preview
+        working-directory: next
+        run: |
+          setsid npm run preview >/tmp/bonsai-deadwood-photo-v6-preview.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/bonsai-deadwood-photo-v6-preview.pid
+          for i in $(seq 1 120); do
+            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
+            sleep .25
+          done
+          cat /tmp/bonsai-deadwood-photo-v6-preview.log
+          exit 1
+
+      - name: Run 390x844 DPR3 WebKit regressions
+        working-directory: next
+        run: |
+          npm run test:smoke
+          node tests/seasonal-v4.mjs
+          npm run test:photoreal
+
+      - name: Reject thin lines, ribbons, markers and state drift
+        working-directory: next
+        run: python scripts/visual-audit-v6.py --output deadwood-photo-v6-visual-audit.json
+
+      - name: Preserve candidate screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-deadwood-photo-v6-audit
+          path: |
+            next/test-artifacts
+            /tmp/bonsai-deadwood-photo-v6-preview.log
+            /tmp/deadwood-assets-first.sha256
+            /tmp/deadwood-assets-second.sha256
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop preview
+        if: always()
+        run: |
+          if test -f /tmp/bonsai-deadwood-photo-v6-preview.pid; then
+            server="$(cat /tmp/bonsai-deadwood-photo-v6-preview.pid)"
+            kill -TERM -- -"$server" 2>/dev/null || kill "$server" 2>/dev/null || true
+          fi
+
+      - name: Commit only the audited deadwood implementation
+        run: |
+          rm -f .github/workflows/rebuild-deadwood-photo-v6.yml
+          rm -f .github/workflows/export-deadwood-v6-source.yml
+          rm -f next/scripts/apply-deadwood-photo-v6.py
+          rm -rf next/.test-cjs next/scripts/__pycache__ next/dist next/test-artifacts
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git status --short
+          git commit -m '神・舎利を写真状態レイヤーへ再実装'
+          git push origin HEAD:agent/photoreal-craft-v6-final
