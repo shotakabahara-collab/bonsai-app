@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - '.photoreal-v6-source.ready'
+      - '.photoreal-v6-final-text.patch'
       - '.github/workflows/apply-photoreal-v6.yml'
   workflow_dispatch:
 
@@ -26,158 +26,18 @@ jobs:
           ref: ${{ github.head_ref || 'agent/photoreal-craft-v6' }}
           fetch-depth: 0
 
-      - name: Apply SHA-verified Photoreal Craft v6 source
+      - name: Apply SHA-verified Photoreal Craft v6 implementation
         run: |
           set -euxo pipefail
-          echo '3fb9b84369e984d01557f0e55b3c107ad882d98bfd3248c33243d15d2d3ca09d  .photoreal-v6-source.patch.xz' | sha256sum -c -
-          xz -t .photoreal-v6-source.patch.xz
-          xz -dc .photoreal-v6-source.patch.xz > /tmp/photoreal-v6-source.patch
-          git apply --check /tmp/photoreal-v6-source.patch
-          git apply --whitespace=error /tmp/photoreal-v6-source.patch
-          git diff --check
-
-      - name: Calibrate the final raster regression and permanent CI
-        run: |
-          python <<'PY'
-          from pathlib import Path
-
-          smoke = Path('next/tests/smoke.mjs')
-          text = smoke.read_text(encoding='utf-8')
-          start_marker = "  await page.waitForSelector('.wire-coil-metal');"
-          end_marker = "  await page.screenshot({ path: 'test-artifacts/02b-wire-coils.png', fullPage: false });"
-          start = text.index(start_marker)
-          end = text.index(end_marker, start) + len(end_marker)
-          replacement = r'''  await page.waitForSelector('[data-testid="photoreal-wire"]');
-          report.wireVisual = await page.evaluate(() => {
-            const stage = document.querySelector('.bonsai-stage');
-            const canvas = stage?.querySelector('[data-testid="bonsai-photo-canvas"]');
-            const photo = stage?.querySelector('.bonsai-photo');
-            const layers = [...stage?.querySelectorAll('[data-testid="photoreal-wire"]') ?? []];
-            const reference = canvas?.getBoundingClientRect();
-            const rectDelta = rect => !reference || !rect ? Number.POSITIVE_INFINITY : Math.max(
-              Math.abs(reference.x - rect.x),
-              Math.abs(reference.y - rect.y),
-              Math.abs(reference.width - rect.width),
-              Math.abs(reference.height - rect.height)
-            );
-            return {
-              renderer: stage?.getAttribute('data-renderer') ?? '',
-              layers: layers.map(layer => ({
-                src: layer.getAttribute('src') ?? '',
-                complete: layer.complete,
-                naturalWidth: layer.naturalWidth,
-                naturalHeight: layer.naturalHeight,
-                objectFit: getComputedStyle(layer).objectFit,
-                rectDelta: rectDelta(layer.getBoundingClientRect())
-              })),
-              photoRectDelta: photo ? rectDelta(photo.getBoundingClientRect()) : Number.POSITIVE_INFINITY,
-              legacyPhotoOcclusions: stage?.querySelectorAll('[data-testid="wire-branch-occlusion"]').length ?? -1,
-              oldSvgWork: stage?.querySelectorAll('.wire-turn-front,.wire-turn-back,.wire-turn-group,.wire-path,.authentic-work-layer').length ?? -1,
-              lineElements: stage?.querySelectorAll('line').length ?? -1,
-              circleElements: stage?.querySelectorAll('circle').length ?? -1,
-              status: stage?.querySelector('.wire-status-tag')?.textContent ?? '',
-              wire: JSON.parse(localStorage.getItem('bonsai:v2')).bonsai.find(item => item.id === JSON.parse(localStorage.getItem('bonsai:v2')).activeBonsaiId).parts.secondRight.wire
-            };
-          });
-          const layer = report.wireVisual.layers[0];
-          if (report.wireVisual.renderer !== 'photoreal-craft-v6-raster' || report.wireVisual.layers.length !== 1 || !layer?.complete || layer.naturalWidth !== 900 || layer.naturalHeight !== 1500 || layer.objectFit !== 'cover' || layer.rectDelta > .6 || report.wireVisual.photoRectDelta > .6 || !layer.src.includes('/work-v6/wire-secondRight-light.webp') || report.wireVisual.legacyPhotoOcclusions !== 0 || report.wireVisual.oldSvgWork !== 0 || report.wireVisual.lineElements !== 0 || report.wireVisual.circleElements !== 0 || !report.wireVisual.status.includes('整姿中') || report.wireVisual.wire?.direction !== 'right') {
-            throw new Error(`Wire rendering is not registered to the photographed branch: ${JSON.stringify(report.wireVisual)}`);
-          }
-          await page.screenshot({ path: 'test-artifacts/02b-wire-photoreal.png', fullPage: false });'''
-          smoke.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
-
-          deploy = Path('.github/workflows/deploy-react-v1.yml')
-          deploy_text = deploy.read_text(encoding='utf-8').replace(
-              'python -m pip install --disable-pip-version-check pillow',
-              'python -m pip install --disable-pip-version-check pillow numpy'
-          )
-          deploy.write_text(deploy_text, encoding='utf-8')
-          PY
-
-          cat > .github/workflows/photoreal-craft-v6-ci.yml <<'YAML'
-          name: Photoreal Craft v6 validation
-
-          on:
-            pull_request:
-              branches: [main]
-              paths:
-                - 'next/**'
-                - '.github/workflows/photoreal-craft-v6-ci.yml'
-                - '.github/workflows/deploy-react-v1.yml'
-            workflow_dispatch:
-
-          permissions:
-            contents: read
-
-          concurrency:
-            group: photoreal-craft-v6-${{ github.event.pull_request.number || github.ref }}
-            cancel-in-progress: true
-
-          jobs:
-            iphone-webkit-audit:
-              runs-on: ubuntu-latest
-              timeout-minutes: 45
-              steps:
-                - uses: actions/checkout@v4
-                - uses: actions/setup-node@v4
-                  with:
-                    node-version: '22'
-                    cache: npm
-                    cache-dependency-path: next/package-lock.json
-                - name: Install exact dependencies
-                  working-directory: next
-                  run: npm ci
-                - name: Typecheck, deterministic model audit and production build
-                  working-directory: next
-                  run: |
-                    npm run typecheck
-                    npm run test:photoreal:unit
-                    npm run build
-                    python -m py_compile scripts/visual-audit-v6.py
-                - name: Install iPhone WebKit and image audit tools
-                  working-directory: next
-                  run: |
-                    npx playwright install --with-deps webkit
-                    python -m pip install --disable-pip-version-check pillow numpy
-                - name: Start verified production preview
-                  working-directory: next
-                  run: |
-                    setsid npm run preview >/tmp/bonsai-photoreal-v6-preview.log 2>&1 &
-                    server=$!
-                    echo "$server" >/tmp/bonsai-photoreal-v6-preview.pid
-                    for i in $(seq 1 120); do
-                      curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
-                      sleep .25
-                    done
-                    cat /tmp/bonsai-photoreal-v6-preview.log
-                    exit 1
-                - name: Run 390x844 DPR3 WebKit regressions
-                  working-directory: next
-                  run: |
-                    npm run test:smoke
-                    node tests/seasonal-v4.mjs
-                    npm run test:photoreal
-                - name: Reject tubes, floating work, bright ribbons and circular markers
-                  working-directory: next
-                  run: python scripts/visual-audit-v6.py --output photoreal-v6-pr-visual-audit.json
-                - name: Preserve complete audit bundle
-                  if: always()
-                  uses: actions/upload-artifact@v4
-                  with:
-                    name: bonsai-photoreal-craft-v6-pr-audit
-                    path: |
-                      next/test-artifacts
-                      /tmp/bonsai-photoreal-v6-preview.log
-                    if-no-files-found: error
-                    retention-days: 14
-                - name: Stop preview
-                  if: always()
-                  run: |
-                    if test -f /tmp/bonsai-photoreal-v6-preview.pid; then
-                      server="$(cat /tmp/bonsai-photoreal-v6-preview.pid)"
-                      kill -TERM -- -"$server" 2>/dev/null || kill "$server" 2>/dev/null || true
-                    fi
-          YAML
+          cat .photoreal-v6-payload/bin-* > /tmp/photoreal-v6-initial.patch.xz
+          echo 'ee0ff926de4965eb5b93ec0f59a6231bae468f1c766c04b2129bcb020776956c  /tmp/photoreal-v6-initial.patch.xz' | sha256sum -c -
+          xz -t /tmp/photoreal-v6-initial.patch.xz
+          xz -dc /tmp/photoreal-v6-initial.patch.xz > /tmp/photoreal-v6-initial.patch
+          git apply --check --exclude=.github/workflows/export-photoreal-v6-source.yml /tmp/photoreal-v6-initial.patch
+          git apply --whitespace=error --exclude=.github/workflows/export-photoreal-v6-source.yml /tmp/photoreal-v6-initial.patch
+          echo 'c68a1354ef8c08cd77af6399a19c9cfd829d4412ecc5739e049af5c26f82ec82  .photoreal-v6-final-text.patch' | sha256sum -c -
+          git apply --check .photoreal-v6-final-text.patch
+          git apply --whitespace=error .photoreal-v6-final-text.patch
           git diff --check
 
       - uses: actions/setup-node@v4
@@ -258,14 +118,15 @@ jobs:
           rm -rf .photoreal-v6-payload .photoreal-v6-direct
           rm -f .photoreal-v6-source.patch.xz .photoreal-v6-source.ready
           rm -f .photoreal-v6-final.patch.xz .photoreal-v6-final.ready
+          rm -f .photoreal-v6-final-text.patch
           rm -f .github/workflows/apply-photoreal-v6.yml
+          rm -f .github/workflows/diagnose-photoreal-v6.yml
           rm -f .github/workflows/export-applied-photoreal-v6.yml
           rm -f .github/workflows/export-photoreal-v6-source.yml
-          rm -f .github/workflows/authentic-consequences-v5-ci.yml
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git status --short
-          git commit -m '針金・神・舎利を写真座標へ密着させるPhotoreal Craft v6を実装'
+          git commit -m '針金・神・舎利を実枝へ密着させるPhotoreal Craft v6を実装'
           git push origin "HEAD:${{ github.head_ref || 'agent/photoreal-craft-v6' }}"
