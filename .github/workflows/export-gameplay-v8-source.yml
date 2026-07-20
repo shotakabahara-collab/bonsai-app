@@ -1,0 +1,32 @@
+name: Export gameplay v8 source
+
+on:
+  push:
+    branches: [agent/gameplay-experience-v8]
+    paths: ['.github/workflows/export-gameplay-v8-source.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/gameplay-experience-v8
+          fetch-depth: 1
+      - name: Archive exact branch source
+        run: |
+          tar --exclude=.git --exclude=next/node_modules --exclude=next/dist --exclude=next/test-artifacts -czf /tmp/bonsai-gameplay-v8-source.tar.gz .
+          sha256sum /tmp/bonsai-gameplay-v8-source.tar.gz > /tmp/bonsai-gameplay-v8-source.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-gameplay-v8-source
+          path: |
+            /tmp/bonsai-gameplay-v8-source.tar.gz
+            /tmp/bonsai-gameplay-v8-source.sha256
+          if-no-files-found: error
+          retention-days: 3
