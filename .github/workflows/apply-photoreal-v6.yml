@@ -43,16 +43,28 @@ jobs:
           cache: npm
           cache-dependency-path: next/package-lock.json
 
-      - name: Install, typecheck, model audit and production build
+      - name: Install exact dependencies
+        working-directory: next
+        run: npm ci 2>&1 | tee /tmp/photoreal-v6-install.log
+
+      - name: TypeScript typecheck
+        working-directory: next
+        run: npm run typecheck 2>&1 | tee /tmp/photoreal-v6-typecheck.log
+
+      - name: Deterministic model audit
+        working-directory: next
+        run: npm run test:photoreal:unit 2>&1 | tee /tmp/photoreal-v6-unit.log
+
+      - name: Vite production build
+        working-directory: next
+        run: npm run build 2>&1 | tee /tmp/photoreal-v6-build.log
+
+      - name: Validate browser and image audit scripts
         working-directory: next
         run: |
-          npm ci
-          npm run typecheck
-          npm run test:photoreal:unit
-          npm run build
-          node --check tests/smoke.mjs
-          node --check tests/authentic-v5.mjs
-          python -m py_compile scripts/visual-audit-v6.py
+          node --check tests/smoke.mjs 2>&1 | tee /tmp/photoreal-v6-smoke-syntax.log
+          node --check tests/authentic-v5.mjs 2>&1 | tee /tmp/photoreal-v6-browser-syntax.log
+          python -m py_compile scripts/visual-audit-v6.py 2>&1 | tee /tmp/photoreal-v6-python-syntax.log
 
       - name: Install iPhone WebKit and image audit tools
         working-directory: next
@@ -73,16 +85,21 @@ jobs:
           cat /tmp/bonsai-photoreal-v6-preview.log
           exit 1
 
-      - name: Run 390x844 DPR3 flow, persistence and offline audits
+      - name: Run existing 390x844 DPR3 WebKit regression
         working-directory: next
-        run: |
-          npm run test:smoke
-          node tests/seasonal-v4.mjs
-          npm run test:photoreal
+        run: npm run test:smoke 2>&1 | tee /tmp/photoreal-v6-smoke.log
+
+      - name: Run seasonal persistence regression
+        working-directory: next
+        run: node tests/seasonal-v4.mjs 2>&1 | tee /tmp/photoreal-v6-seasonal.log
+
+      - name: Run photoreal work, interruption and offline audit
+        working-directory: next
+        run: npm run test:photoreal 2>&1 | tee /tmp/photoreal-v6-browser.log
 
       - name: Reject tubes, floating work, bright ribbons and circular markers
         working-directory: next
-        run: python scripts/visual-audit-v6.py --output photoreal-v6-preflight-visual-audit.json
+        run: python scripts/visual-audit-v6.py --output photoreal-v6-preflight-visual-audit.json 2>&1 | tee /tmp/photoreal-v6-visual.log
 
       - name: Stop preview
         if: always()
@@ -99,6 +116,7 @@ jobs:
           path: |
             next/test-artifacts
             /tmp/bonsai-photoreal-v6-preview.log
+            /tmp/photoreal-v6-*.log
           if-no-files-found: warn
           retention-days: 14
 
