@@ -1,6 +1,11 @@
 name: Apply and preflight Photoreal Craft v6
 
 on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths:
+      - '.photoreal-v6-final-text.patch'
+      - '.github/workflows/apply-photoreal-v6.yml'
   pull_request:
     branches: [main]
     paths:
