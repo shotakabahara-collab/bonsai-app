@@ -17,20 +17,30 @@ permissions:
 jobs:
   export-source:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
           fetch-depth: 1
-      - name: Archive source tree
+      - name: Apply SHA-verified final v6 source
         run: |
+          set -euxo pipefail
+          echo '34c9c45cd2bf35491341271e1ab1c347335fbf06465c474bee19621bbbbc496d  .photoreal-v6-final.patch.xz' | sha256sum -c -
+          xz -t .photoreal-v6-final.patch.xz
+          xz -dc .photoreal-v6-final.patch.xz | git apply --whitespace=error
+          git diff --check
+      - name: Archive applied source tree and patch
+        run: |
+          git diff --binary > /tmp/bonsai-photoreal-v6-applied.patch
           tar --exclude=.git --exclude=next/node_modules --exclude=next/dist --exclude=next/test-artifacts -czf /tmp/bonsai-photoreal-v6-source.tar.gz .
-          sha256sum /tmp/bonsai-photoreal-v6-source.tar.gz > /tmp/bonsai-photoreal-v6-source.sha256
+          sha256sum /tmp/bonsai-photoreal-v6-source.tar.gz /tmp/bonsai-photoreal-v6-applied.patch > /tmp/bonsai-photoreal-v6-source.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: bonsai-photoreal-v6-source
           path: |
             /tmp/bonsai-photoreal-v6-source.tar.gz
+            /tmp/bonsai-photoreal-v6-applied.patch
             /tmp/bonsai-photoreal-v6-source.sha256
           if-no-files-found: error
           retention-days: 3
