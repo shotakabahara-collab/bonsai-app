@@ -26,11 +26,15 @@ jobs:
         run: |
           tar --exclude=.git --exclude=next/node_modules --exclude=next/dist --exclude=next/test-artifacts -czf /tmp/bonsai-wire-v7-source.tar.gz .
           sha256sum /tmp/bonsai-wire-v7-source.tar.gz > /tmp/bonsai-wire-v7-source.sha256
+          git show -s --format=%T HEAD > /tmp/bonsai-wire-v7-base-tree.sha
+          git rev-parse HEAD > /tmp/bonsai-wire-v7-parent.sha
       - uses: actions/upload-artifact@v4
         with:
           name: bonsai-wire-v7-source
           path: |
             /tmp/bonsai-wire-v7-source.tar.gz
             /tmp/bonsai-wire-v7-source.sha256
+            /tmp/bonsai-wire-v7-base-tree.sha
+            /tmp/bonsai-wire-v7-parent.sha
           if-no-files-found: error
           retention-days: 3
