@@ -1,0 +1,270 @@
+name: Materialize Photoreal Craft v6 source
+
+on:
+  push:
+    branches: [agent/photoreal-craft-v6]
+    paths:
+      - '.photoreal-v6-materialize.ready'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: photoreal-v6-materialize-source
+  cancel-in-progress: true
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/photoreal-craft-v6
+          fetch-depth: 0
+
+      - name: Normalize every retained binary patch and select the complete v6 source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if test -f next/tests/photoreal-v6.mjs \
+            && test -f next/tests/photoreal-v6-unit.mjs \
+            && test -f next/scripts/visual-audit-v6.py \
+            && test -d next/public/assets/kuromatsu/craft-v6; then
+            echo 'Photoreal Craft v6 source is already materialized.'
+            echo "$GITHUB_WORKSPACE" > /tmp/v6-root
+            exit 0
+          fi
+
+          mkdir -p /tmp/v6-patches
+          if compgen -G '.photoreal-v6-payload/bin-*' >/dev/null; then
+            cat .photoreal-v6-payload/bin-* > /tmp/v6-patches/assembled.patch.xz
+          fi
+          for source in \
+            .photoreal-v6-source.patch.xz \
+            .photoreal-v6-payload/changes.patch.xz \
+            .photoreal-v6-final.patch.xz; do
+            test -f "$source" && cp "$source" /tmp/v6-patches/ || true
+          done
+          test "$(find /tmp/v6-patches -maxdepth 1 -name '*.xz' | wc -l)" -gt 0
+
+          cat > /tmp/v6-patches/normalize.py <<'PY'
+          from __future__ import annotations
+
+          import re
+          import shlex
+          import sys
+          from pathlib import Path
+
+          source = Path(sys.argv[1])
+          target = Path(sys.argv[2])
+          raw = source.read_bytes().decode('latin1')
+          permanent_workflows = {
+              '.github/workflows/deploy-react-v1.yml',
+              '.github/workflows/photoreal-craft-v6-ci.yml',
+              '.github/workflows/photoreal-v6-final-gate.yml',
+          }
+
+          def clean_token(token: str) -> str:
+              token = token.strip()
+              try:
+                  parsed = shlex.split(token)
+                  if parsed:
+                      token = parsed[0]
+              except ValueError:
+                  token = token.strip('"')
+              return token
+
+          def normalize_path(value: str) -> str | None:
+              value = clean_token(value)
+              if value == '/dev/null':
+                  return value
+              while value.startswith(('a/', 'b/')):
+                  value = value[2:]
+              candidates: list[str] = []
+              pos = value.rfind('next/')
+              if pos >= 0:
+                  candidates.append(value[pos:])
+              pos = value.rfind('.github/workflows/')
+              if pos >= 0:
+                  candidates.append(value[pos:])
+              for candidate in candidates:
+                  candidate = candidate.replace('\\', '/')
+                  if candidate.startswith('next/') or candidate in permanent_workflows:
+                      return candidate
+              return None
+
+          starts = [m.start() for m in re.finditer(r'^diff --git ', raw, flags=re.M)]
+          starts.append(len(raw))
+          rendered: list[str] = []
+          for index in range(len(starts) - 1):
+              section = raw[starts[index]:starts[index + 1]]
+              lines = section.splitlines(keepends=True)
+              if not lines:
+                  continue
+              try:
+                  header = shlex.split(lines[0].rstrip('\r\n'))
+              except ValueError:
+                  continue
+              if len(header) < 4 or header[0:2] != ['diff', '--git']:
+                  continue
+              old_path = normalize_path(header[2])
+              new_path = normalize_path(header[3])
+              chosen = new_path if new_path not in (None, '/dev/null') else old_path
+              if not chosen or not (chosen.startswith('next/') or chosen in permanent_workflows):
+                  continue
+              left = '/dev/null' if old_path == '/dev/null' else f'a/{old_path or chosen}'
+              right = '/dev/null' if new_path == '/dev/null' else f'b/{new_path or chosen}'
+              output = [f'diff --git {left} {right}\n']
+              for line in lines[1:]:
+                  body = line.rstrip('\r\n')
+                  ending = line[len(body):]
+                  for prefix, side in (('--- ', 'a'), ('+++ ', 'b')):
+                      if body.startswith(prefix):
+                          value = body[len(prefix):]
+                          path = normalize_path(value.split('\t', 1)[0])
+                          if value.split('\t', 1)[0].strip() == '/dev/null':
+                              body = f'{prefix}/dev/null'
+                          else:
+                              body = f'{prefix}{side}/{path or chosen}'
+                          break
+                  else:
+                      for prefix in ('rename from ', 'rename to ', 'copy from ', 'copy to '):
+                          if body.startswith(prefix):
+                              path = normalize_path(body[len(prefix):])
+                              body = prefix + (path or chosen)
+                              break
+                      if body.startswith('Binary files '):
+                          body = f'Binary files {left} and {right} differ'
+                  output.append(body + ending)
+              rendered.append(''.join(output))
+
+          result = ''.join(rendered).encode('latin1')
+          target.write_bytes(result)
+          print(f'normalized sections={len(rendered)} bytes={len(result)}')
+          PY
+
+          git fetch origin main
+          git worktree add --detach /tmp/bonsai-v6-main origin/main
+          selected=''
+          for archive in /tmp/v6-patches/*.xz; do
+            test -f "$archive" || continue
+            sha256sum "$archive" | tee -a /tmp/v6-patches/checksums.txt
+            xz -t "$archive" || continue
+            raw_patch="${archive%.xz}.raw.patch"
+            normalized="${archive%.xz}.normalized.patch"
+            xz -dc "$archive" > "$raw_patch"
+            python /tmp/v6-patches/normalize.py "$raw_patch" "$normalized"
+            grep -Fq 'diff --git a/next/src/BonsaiStage.tsx b/next/src/BonsaiStage.tsx' "$normalized" || continue
+            grep -Fq 'next/tests/photoreal-v6.mjs' "$normalized" || continue
+            grep -Fq 'next/scripts/visual-audit-v6.py' "$normalized" || continue
+            grep -Fq 'craft-v6/' "$normalized" || continue
+            cd /tmp/bonsai-v6-main
+            git reset --hard origin/main
+            git clean -fdx
+            if git apply --check --binary --recount "$normalized"; then
+              selected="$normalized"
+              break
+            fi
+            if git apply --check --binary --3way "$normalized"; then
+              selected="$normalized"
+              break
+            fi
+          done
+          test -n "$selected"
+
+          cd /tmp/bonsai-v6-main
+          git reset --hard origin/main
+          git clean -fdx
+          if ! git apply --binary --recount --whitespace=nowarn "$selected"; then
+            git apply --binary --3way --whitespace=nowarn "$selected"
+          fi
+          git diff --check
+          test -f next/src/BonsaiStage.tsx
+          test -f next/tests/photoreal-v6.mjs
+          test -f next/tests/photoreal-v6-unit.mjs
+          test -f next/scripts/visual-audit-v6.py
+          test "$(find next/public/assets/kuromatsu/craft-v6 -type f -name '*.webp' | wc -l)" -ge 12
+          echo /tmp/bonsai-v6-main > /tmp/v6-root
+          echo "$selected" > /tmp/v6-patches/selected.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Prove the materialized candidate typechecks, unit-tests and builds
+        shell: bash
+        run: |
+          set -euxo pipefail
+          root="$(cat /tmp/v6-root)"
+          cd "$root/next"
+          npm ci
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run build
+          python -m py_compile scripts/visual-audit-v6.py
+
+      - name: Copy the proven application source into the Draft PR branch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          root="$(cat /tmp/v6-root)"
+          if test "$root" != "$GITHUB_WORKSPACE"; then
+            rm -rf next
+            cp -a "$root/next" ./next
+            rm -rf next/node_modules next/dist next/test-artifacts next/.test-cjs next/scripts/__pycache__
+            for workflow in deploy-react-v1.yml photoreal-craft-v6-ci.yml photoreal-v6-final-gate.yml; do
+              if test -f "$root/.github/workflows/$workflow"; then
+                cp "$root/.github/workflows/$workflow" ".github/workflows/$workflow"
+              fi
+            done
+          fi
+          git diff --check
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bonsai-photoreal-v6-materialization
+          path: |
+            /tmp/v6-patches
+            /tmp/bonsai-v6-main/next/test-artifacts
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Commit the real v6 source and delete transfer-only scaffolding
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf next/node_modules next/dist next/test-artifacts next/.test-cjs next/scripts/__pycache__
+          rm -rf .photoreal-v6-payload
+          rm -f .photoreal-v6-source.patch.xz .photoreal-v6-source.ready
+          rm -f .photoreal-v6-final.patch.xz .photoreal-v6-final.ready
+          rm -f .photoreal-v6-*.ready
+          rm -f .github/workflows/apply-photoreal-v6.yml
+          rm -f .github/workflows/apply-photoreal-v6-robust.yml
+          rm -f .github/workflows/apply-photoreal-v6-worktree.yml
+          rm -f .github/workflows/apply-photoreal-v6-scoped.yml
+          rm -f .github/workflows/apply-photoreal-v6-autostrip.yml
+          rm -f .github/workflows/apply-photoreal-v6-normalized.yml
+          rm -f .github/workflows/apply-photoreal-v6-independent.yml
+          rm -f .github/workflows/commit-photoreal-v6-candidate.yml
+          rm -f .github/workflows/diagnose-photoreal-v6.yml
+          rm -f .github/workflows/export-applied-photoreal-v6.yml
+          rm -f .github/workflows/export-photoreal-v6-source.yml
+          rm -f .github/workflows/finalize-photoreal-v6-source.yml
+          rm -f .github/workflows/report-photoreal-v6-status.yml
+          rm -f .github/workflows/report-photoreal-v6-to-audit-issue.yml
+          rm -f .github/workflows/summarize-photoreal-v6-gates.yml
+          rm -f .github/workflows/update-photoreal-v6-pr-status.yml
+          rm -f .github/workflows/materialize-photoreal-v6-source.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git status --short
+          git commit -m 'Photoreal Craft v6の実装ソースを確定'
+          git push origin HEAD:agent/photoreal-craft-v6
