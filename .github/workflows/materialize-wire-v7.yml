@@ -1,27 +1,22 @@
-name: Materialize and audit photographed wire v7
+name: Materialize and audit approved photographed wire v7
 
 on:
   push:
     branches: [agent/photoreal-craft-v6-final]
     paths:
       - '.wire-v7/ready'
-  pull_request:
-    branches: [main]
-    paths:
-      - '.github/workflows/export-wire-v7-source.yml'
-      - '.wire-v7/ready'
+      - '.github/workflows/materialize-wire-v7.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: materialize-wire-photo-v7
+  group: materialize-approved-wire-v7
   cancel-in-progress: false
 
 jobs:
   materialize-audit-and-commit:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -30,62 +25,23 @@ jobs:
           ref: agent/photoreal-craft-v6-final
           fetch-depth: 0
 
-      - name: Decode and verify exact implementation payload
+      - name: Reassemble and verify approved implementation patch
         run: |
           set -euxo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          import hashlib
-          alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-          targets = {
-              '.wire-v7/payload-003': ['67f5d3a741b25ea74b7b871742ab1d61d82e239c'],
-              '.wire-v7/payload-004': ['449078c4f93cb7368a888d0a7c259860a2649124', '2329da08d0554ed10f80a41babc4755e4e465be9'],
-              '.wire-v7/payload-005': ['0d5dea317d4f3fbbf296fe10334339d33be7aff9', '89c3b3a622a6c4604583e84253ee719b974b35d7', '0498fc58568bc297d97718adc97c340666779176'],
-              '.wire-v7/payload-006': ['58bef780d85004fd6b511ab5fa568b852e5b9dfe'],
-          }
-          def blob_sha(value: str) -> str:
-              raw = value.encode('ascii')
-              return hashlib.sha1(f'blob {len(raw)}\0'.encode() + raw).hexdigest()
-          def repair(value: str, target: str, label: str) -> str:
-              if blob_sha(value) == target:
-                  print(label, 'already exact')
-                  return value
-              chars = list(value)
-              for index, original in enumerate(chars):
-                  for replacement in alphabet:
-                      if replacement == original:
-                          continue
-                      chars[index] = replacement
-                      candidate = ''.join(chars)
-                      if blob_sha(candidate) == target:
-                          print(label, 'repaired at', index, original, '->', replacement)
-                          return candidate
-                  chars[index] = original
-              raise SystemExit(f'{label} could not be repaired as a single-character transfer error; got {blob_sha(value)} expected {target}')
-          for file_name, expected_parts in targets.items():
-              path = Path(file_name)
-              data = path.read_text(encoding='ascii')
-              expected_size = 4000 if len(expected_parts) == 1 and file_name != '.wire-v7/payload-006' else None
-              if len(expected_parts) > 1:
-                  assert len(data) == 4000 * len(expected_parts), (file_name, len(data))
-                  parts = [data[i * 4000:(i + 1) * 4000] for i in range(len(expected_parts))]
-              else:
-                  parts = [data]
-              repaired = [repair(part, target, f'{file_name}[{index}]') for index, (part, target) in enumerate(zip(parts, expected_parts))]
-              path.write_text(''.join(repaired), encoding='ascii')
-          PY
-          cat .wire-v7/payload-* | tr -d '\r\n' > /tmp/wire-v7-payload.b64
-          test "$(wc -c < /tmp/wire-v7-payload.b64)" -eq 62236
-          base64 -d /tmp/wire-v7-payload.b64 > /tmp/wire-v7-payload.tar.gz
-          echo '573663dfba00fd8701ad138109db3808f988058183c760673f937d730fe3e1f7  /tmp/wire-v7-payload.tar.gz' | sha256sum -c -
-          tar -tzf /tmp/wire-v7-payload.tar.gz
+          cat .wire-v7/patch-* | tr -d '\r\n' > /tmp/wire-v7.patch.gz.b64
+          test "$(wc -c < /tmp/wire-v7.patch.gz.b64)" -eq 33672
+          base64 -d /tmp/wire-v7.patch.gz.b64 > /tmp/wire-v7.patch.gz
+          echo '376bc93e906711ecb65b5f3294814143f17c0279e60e015f09da2de31203dba7  /tmp/wire-v7.patch.gz' | sha256sum -c -
+          gzip -dc /tmp/wire-v7.patch.gz > /tmp/wire-v7.patch
+          git apply --check /tmp/wire-v7.patch
+          git apply /tmp/wire-v7.patch
+          git diff --check
 
-      - name: Materialize source and deterministic photographed states
+      - name: Generate deterministic photographed wire and deadwood states
         run: |
           set -euxo pipefail
-          tar -xzf /tmp/wire-v7-payload.tar.gz -C .
-          rm -rf next/public/assets/kuromatsu/wire-photo-v7 next/public/assets/kuromatsu/deadwood-photo-v6
           python -m pip install --disable-pip-version-check pillow numpy
+          rm -rf next/public/assets/kuromatsu/wire-photo-v7 next/public/assets/kuromatsu/deadwood-photo-v6
           python next/scripts/generate-wire-photo-v7.py
           python next/scripts/generate-deadwood-photo-v6.py
           find next/public/assets/kuromatsu/wire-photo-v7 -type f -name '*.webp' -print0 | sort -z | xargs -0 sha256sum > /tmp/wire-v7-first.sha256
@@ -119,6 +75,7 @@ jobs:
           npm run test:photoreal:unit
           npm run build
           node --check tests/smoke.mjs
+          node --check tests/seasonal-v4.mjs
           node --check tests/authentic-v5.mjs
           python -m py_compile scripts/generate-wire-photo-v7.py scripts/generate-deadwood-photo-v6.py scripts/visual-audit-v6.py
 
@@ -148,13 +105,13 @@ jobs:
 
       - name: Reject S marks, floating copper, ribbons, markers and state drift
         working-directory: next
-        run: python scripts/visual-audit-v6.py --output wire-photo-v7-visual-audit.json
+        run: python scripts/visual-audit-v6.py --output wire-v7-final-visual-audit.json
 
       - name: Preserve candidate screenshots and logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bonsai-wire-photo-v7-candidate-audit
+          name: bonsai-approved-wire-v7-final-audit
           path: |
             next/test-artifacts
             /tmp/bonsai-wire-v7-preview.log
@@ -176,7 +133,9 @@ jobs:
       - name: Commit only the audited implementation
         run: |
           rm -rf .wire-v7
+          rm -f .github/workflows/materialize-wire-v7.yml
           rm -f .github/workflows/export-wire-v7-source.yml
+          rm -f .github/workflows/inspect-wire-v7-payload.yml
           rm -rf next/.test-cjs next/scripts/__pycache__ next/dist next/test-artifacts
           git diff --check
           git config user.name 'github-actions[bot]'
