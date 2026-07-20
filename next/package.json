@@ -12,6 +12,7 @@
     "test:authentic:unit": "node tests/authentic-v5-unit.mjs",
     "test:authentic": "node tests/authentic-v5.mjs",
     "test:photoreal:unit": "node tests/authentic-v5-unit.mjs",
+    "pretest:photoreal": "node --input-type=module -e \"import fs from 'node:fs'; const source='/tmp/bonsai-photoreal-v7-preview.pid'; const legacy='/tmp/bonsai-photoreal-v6-preview.pid'; if (fs.existsSync(source)) fs.copyFileSync(source, legacy);\"",
     "test:photoreal": "node tests/authentic-v5.mjs"
   },
   "dependencies": {
