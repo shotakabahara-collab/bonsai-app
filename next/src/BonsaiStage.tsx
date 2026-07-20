@@ -93,6 +93,26 @@ const JIN_PATHS: Partial<Record<PartId, string>> = {
   front: 'M405 815 C416 819 427 823 438 827'
 };
 
+const DEADWOOD_PHOTO_BASE = '/bonsai-app/assets/kuromatsu/deadwood-photo-v6';
+const DEADWOOD_JIN_PARTS = new Set<PartId>(['apex', 'firstLeft', 'secondRight', 'thirdLeft', 'back', 'front']);
+
+type ActiveDeadwoodProject = ReturnType<typeof activeDeadwoodProjects>[number];
+
+function deadwoodPhotoHref(project: ActiveDeadwoodProject): string | null {
+  if (project.kind === 'shari') {
+    const side = project.side === 'right' ? 'right' : 'left';
+    const level = Math.max(1, Math.min(3, Math.round(project.level)));
+    return `${DEADWOOD_PHOTO_BASE}/shari-${side}-l${level}.webp`;
+  }
+  return DEADWOOD_JIN_PARTS.has(project.targetPartId)
+    ? `${DEADWOOD_PHOTO_BASE}/jin-${project.targetPartId}.webp`
+    : null;
+}
+
+function legacyShariPhotoHref(side: 'left' | 'right'): string {
+  return `${DEADWOOD_PHOTO_BASE}/shari-${side}-l3.webp`;
+}
+
 // Shari is rendered as separated, tapered bark-loss patches.  The tiny gaps and
 // changing width stop it reading as one glowing ribbon while preserving a live
 // vein along the neighbouring bark.
@@ -303,36 +323,27 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
           </defs>
 
           {deadwoodProjects.map(project => {
-            const clipId = `${id}-deadwood-${svgToken(project.id)}`;
-            const opacity = deadwoodPhotoOpacity(project.stage);
-            if (project.kind === 'shari') {
-              const side = project.side === 'right' ? 'right' : 'left';
-              const ribbon = SHARI_RIBBONS[side];
-              return (
-                <g key={project.id} className={`deadwood-effect deadwood-shari stage-${project.stage} ${project.pausedAt ? 'paused' : ''}`} data-testid="photoreal-deadwood" data-stage={project.stage} data-paused={project.pausedAt ? 'true' : 'false'}>
-                  <path d={ribbon} className="deadwood-bark-edge deadwood-shari-outline" />
-                  <path d={ribbon} className="deadwood-wood-core deadwood-shari-fill" style={{ fill: `url(#${id}-${project.stage})` }} filter={`url(#${id}-wood-texture)`} />
-                  <image className="deadwood-photo-texture" href={photo} x="0" y="0" width="900" height="1500" preserveAspectRatio="none" clipPath={`url(#${clipId})`} filter={`url(#${id}-photo-wood)`} opacity={opacity} />
-                  <path d={SHARI_LIVE_EDGES[side]} className="deadwood-live-edge deadwood-shari-live-edge" />
-                  {SHARI_BARK_ISLANDS[side].map(island => <path key={island} d={island} className="deadwood-bark-island" clipPath={`url(#${clipId})`} />)}
-                  {SHARI_GRAINS[side].map((grain, index) => <path key={grain} d={grain} className={`deadwood-grain deadwood-grain-${index ? 'b' : 'a'}`} clipPath={`url(#${clipId})`} />)}
-                </g>
-              );
-            }
-
-            const path = JIN_PATHS[project.targetPartId];
-            if (!path) return null;
-            const width = jinWidth(project.level);
-            const [edgeX, edgeY] = jinLiveEdgeOffset(project.targetPartId);
+            const href = deadwoodPhotoHref(project);
+            if (!href) return null;
             return (
-              <g key={project.id} className={`deadwood-effect deadwood-jin stage-${project.stage} ${project.pausedAt ? 'paused' : ''}`} data-testid="photoreal-deadwood" data-stage={project.stage} data-paused={project.pausedAt ? 'true' : 'false'}>
-                <path d={path} className="deadwood-bark-edge deadwood-jin-outline" strokeWidth={width + 1.8} />
-                <path d={path} className="deadwood-wood-core deadwood-jin-core" style={{ stroke: `url(#${id}-${project.stage})` }} strokeWidth={width} filter={`url(#${id}-wood-texture)`} />
-                <image className="deadwood-photo-texture" href={photo} x="0" y="0" width="900" height="1500" preserveAspectRatio="none" clipPath={`url(#${clipId})`} filter={`url(#${id}-photo-wood)`} opacity={opacity} />
-                <path d={path} className="deadwood-live-edge deadwood-jin-live-edge" strokeWidth="1.05" transform={`translate(${edgeX} ${edgeY})`} />
-                <path d={path} className="deadwood-grain deadwood-grain-a" strokeWidth={Math.max(.65, width * .09)} transform="translate(-.7 .45)" />
-                <path d={path} className="deadwood-grain deadwood-grain-b" strokeWidth={Math.max(.5, width * .065)} transform="translate(.9 -.7)" />
-                <path className="jin-torn-end" d={jinTornEndPath(project.targetPartId, width)} style={{ fill: `url(#${id}-${project.stage})` }} />
+              <g
+                key={project.id}
+                className={`deadwood-effect deadwood-${project.kind} stage-${project.stage} ${project.pausedAt ? 'paused' : ''}`}
+                data-testid="photoreal-deadwood"
+                data-stage={project.stage}
+                data-paused={project.pausedAt ? 'true' : 'false'}
+                data-deadwood-kind={project.kind}
+                data-deadwood-asset={href}
+              >
+                <image
+                  className="deadwood-raster"
+                  href={href}
+                  x="0"
+                  y="0"
+                  width="900"
+                  height="1500"
+                  preserveAspectRatio="none"
+                />
               </g>
             );
           })}
@@ -390,13 +401,23 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
           })}
 
           {bonsai.shari && !deadwoodProjects.some(project => project.kind === 'shari') && (
-            <g className="legacy-shari-photoreal deadwood-effect deadwood-shari stage-mature" data-testid="photoreal-deadwood" data-stage="mature" data-paused="false">
-              <path d={SHARI_RIBBONS[bonsai.shari.side]} className="deadwood-bark-edge deadwood-shari-outline" />
-              <path d={SHARI_RIBBONS[bonsai.shari.side]} className="deadwood-wood-core deadwood-shari-fill" style={{ fill: `url(#${id}-mature)` }} filter={`url(#${id}-wood-texture)`} />
-              <image className="deadwood-photo-texture" href={photo} x="0" y="0" width="900" height="1500" preserveAspectRatio="none" clipPath={`url(#${id}-legacy-shari)`} filter={`url(#${id}-photo-wood)`} opacity=".48" />
-              <path d={SHARI_LIVE_EDGES[bonsai.shari.side]} className="deadwood-live-edge deadwood-shari-live-edge" />
-              {SHARI_BARK_ISLANDS[bonsai.shari.side].map(island => <path key={island} d={island} className="deadwood-bark-island" clipPath={`url(#${id}-legacy-shari)`} />)}
-              {SHARI_GRAINS[bonsai.shari.side].map((grain, index) => <path key={grain} d={grain} className={`deadwood-grain deadwood-grain-${index ? 'b' : 'a'}`} clipPath={`url(#${id}-legacy-shari)`} />)}
+            <g
+              className="legacy-shari-photoreal deadwood-effect deadwood-shari stage-mature"
+              data-testid="photoreal-deadwood"
+              data-stage="mature"
+              data-paused="false"
+              data-deadwood-kind="shari"
+              data-deadwood-asset={legacyShariPhotoHref(bonsai.shari.side)}
+            >
+              <image
+                className="deadwood-raster"
+                href={legacyShariPhotoHref(bonsai.shari.side)}
+                x="0"
+                y="0"
+                width="900"
+                height="1500"
+                preserveAspectRatio="none"
+              />
             </g>
           )}
         </svg>

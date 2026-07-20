@@ -159,6 +159,11 @@ def main() -> None:
     base = images['authentic-v5-base-artwork.png']
     report['wireDelta'] = compare_state(base, images['authentic-v5-wire-artwork.png'], 'wireDelta')
     report['deadwoodDelta'] = compare_state(base, images['authentic-v5-deadwood-fresh-artwork.png'], 'deadwoodDelta')
+    # A deadwood state must occupy an irregular photographed surface, not collapse
+    # back into the thin vector line that failed the iPhone review.
+    deadwood = report['deadwoodDelta']
+    if deadwood['changedRatio'] < .0024 or deadwood['componentCount'] < 3 or int(deadwood['largestComponent']['width']) < 7 or int(deadwood['largestComponent']['height']) < 28:
+        raise SystemExit(f"deadwoodDelta: stripped wood is too thin or too small {deadwood}")
     report['combinedDelta'] = compare_state(base, images['photoreal-v6-combined-artwork.png'], 'combinedDelta')
     report['pauseAppearanceDelta'] = compare_identity(
         images['authentic-v5-deadwood-fresh-artwork.png'],

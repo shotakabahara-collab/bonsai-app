@@ -89,6 +89,41 @@
   isolation: isolate;
 }
 
+
+/* Jin and shari are photographed transparent layers, not vector ribbons. */
+.photoreal-craft-v6 .deadwood-raster {
+  width: 900px;
+  height: 1500px;
+  opacity: .98;
+  pointer-events: none;
+  image-rendering: auto;
+  transform: translateZ(0);
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-fresh .deadwood-raster {
+  filter: saturate(.92) brightness(1.01) contrast(1.05);
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-drying .deadwood-raster {
+  filter: saturate(.76) brightness(1.02) contrast(1.07);
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-carving .deadwood-raster {
+  filter: saturate(.61) brightness(1.04) contrast(1.09);
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-preserving .deadwood-raster {
+  filter: saturate(.34) brightness(1.10) contrast(1.06);
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-weathering .deadwood-raster {
+  filter: saturate(.18) brightness(1.07) contrast(1.09);
+}
+
+.photoreal-craft-v6 .deadwood-effect.stage-mature .deadwood-raster {
+  filter: saturate(.08) brightness(1.08) contrast(1.12);
+}
+
 .photoreal-craft-v6 .deadwood-shari-outline,
 .photoreal-craft-v6 .deadwood-jin-outline,
 .photoreal-craft-v6 .deadwood-jin-core,

@@ -10,7 +10,19 @@ const CORE = [
   '/bonsai-app/assets/kuromatsu/base/starter.webp',
   '/bonsai-app/assets/kuromatsu/base/blue.webp',
   '/bonsai-app/assets/kuromatsu/base/moon.webp',
-  '/bonsai-app/assets/kuromatsu/base/old.webp'
+  '/bonsai-app/assets/kuromatsu/base/old.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-left-l1.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-left-l2.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-left-l3.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-right-l1.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-right-l2.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-right-l3.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-apex.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-firstLeft.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-secondRight.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-thirdLeft.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-back.webp',
+  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-front.webp'
 ];
 
 async function fetchAndCache(cache, url, options = {}) {

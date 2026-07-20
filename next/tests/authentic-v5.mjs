@@ -256,25 +256,35 @@ async function auditPhotographicWorkAndInterruption() {
   await page.getByRole('button', { name: '右側から始める' }).click();
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="photoreal-deadwood"]').length === 2, { timeout: 5000 });
   const deadwoodVisual = await page.evaluate(() => ({
-    groups: [...document.querySelectorAll('[data-testid="photoreal-deadwood"]')].map(node => ({
-      kind: node.classList.contains('deadwood-jin') ? 'jin' : node.classList.contains('deadwood-shari') ? 'shari' : 'unknown',
-      stage: node.getAttribute('data-stage'),
-      paused: node.getAttribute('data-paused'),
-      barkEdges: node.querySelectorAll('.deadwood-bark-edge').length,
-      liveEdges: node.querySelectorAll('.deadwood-live-edge').length,
-      cores: node.querySelectorAll('.deadwood-wood-core').length,
-      grains: node.querySelectorAll('.deadwood-grain').length,
-      barkIslands: node.querySelectorAll('.deadwood-bark-island').length,
-      fillOpacity: node.querySelector('.deadwood-shari-fill') ? Number(getComputedStyle(node.querySelector('.deadwood-shari-fill')).opacity) : null
-    })),
+    groups: [...document.querySelectorAll('[data-testid="photoreal-deadwood"]')].map(node => {
+      const raster = node.querySelector('image.deadwood-raster');
+      return {
+        kind: node.getAttribute('data-deadwood-kind'),
+        stage: node.getAttribute('data-stage'),
+        paused: node.getAttribute('data-paused'),
+        asset: node.getAttribute('data-deadwood-asset'),
+        rasterCount: node.querySelectorAll('image.deadwood-raster').length,
+        width: raster?.getAttribute('width'),
+        height: raster?.getAttribute('height'),
+        preserveAspectRatio: raster?.getAttribute('preserveAspectRatio'),
+        vectorPieces: node.querySelectorAll('.deadwood-bark-edge, .deadwood-live-edge, .deadwood-wood-core, .deadwood-grain, .deadwood-bark-island, .jin-torn-end').length,
+        filter: raster ? getComputedStyle(raster).filter : ''
+      };
+    }),
     lineElements: document.querySelectorAll('.authentic-work-layer line').length,
     circleElements: document.querySelectorAll('.precision-prune-svg circle').length,
     legacyPhotoOcclusions: document.querySelectorAll('[data-testid="wire-branch-occlusion"]').length,
     status: document.querySelector('.deadwood-status-tag')?.textContent ?? ''
   }));
+  const jinVisual = deadwoodVisual.groups.find(group => group.kind === 'jin');
   const shariVisual = deadwoodVisual.groups.find(group => group.kind === 'shari');
-  if (deadwoodVisual.groups.length !== 2 || !deadwoodVisual.groups.some(group => group.kind === 'jin') || !shariVisual || deadwoodVisual.groups.some(group => group.stage !== 'fresh' || group.barkEdges < 1 || group.liveEdges < 1 || group.cores < 1 || group.grains < 2) || shariVisual.barkIslands < 4 || !(shariVisual.fillOpacity > 0 && shariVisual.fillOpacity <= .55) || deadwoodVisual.lineElements !== 0 || deadwoodVisual.circleElements !== 0 || deadwoodVisual.legacyPhotoOcclusions !== 0) {
-    throw new Error(`Photoreal v6 deadwood structure is incomplete: ${JSON.stringify(deadwoodVisual)}`);
+  const invalidRaster = deadwoodVisual.groups.some(group =>
+    group.stage !== 'fresh' || group.rasterCount !== 1 || group.width !== '900' || group.height !== '1500' ||
+    group.preserveAspectRatio !== 'none' || group.vectorPieces !== 0 || !group.asset?.includes('/deadwood-photo-v6/') ||
+    !group.filter || group.filter === 'none'
+  );
+  if (deadwoodVisual.groups.length !== 2 || !jinVisual || !shariVisual || invalidRaster || !jinVisual.asset?.includes('/jin-') || !shariVisual.asset?.match(/\/shari-right-l[1-3]\.webp$/) || deadwoodVisual.lineElements !== 0 || deadwoodVisual.circleElements !== 0 || deadwoodVisual.legacyPhotoOcclusions !== 0) {
+    throw new Error(`Photographed deadwood raster structure is incomplete: ${JSON.stringify(deadwoodVisual)}`);
   }
   await page.screenshot({ path: 'test-artifacts/authentic-v5-deadwood-fresh.png', fullPage: false });
   await captureArtwork(page, '.bonsai-stage [data-testid="bonsai-photo-canvas"]', 'test-artifacts/authentic-v5-deadwood-fresh-artwork.png');
@@ -356,6 +366,7 @@ async function auditPhotographicWorkAndInterruption() {
       wireGroups: stage.querySelectorAll('[data-testid="photoreal-wire"]').length,
       backPasses: stage.querySelectorAll('[data-testid="wire-back-pass"]').length,
       deadwoodGroups: stage.querySelectorAll('[data-testid="photoreal-deadwood"]').length,
+      deadwoodRasters: stage.querySelectorAll('image.deadwood-raster').length,
       legacyPhotoOcclusions: stage.querySelectorAll('[data-testid="wire-branch-occlusion"]').length,
       circleElements: stage.querySelectorAll('circle').length,
       maxSpan: spans.length ? Math.max(...spans) : 0,
@@ -377,7 +388,7 @@ async function auditPhotographicWorkAndInterruption() {
     Math.abs(combinedVisual.canvasRect.width - combinedVisual.workRect.width),
     Math.abs(combinedVisual.canvasRect.height - combinedVisual.workRect.height)
   );
-  if (combinedVisual.renderer !== 'photoreal-craft-v6' || combinedVisual.wireGroups !== 3 || combinedVisual.backPasses !== 3 || combinedVisual.deadwoodGroups !== 2 || combinedVisual.legacyPhotoOcclusions !== 0 || combinedVisual.circleElements !== 0 || combinedVisual.maxSpan > 55 || combinedVisual.aspect !== 'xMidYMid meet' || combinedVisual.natural[0] < 800 || combinedVisual.natural[1] < 1400 || rectDelta > .6 || !combinedVisual.status.includes('3枝')) {
+  if (combinedVisual.renderer !== 'photoreal-craft-v6' || combinedVisual.wireGroups !== 3 || combinedVisual.backPasses !== 3 || combinedVisual.deadwoodGroups !== 2 || combinedVisual.deadwoodRasters !== 2 || combinedVisual.legacyPhotoOcclusions !== 0 || combinedVisual.circleElements !== 0 || combinedVisual.maxSpan > 55 || combinedVisual.aspect !== 'xMidYMid meet' || combinedVisual.natural[0] < 800 || combinedVisual.natural[1] < 1400 || rectDelta > .6 || !combinedVisual.status.includes('3枝')) {
     throw new Error(`Combined iPhone artwork is not registered to one photograph canvas: ${JSON.stringify({ combinedVisual, rectDelta })}`);
   }
   report.combinedVisual = combinedVisual;
