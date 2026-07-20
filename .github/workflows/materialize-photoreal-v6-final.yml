@@ -31,17 +31,40 @@ jobs:
           fetch-depth: 1
           show-progress: false
 
-      - name: Reassemble and verify the exact v6 source snapshot
+      - name: Reassemble and inspect the exact v6 source snapshot
+        id: reassemble
+        continue-on-error: true
         run: |
-          set -euxo pipefail
+          set +e
+          exec > >(tee /tmp/photoreal-v6-reassembly.log) 2>&1
           cat .v6-final/src-* | tr -d '\r\n' > /tmp/photoreal-v6-source.tar.gz.b64
           wc -c /tmp/photoreal-v6-source.tar.gz.b64
           sha256sum /tmp/photoreal-v6-source.tar.gz.b64
           base64 -d /tmp/photoreal-v6-source.tar.gz.b64 > /tmp/photoreal-v6-source.tar.gz
-          wc -c /tmp/photoreal-v6-source.tar.gz
-          sha256sum /tmp/photoreal-v6-source.tar.gz
-          echo '6f19d747e2cbe00d7e5ba9b2dbd006ba41ee444bde49d15310bdd734e7507652  /tmp/photoreal-v6-source.tar.gz' | sha256sum -c -
-          tar -tzf /tmp/photoreal-v6-source.tar.gz
+          decode_status=$?
+          echo "decode_status=$decode_status"
+          if test "$decode_status" -eq 0; then
+            wc -c /tmp/photoreal-v6-source.tar.gz
+            sha256sum /tmp/photoreal-v6-source.tar.gz
+            echo '6f19d747e2cbe00d7e5ba9b2dbd006ba41ee444bde49d15310bdd734e7507652  /tmp/photoreal-v6-source.tar.gz' | sha256sum -c -
+            verify_status=$?
+            echo "verify_status=$verify_status"
+            tar -tzf /tmp/photoreal-v6-source.tar.gz
+            tar_status=$?
+            echo "tar_status=$tar_status"
+          else
+            verify_status=99
+            tar_status=99
+          fi
+          final_status=0
+          test "$decode_status" -eq 0 || final_status=1
+          test "$verify_status" -eq 0 || final_status=1
+          test "$tar_status" -eq 0 || final_status=1
+          echo "$final_status" > /tmp/photoreal-v6-reassembly.status
+          exit "$final_status"
+
+      - name: Require exact v6 source reassembly
+        run: test "$(cat /tmp/photoreal-v6-reassembly.status)" = 0
 
       - name: Materialize the clean application source
         run: |
@@ -121,6 +144,8 @@ jobs:
           path: |
             next/test-artifacts
             /tmp/bonsai-photoreal-v6-final-preview.log
+            /tmp/photoreal-v6-reassembly.log
+            /tmp/photoreal-v6-reassembly.status
           if-no-files-found: warn
           retention-days: 14
 
