@@ -1,4 +1,4 @@
-name: Photoreal Craft v6 validation
+name: Photoreal Craft v7 validation
 
 on:
   pull_request:
@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: photoreal-craft-v6-${{ github.event.pull_request.number || github.ref }}
+  group: photoreal-craft-v7-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -42,6 +42,14 @@ jobs:
         run: |
           npx playwright install --with-deps webkit
           python -m pip install --disable-pip-version-check pillow numpy
+      - name: Verify deterministic photographed wire and deadwood assets
+        working-directory: next
+        run: |
+          python scripts/generate-wire-photo-v7.py
+          python scripts/generate-deadwood-photo-v6.py
+          test "$(find public/assets/kuromatsu/wire-photo-v7 -type f -name '*.webp' | wc -l)" -eq 12
+          test "$(find public/assets/kuromatsu/deadwood-photo-v6 -type f -name '*.webp' | wc -l)" -eq 24
+          git diff --exit-code -- public/assets/kuromatsu/wire-photo-v7 public/assets/kuromatsu/deadwood-photo-v6
       - name: Start verified production preview
         working-directory: next
         run: |
@@ -60,14 +68,14 @@ jobs:
           npm run test:smoke
           node tests/seasonal-v4.mjs
           npm run test:photoreal
-      - name: Reject tubes, floating work, bright ribbons and circular markers
+      - name: Reject S marks, floating copper, ribbons and circular markers
         working-directory: next
         run: python scripts/visual-audit-v6.py --output photoreal-v6-pr-visual-audit.json
       - name: Preserve complete audit bundle
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bonsai-photoreal-craft-v6-pr-audit
+          name: bonsai-photoreal-craft-v7-pr-audit
           path: |
             next/test-artifacts
             /tmp/bonsai-photoreal-v6-preview.log
