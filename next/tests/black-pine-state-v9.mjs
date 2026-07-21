@@ -44,7 +44,7 @@ try {
   await page.locator('.precision-site-grid button').filter({ hasText: '第二枝・先端' }).click();
   const thin = page.locator('.seasonal-technique-grid button').filter({ hasText: '古葉取り・葉透かし' });
   await thin.click();
-  const execute = page.getByRole('button', { name: /実行する|理解して実行する/ }).last();
+  const execute = page.getByRole('button', { name: /この箇所へ確定する|強い反対を理解して実行する/ }).last();
   page.once('dialog', dialog => dialog.accept());
   await execute.click();
   await page.waitForSelector('.precision-v4-sheet', { state: 'detached', timeout: 10000 });
@@ -65,8 +65,6 @@ try {
   report.phase = 'shari';
   await page.getByRole('button', { name: '神・舎利' }).click();
   await page.getByRole('button', { name: /左側・第1強度を始める/ }).click();
-  page.once('dialog', dialog => dialog.accept());
-  await page.getByRole('button', { name: /左側・第1強度を始める/ }).click().catch(() => {});
   await page.waitForSelector('[data-testid="photoreal-deadwood"][data-deadwood-kind="shari"]', { timeout: 10000 });
   await page.getByRole('button', { name: '閉じる' }).click();
   await capture(page, 'shari');
