@@ -24,6 +24,7 @@ jobs:
         with:
           ref: agent/black-pine-state-rendering-v9
           fetch-depth: 0
+          persist-credentials: true
 
       - uses: actions/setup-node@v4
         with:
@@ -31,24 +32,23 @@ jobs:
           cache: npm
           cache-dependency-path: next/package-lock.json
 
-      - name: Install exact dependencies
+      - name: Install dependencies
         working-directory: next
-        run: npm ci
-
-      - name: Install WebKit and image tools
         run: |
-          cd next
+          npm ci
           npx playwright install --with-deps webkit
           python -m pip install --disable-pip-version-check pillow numpy opencv-python-headless
 
-      - name: Regenerate photographed state assets
+      - name: Generate and connect v9 photographic states
         run: |
           python next/scripts/generate-black-pine-state-v9.py
+          python next/scripts/apply-black-pine-state-v9.py
           test "$(find next/public/assets/kuromatsu/wire-photo-v9 -name '*.webp' | wc -l)" -eq 12
           test "$(find next/public/assets/kuromatsu/deadwood-photo-v9 -name '*.webp' | wc -l)" -eq 24
           test "$(find next/public/assets/kuromatsu/pruning-photo-v9 -name '*.webp' | wc -l)" -eq 18
+          git diff --check
 
-      - name: Typecheck, model contracts and build
+      - name: Typecheck and build
         working-directory: next
         run: |
           npm run typecheck
@@ -56,21 +56,19 @@ jobs:
           npm run test:gameplay:unit
           npm run build
 
-      - name: Start production preview
+      - name: Start preview
         working-directory: next
         run: |
-          setsid npm run preview >/tmp/black-pine-v9-materialize.log 2>&1 &
-          server=$!
-          echo "$server" >/tmp/black-pine-v9-materialize.pid
-          echo "$server" >/tmp/bonsai-photoreal-v7-preview.pid
+          setsid npm run preview >/tmp/bpv9-preview.log 2>&1 &
+          echo $! >/tmp/bpv9-preview.pid
           for i in $(seq 1 120); do
             curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
             sleep .25
           done
-          cat /tmp/black-pine-v9-materialize.log
+          cat /tmp/bpv9-preview.log
           exit 1
 
-      - name: Run black pine and complete regressions
+      - name: Run v9 and all regressions
         working-directory: next
         run: |
           npm run test:black-pine-v9
@@ -79,36 +77,26 @@ jobs:
           node tests/seasonal-v4.mjs
           npm run test:gameplay
           npm run test:photoreal
-          python scripts/visual-audit-v6.py --output black-pine-v9-final-visual-audit.json
+          python scripts/visual-audit-v6.py --root test-artifacts --output photoreal-v9-visual-audit.json
 
       - name: Stop preview
         if: always()
         run: |
-          if test -f /tmp/black-pine-v9-materialize.pid; then
-            server="$(cat /tmp/black-pine-v9-materialize.pid)"
+          if test -f /tmp/bpv9-preview.pid; then
+            server="$(cat /tmp/bpv9-preview.pid)"
             kill -TERM -- -"$server" 2>/dev/null || kill "$server" 2>/dev/null || true
           fi
 
-      - name: Commit only audited assets and remove temporary gate
+      - name: Commit audited implementation
         run: |
           rm -f .github/workflows/materialize-black-pine-v9.yml
+          rm -f next/scripts/apply-black-pine-state-v9.py
+          rm -f next/TYPECHECK_BLACK_PINE_V9.txt
           rm -rf next/node_modules next/dist next/test-artifacts next/scripts/__pycache__
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git diff --cached --check
           git diff --cached --stat
-          git commit -m 'Black Pine State Rendering v9：背景漏れ除去済み写真資産を確定'
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'Black Pine State Rendering v9：監査済み写真状態を確定'
           git push origin HEAD:agent/black-pine-state-rendering-v9
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: black-pine-v9-materialize-audit
-          path: |
-            next/black-pine-state-v9-assets.json
-            next/black-pine-state-v9-visual-audit.json
-            next/black-pine-v9-final-visual-audit.json
-            /tmp/black-pine-v9-materialize.log
-          if-no-files-found: warn
-          retention-days: 14
