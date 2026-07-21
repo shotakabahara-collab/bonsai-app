@@ -144,4 +144,17 @@ auth = auth.replace("combinedVisual.aspect !== 'xMidYMid meet'", "combinedVisual
 auth = auth.replace("'bonsai-gameplay-v8-shell'", "'bonsai-black-pine-state-v9-shell'")
 authentic.write_text(auth, encoding='utf-8')
 
+smoke = ROOT / 'next/tests/smoke.mjs'
+smoke_text = smoke.read_text(encoding='utf-8')
+smoke_text = smoke_text.replace("[data-testid=\"photoreal-wire\"] image.wire-raster", "[data-testid=\"photoreal-wire\"].wire-raster")
+smoke_text = smoke_text.replace("group?.querySelector('image.wire-raster')", "group?.matches('img.wire-raster') ? group : group?.querySelector('img.wire-raster')")
+smoke_text = smoke_text.replace("document.querySelectorAll('image.wire-raster').length", "document.querySelectorAll('img.wire-raster').length")
+smoke_text = smoke_text.replace("document.querySelector('.authentic-work-layer')?.getAttribute('preserveAspectRatio') ?? ''", "document.querySelector('.authentic-work-layer') ? 'html-layer' : ''")
+smoke_text = smoke_text.replace("raster?.getAttribute('preserveAspectRatio') ?? ''", "raster?.matches('img') ? 'html-img' : ''")
+smoke_text = smoke_text.replace("/wire-photo-v7/secondRight-light.webp", "/wire-photo-v9/secondRight-light.webp")
+smoke_text = smoke_text.replace("report.wireVisual.preserveAspectRatio !== 'xMidYMid meet'", "report.wireVisual.preserveAspectRatio !== 'html-layer'")
+smoke_text = smoke_text.replace("report.wireVisual.rasterAspect !== 'none'", "report.wireVisual.rasterAspect !== 'html-img'")
+smoke_text = smoke_text.replace("report.wireVisual.renderer !== 'gameplay-v8'", "report.wireVisual.renderer !== 'black-pine-state-v9'")
+smoke.write_text(smoke_text, encoding='utf-8')
+
 print('Black Pine State Rendering v9 connected')
