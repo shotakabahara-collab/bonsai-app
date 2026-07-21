@@ -23,7 +23,12 @@ async function assetState(page) {
 try {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, serviceWorkers: 'allow' });
   const page = await context.newPage();
-  await page.addInitScript(() => localStorage.clear());
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem('black-pine-v9-initialized')) {
+      localStorage.clear();
+      sessionStorage.setItem('black-pine-v9-initialized', '1');
+    }
+  });
   await page.goto(new URL(`index.html?black-pine-v9=${Date.now()}`, baseURL).href, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
   report.phase = 'new black pine onboarding';
