@@ -46,22 +46,15 @@ def read_rgba(path: Path) -> np.ndarray:
     return data
 
 
-def wall_mask(base: np.ndarray) -> np.ndarray:
-    maximum = base.max(axis=2)
-    minimum = base.min(axis=2)
-    luminance = base.mean(axis=2)
-    return (luminance > 207) & ((maximum - minimum) < 24)
-
-
 def enhance_transparent(source: np.ndarray, kind: str, strength: float) -> np.ndarray:
     out = source.astype(np.float32)
-    alpha = out[..., 3] / 255.0
     if kind == 'wire':
         out[..., 2] = np.clip(out[..., 2] * (1.08 + .10 * strength) + 8, 0, 255)
         out[..., 1] = np.clip(out[..., 1] * (1.01 + .04 * strength), 0, 255)
         out[..., 0] = np.clip(out[..., 0] * .90, 0, 255)
-        expanded = cv2.dilate((alpha * 255).astype(np.uint8), np.ones((3, 3), np.uint8), iterations=1)
-        out[..., 3] = np.maximum(out[..., 3], expanded * (.58 + .12 * strength))
+        # Preserve the photographed wire silhouette exactly. The former 1px
+        # alpha dilation let a handful of copper pixels escape onto the wall.
+        out[..., 3] = np.clip(out[..., 3] * (1.06 + .08 * strength), 0, 255)
     else:
         gray = cv2.cvtColor(out[..., :3].astype(np.uint8), cv2.COLOR_BGR2GRAY)
         grain = cv2.Laplacian(gray, cv2.CV_32F)
@@ -73,21 +66,11 @@ def enhance_transparent(source: np.ndarray, kind: str, strength: float) -> np.nd
 
 
 def generate_wire() -> list[str]:
-    base = cv2.imread(str(BASE / 'black.webp'), cv2.IMREAD_COLOR)
-    if base is None or base.shape[:2] != (1500, 900):
-        raise SystemExit('invalid black pine master photograph')
-    wall = wall_mask(base)
     names: list[str] = []
     for part in PARTS:
         for intensity, strength in [('light', .55), ('strong', 1.0)]:
             source = read_rgba(WIRE_SRC / f'{part}-{intensity}.webp')
             result = enhance_transparent(source, 'wire', strength)
-            # Never allow copper to occupy the photographed white wall. Clearing RGB as
-            # well as alpha prevents interpolation colour from bleeding out of a fully
-            # transparent pixel in iPhone Safari.
-            result[wall, :3] = 0
-            result[wall, 3] = 0
-            result[result[..., 3] == 0, :3] = 0
             name = f'{part}-{intensity}.webp'
             write_webp(result, WIRE_OUT / name)
             names.append(name)
