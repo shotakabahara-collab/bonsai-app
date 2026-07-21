@@ -92,7 +92,9 @@ jobs:
 
       - name: Run permanent visual audit
         working-directory: next
-        run: python scripts/visual-audit-v6.py --output black-pine-v9-final-visual-audit.json
+        run: |
+          set -o pipefail
+          python scripts/visual-audit-v6.py --output black-pine-v9-final-visual-audit.json 2>&1 | tee permanent-visual-audit.log
 
       - name: Stop preview
         if: always()
@@ -126,6 +128,7 @@ jobs:
             next/black-pine-state-v9-assets.json
             next/black-pine-state-v9-visual-audit.json
             next/black-pine-v9-final-visual-audit.json
+            next/permanent-visual-audit.log
             /tmp/bpv9-preview.log
           if-no-files-found: warn
           retention-days: 14
