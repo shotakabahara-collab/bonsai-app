@@ -52,9 +52,12 @@ def enhance_transparent(source: np.ndarray, kind: str, strength: float) -> np.nd
         out[..., 2] = np.clip(out[..., 2] * (1.08 + .10 * strength) + 8, 0, 255)
         out[..., 1] = np.clip(out[..., 1] * (1.01 + .04 * strength), 0, 255)
         out[..., 0] = np.clip(out[..., 0] * .90, 0, 255)
-        # Preserve the photographed wire silhouette exactly. The former 1px
-        # alpha dilation let a handful of copper pixels escape onto the wall.
-        out[..., 3] = np.clip(out[..., 3] * (1.06 + .08 * strength), 0, 255)
+        # Pull the antialiased alpha edge one pixel inward. This keeps the visible
+        # photographed copper core while removing the tiny wall-side fringe that
+        # the permanent iPhone audit classified as floating paint marks.
+        alpha = out[..., 3].astype(np.uint8)
+        eroded = cv2.erode(alpha, np.ones((3, 3), np.uint8), iterations=1)
+        out[..., 3] = np.clip(eroded.astype(np.float32) * (1.12 + .10 * strength), 0, 255)
     else:
         gray = cv2.cvtColor(out[..., :3].astype(np.uint8), cv2.COLOR_BGR2GRAY)
         grain = cv2.Laplacian(gray, cv2.CV_32F)
