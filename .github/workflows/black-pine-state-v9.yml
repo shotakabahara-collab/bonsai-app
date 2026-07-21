@@ -68,16 +68,31 @@ jobs:
           cat /tmp/bpv9-preview.log
           exit 1
 
-      - name: Run v9 and all regressions
+      - name: Run Black Pine v9 real-flow audit
         working-directory: next
         run: |
           npm run test:black-pine-v9
           python scripts/audit-black-pine-state-v9.py
-          npm run test:smoke
-          node tests/seasonal-v4.mjs
-          npm run test:gameplay
-          npm run test:photoreal
-          python scripts/visual-audit-v6.py --output black-pine-v9-final-visual-audit.json
+
+      - name: Run smoke regression
+        working-directory: next
+        run: npm run test:smoke
+
+      - name: Run seasonal regression
+        working-directory: next
+        run: node tests/seasonal-v4.mjs
+
+      - name: Run Gameplay regression
+        working-directory: next
+        run: npm run test:gameplay
+
+      - name: Run Photoreal regression
+        working-directory: next
+        run: npm run test:photoreal
+
+      - name: Run permanent visual audit
+        working-directory: next
+        run: python scripts/visual-audit-v6.py --output black-pine-v9-final-visual-audit.json
 
       - name: Stop preview
         if: always()
