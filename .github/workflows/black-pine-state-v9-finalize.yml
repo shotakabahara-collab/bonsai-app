@@ -1,0 +1,145 @@
+name: Black Pine State Rendering v9 finalization
+
+on:
+  push:
+    branches: [agent/black-pine-state-rendering-v9]
+    paths:
+      - '.github/workflows/black-pine-state-v9-finalize.yml'
+      - 'next/scripts/generate-black-pine-state-v9.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: black-pine-state-v9-finalization
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/black-pine-state-rendering-v9
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Install exact dependencies and image tools
+        working-directory: next
+        run: |
+          npm ci
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow numpy opencv-python-headless
+
+      - name: Regenerate all 54 black pine states
+        run: |
+          python next/scripts/generate-black-pine-state-v9.py
+          test "$(find next/public/assets/kuromatsu/wire-photo-v9 -name '*.webp' | wc -l)" -eq 12
+          test "$(find next/public/assets/kuromatsu/deadwood-photo-v9 -name '*.webp' | wc -l)" -eq 24
+          test "$(find next/public/assets/kuromatsu/pruning-photo-v9 -name '*.webp' | wc -l)" -eq 18
+          git diff --check
+
+      - name: Typecheck and production build
+        working-directory: next
+        run: |
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run test:gameplay:unit
+          npm run build
+
+      - name: Start production preview
+        working-directory: next
+        run: |
+          setsid npm run preview >/tmp/black-pine-v9-final-preview.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/black-pine-v9-final-preview.pid
+          echo "$server" >/tmp/bonsai-photoreal-v7-preview.pid
+          for i in $(seq 1 120); do
+            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
+            sleep .25
+          done
+          cat /tmp/black-pine-v9-final-preview.log
+          exit 1
+
+      - name: Run real-flow and visual audits
+        working-directory: next
+        run: |
+          npm run test:black-pine-v9
+          python scripts/audit-black-pine-state-v9.py
+          npm run test:smoke
+          node tests/seasonal-v4.mjs
+          npm run test:gameplay
+          npm run test:photoreal
+          python scripts/visual-audit-v6.py --output black-pine-v9-final-visual-audit.json
+
+      - name: Stop preview
+        if: always()
+        run: |
+          if test -f /tmp/black-pine-v9-final-preview.pid; then
+            server="$(cat /tmp/black-pine-v9-final-preview.pid)"
+            kill -TERM -- -"$server" 2>/dev/null || kill "$server" 2>/dev/null || true
+          fi
+
+      - name: Prepare verified source and assets
+        run: |
+          rm -f .github/workflows/black-pine-state-v9-finalize.yml
+          rm -rf next/node_modules next/dist next/test-artifacts next/scripts/__pycache__
+          git add -A
+          git diff --cached --stat
+          test -n "$(git diff --cached --name-only)"
+
+      - name: Commit verified source and assets
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const cp = require('child_process');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const baseSha = cp.execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+            const fields = cp.execFileSync('git', ['diff', '--cached', '--name-status', '--no-renames', '-z']).toString('utf8').split('\0');
+            const entries = [];
+            for (let i = 0; i + 1 < fields.length; i += 2) {
+              const status = fields[i];
+              const path = fields[i + 1];
+              if (!status || !path) continue;
+              if (status === 'D') {
+                entries.push({ path, mode: '100644', type: 'blob', sha: null });
+                continue;
+              }
+              const mode = cp.execFileSync('git', ['ls-files', '-s', '--', path], { encoding: 'utf8' }).trim().split(/\s+/)[0] || '100644';
+              const content = fs.readFileSync(path).toString('base64');
+              const blob = await github.rest.git.createBlob({ owner, repo, content, encoding: 'base64' });
+              entries.push({ path, mode, type: 'blob', sha: blob.data.sha });
+            }
+            const baseTree = cp.execFileSync('git', ['rev-parse', `${baseSha}^{tree}`], { encoding: 'utf8' }).trim();
+            const tree = await github.rest.git.createTree({ owner, repo, base_tree: baseTree, tree: entries });
+            const commit = await github.rest.git.createCommit({
+              owner,
+              repo,
+              message: 'Black Pine State Rendering v9：最終写真資産と監査を確定',
+              tree: tree.data.sha,
+              parents: [baseSha]
+            });
+            await github.rest.git.updateRef({ owner, repo, ref: 'heads/agent/black-pine-state-rendering-v9', sha: commit.data.sha, force: false });
+            core.info(`verified commit: ${commit.data.sha}`);
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: black-pine-state-v9-final-audit
+          path: |
+            next/test-artifacts
+            next/black-pine-state-v9-assets.json
+            next/black-pine-state-v9-visual-audit.json
+            next/black-pine-v9-final-visual-audit.json
+            /tmp/black-pine-v9-final-preview.log
+          if-no-files-found: warn
+          retention-days: 14
