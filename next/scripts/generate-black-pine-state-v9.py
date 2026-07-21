@@ -53,8 +53,7 @@ def enhance_transparent(source: np.ndarray, kind: str, strength: float) -> np.nd
         out[..., 2] = np.clip(out[..., 2] * (1.08 + .10 * strength) + 8, 0, 255)
         out[..., 1] = np.clip(out[..., 1] * (1.01 + .04 * strength), 0, 255)
         out[..., 0] = np.clip(out[..., 0] * .90, 0, 255)
-        kernel = np.ones((3, 3), np.uint8)
-        expanded = cv2.dilate((alpha * 255).astype(np.uint8), kernel, iterations=1)
+        expanded = cv2.dilate((alpha * 255).astype(np.uint8), np.ones((3, 3), np.uint8), iterations=1)
         out[..., 3] = np.maximum(out[..., 3], expanded * (.58 + .12 * strength))
     else:
         gray = cv2.cvtColor(out[..., :3].astype(np.uint8), cv2.COLOR_BGR2GRAY)
@@ -95,16 +94,28 @@ def generate_deadwood() -> list[str]:
     return names
 
 
-def green_mask(image: np.ndarray, box: tuple[int, int, int, int], level: int) -> np.ndarray:
+def green_mask(image: np.ndarray, box: tuple[int, int, int, int], level: int, seed: int) -> np.ndarray:
     x0, y0, x1, y1 = box
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    green = cv2.inRange(hsv, np.array([28, 30, 18]), np.array([95, 255, 230]))
+    green = cv2.inRange(hsv, np.array([31, 38, 22]), np.array([92, 255, 220]))
     roi = np.zeros(green.shape, np.uint8)
     cv2.rectangle(roi, (x0, y0), (x1, y1), 255, -1)
-    mask = cv2.bitwise_and(green, roi)
-    kernel = np.ones((3 + level * 2, 3 + level * 2), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    mask = cv2.dilate(mask, np.ones((3, 3), np.uint8), iterations=level)
+    green = cv2.bitwise_and(green, roi)
+
+    # Select coherent short needle segments rather than whole foliage pads.
+    rng = np.random.default_rng(seed)
+    small_h = max(2, int(np.ceil(image.shape[0] / 14)))
+    small_w = max(2, int(np.ceil(image.shape[1] / 14)))
+    coarse = rng.random((small_h, small_w), dtype=np.float32)
+    field = cv2.resize(coarse, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_CUBIC)
+    threshold = {1: .18, 2: .31, 3: .44}[level]
+    selected = np.where(field < threshold, 255, 0).astype(np.uint8)
+    mask = cv2.bitwise_and(green, selected)
+
+    # Preserve trunks and broad dark structures; only expand by one pixel at high strength.
+    if level >= 2:
+        mask = cv2.dilate(mask, np.ones((2, 2), np.uint8), iterations=1)
+    mask = cv2.medianBlur(mask, 3)
     return mask
 
 
@@ -113,15 +124,21 @@ def generate_pruning() -> list[str]:
     if base is None or base.shape[:2] != (1500, 900):
         raise SystemExit('invalid black pine master photograph')
     names: list[str] = []
-    for part, box in PARTS.items():
+    for index, (part, box) in enumerate(PARTS.items()):
         for level in (1, 2, 3):
-            mask = green_mask(base, box, level)
-            if cv2.countNonZero(mask) < 80:
-                raise SystemExit(f'pruning mask too small: {part} l{level}')
-            radius = 2 + level * 2
-            changed = cv2.inpaint(base, mask, radius, cv2.INPAINT_TELEA)
-            alpha = cv2.GaussianBlur(mask, (0, 0), 1.2 + level * .35)
-            overlay = np.dstack([changed, alpha])
+            mask = green_mask(base, box, level, seed=7100 + index * 37 + level * 101)
+            count = cv2.countNonZero(mask)
+            if count < 45:
+                raise SystemExit(f'pruning mask too small: {part} l{level} ({count})')
+
+            # Thin needles are replaced by local photographic texture. Blending prevents
+            # bright polygonal holes while preserving a visible, irreversible reduction.
+            inpainted = cv2.inpaint(base, mask, 1.5 + level * .35, cv2.INPAINT_TELEA)
+            local = cv2.bilateralFilter(base, 7, 24, 24)
+            replacement = cv2.addWeighted(inpainted, .72, local, .28, 0)
+            alpha = cv2.GaussianBlur(mask, (0, 0), .55 + level * .12)
+            alpha = np.clip(alpha.astype(np.float32) * {1: .78, 2: .88, 3: .96}[level], 0, 255).astype(np.uint8)
+            overlay = np.dstack([replacement, alpha])
             name = f'{part}-l{level}.webp'
             write_webp(overlay, PRUNING_OUT / name)
             names.append(name)
