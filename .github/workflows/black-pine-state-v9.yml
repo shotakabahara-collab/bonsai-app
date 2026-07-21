@@ -39,10 +39,9 @@ jobs:
           npx playwright install --with-deps webkit
           python -m pip install --disable-pip-version-check pillow numpy opencv-python-headless
 
-      - name: Generate and connect v9 photographic states
+      - name: Generate v9 photographic states
         run: |
           python next/scripts/generate-black-pine-state-v9.py
-          python next/scripts/apply-black-pine-state-v9.py
           test "$(find next/public/assets/kuromatsu/wire-photo-v9 -name '*.webp' | wc -l)" -eq 12
           test "$(find next/public/assets/kuromatsu/deadwood-photo-v9 -name '*.webp' | wc -l)" -eq 24
           test "$(find next/public/assets/kuromatsu/pruning-photo-v9 -name '*.webp' | wc -l)" -eq 18
