@@ -6,6 +6,9 @@ on:
     paths: ['.github/workflows/black-pine-v9-typecheck.yml']
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   diagnose:
     runs-on: ubuntu-latest
@@ -28,6 +31,21 @@ jobs:
         continue-on-error: true
         working-directory: next
         run: npm run typecheck 2>&1 | tee /tmp/black-pine-v9-typecheck.log
+      - uses: actions/github-script@v7
+        if: always()
+        with:
+          script: |
+            const fs = require('fs');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const path = 'next/TYPECHECK_BLACK_PINE_V9.txt';
+            const content = Buffer.from(fs.readFileSync('/tmp/black-pine-v9-typecheck.log', 'utf8')).toString('base64');
+            let sha;
+            try {
+              const current = await github.rest.repos.getContent({ owner, repo, path, ref: 'agent/black-pine-state-rendering-v9' });
+              sha = current.data.sha;
+            } catch {}
+            await github.rest.repos.createOrUpdateFileContents({ owner, repo, path, message: 'Black Pine v9：型診断ログ更新', content, sha, branch: 'agent/black-pine-state-rendering-v9' });
       - uses: actions/upload-artifact@v4
         with:
           name: black-pine-v9-typecheck-log
