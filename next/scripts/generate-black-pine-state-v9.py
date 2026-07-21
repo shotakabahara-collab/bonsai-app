@@ -52,12 +52,7 @@ def enhance_transparent(source: np.ndarray, kind: str, strength: float) -> np.nd
         out[..., 2] = np.clip(out[..., 2] * (1.08 + .10 * strength) + 8, 0, 255)
         out[..., 1] = np.clip(out[..., 1] * (1.01 + .04 * strength), 0, 255)
         out[..., 0] = np.clip(out[..., 0] * .90, 0, 255)
-        # Pull the antialiased alpha edge one pixel inward. This keeps the visible
-        # photographed copper core while removing the tiny wall-side fringe that
-        # the permanent iPhone audit classified as floating paint marks.
-        alpha = out[..., 3].astype(np.uint8)
-        eroded = cv2.erode(alpha, np.ones((3, 3), np.uint8), iterations=1)
-        out[..., 3] = np.clip(eroded.astype(np.float32) * (1.12 + .10 * strength), 0, 255)
+        out[..., 3] = np.clip(out[..., 3] * (1.06 + .08 * strength), 0, 255)
     else:
         gray = cv2.cvtColor(out[..., :3].astype(np.uint8), cv2.COLOR_BGR2GRAY)
         grain = cv2.Laplacian(gray, cv2.CV_32F)
@@ -68,12 +63,27 @@ def enhance_transparent(source: np.ndarray, kind: str, strength: float) -> np.nd
     return out.astype(np.uint8)
 
 
+def photographed_wall_mask(base: np.ndarray) -> np.ndarray:
+    bgr = base.astype(np.int16)
+    luminance = bgr.mean(axis=2)
+    chroma = bgr.max(axis=2) - bgr.min(axis=2)
+    # Match the permanent visual audit's white-wall definition at source scale.
+    return (luminance > 207) & (chroma < 24)
+
+
 def generate_wire() -> list[str]:
+    base = cv2.imread(str(BASE / 'black.webp'), cv2.IMREAD_COLOR)
+    if base is None or base.shape[:2] != (1500, 900):
+        raise SystemExit('invalid black pine master photograph')
+    wall = photographed_wall_mask(base)
     names: list[str] = []
     for part in PARTS:
         for intensity, strength in [('light', .55), ('strong', 1.0)]:
             source = read_rgba(WIRE_SRC / f'{part}-{intensity}.webp')
             result = enhance_transparent(source, 'wire', strength)
+            # Remove only pixels that sit on the actual pale wall. Branch, bark and
+            # needles retain their original photographed wire width and antialiasing.
+            result[..., 3][wall] = 0
             name = f'{part}-{intensity}.webp'
             write_webp(result, WIRE_OUT / name)
             names.append(name)
@@ -105,7 +115,6 @@ def green_mask(image: np.ndarray, box: tuple[int, int, int, int], level: int, se
     cv2.rectangle(roi, (x0, y0), (x1, y1), 255, -1)
     green = cv2.bitwise_and(green, roi)
 
-    # Select coherent short needle segments rather than whole foliage pads.
     rng = np.random.default_rng(seed)
     small_h = max(2, int(np.ceil(image.shape[0] / 14)))
     small_w = max(2, int(np.ceil(image.shape[1] / 14)))
@@ -114,12 +123,9 @@ def green_mask(image: np.ndarray, box: tuple[int, int, int, int], level: int, se
     threshold = {1: .18, 2: .31, 3: .44}[level]
     selected = np.where(field < threshold, 255, 0).astype(np.uint8)
     mask = cv2.bitwise_and(green, selected)
-
-    # Preserve trunks and broad dark structures; only expand by one pixel at high strength.
     if level >= 2:
         mask = cv2.dilate(mask, np.ones((2, 2), np.uint8), iterations=1)
-    mask = cv2.medianBlur(mask, 3)
-    return mask
+    return cv2.medianBlur(mask, 3)
 
 
 def generate_pruning() -> list[str]:
@@ -133,9 +139,6 @@ def generate_pruning() -> list[str]:
             count = cv2.countNonZero(mask)
             if count < 45:
                 raise SystemExit(f'pruning mask too small: {part} l{level} ({count})')
-
-            # Thin needles are replaced by local photographic texture. Blending prevents
-            # bright polygonal holes while preserving a visible, irreversible reduction.
             inpainted = cv2.inpaint(base, mask, 1.5 + level * .35, cv2.INPAINT_TELEA)
             local = cv2.bilateralFilter(base, 7, 24, 24)
             replacement = cv2.addWeighted(inpainted, .72, local, .28, 0)
