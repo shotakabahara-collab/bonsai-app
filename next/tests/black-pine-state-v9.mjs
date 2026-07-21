@@ -5,10 +5,15 @@ fs.mkdirSync('test-artifacts', { recursive: true });
 const baseURL = process.env.BONSAI_BASE_URL || 'http://127.0.0.1:4173/bonsai-app/';
 const browser = await webkit.launch({ headless: true });
 const report = { phase: 'start', assets: {}, reload: null };
+const CAPTURE_STYLE = `
+  .topbar, .bottom-nav, .completion-dock, .wire-status-tag,
+  .deadwood-status-tag, .dead-tree-status-tag, .toast { visibility: hidden !important; }
+`;
 
 async function capture(page, name) {
   const canvas = page.locator('.bonsai-stage [data-testid="bonsai-photo-canvas"]').first();
-  await canvas.screenshot({ path: `test-artifacts/black-pine-v9-${name}.png` });
+  await canvas.scrollIntoViewIfNeeded();
+  await canvas.screenshot({ path: `test-artifacts/black-pine-v9-${name}.png`, style: CAPTURE_STYLE });
 }
 
 async function assetState(page) {
