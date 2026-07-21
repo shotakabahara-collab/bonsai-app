@@ -83,13 +83,21 @@ jobs:
           npm run test:black-pine-v9
           python scripts/audit-black-pine-state-v9.py
 
-      - name: Run existing Gameplay and Photoreal regressions
+      - name: Run existing smoke regression
         working-directory: next
-        run: |
-          npm run test:smoke
-          node tests/seasonal-v4.mjs
-          npm run test:gameplay
-          npm run test:photoreal
+        run: npm run test:smoke
+
+      - name: Run seasonal regression
+        working-directory: next
+        run: node tests/seasonal-v4.mjs
+
+      - name: Run Gameplay regression
+        working-directory: next
+        run: npm run test:gameplay
+
+      - name: Run Photoreal regression
+        working-directory: next
+        run: npm run test:photoreal
 
       - name: Stop preview
         if: always()
