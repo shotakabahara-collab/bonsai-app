@@ -1,4 +1,258 @@
+===== npm run typecheck =====
 
 > bonsai-app-rebuild@1.0.0 typecheck
 > tsc --noEmit --pretty false
 
+STATUS=0
+===== npm run test:photoreal:unit =====
+
+> bonsai-app-rebuild@1.0.0 test:photoreal:unit
+> node tests/authentic-v5-unit.mjs
+
+{
+  "dangerousRisk": {
+    "score": 100,
+    "immediateVitalityLoss": 5.7,
+    "immediateHealthLoss": 7,
+    "immediateVigorLoss": 8.8,
+    "diseaseChance": 48,
+    "pestChance": 35,
+    "diebackChance": 45,
+    "deathChance": 14,
+    "growthPenalty": 61
+  },
+  "storedOutcome": "disease",
+  "wireOutcome": {
+    "id": "5084c49b-9a2e-4f6b-a33e-b2551dcef199",
+    "at": 1784462460000,
+    "intensity": "light",
+    "direction": "down",
+    "result": "interrupted",
+    "retention": 25,
+    "scarAdded": 0
+  },
+  "deadwoodPaused": true,
+  "deadwoodProgress": 0.0016534391534391536,
+  "jinStrength": 3,
+  "shariStrength": 2,
+  "saveVersion": 2
+}
+STATUS=0
+===== npm run test:gameplay:unit =====
+
+> bonsai-app-rebuild@1.0.0 test:gameplay:unit
+> node tests/gameplay-v8-unit.mjs
+
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: service worker release id is stale
+    at file:///home/runner/work/bonsai-app/bonsai-app/next/tests/gameplay-v8-unit.mjs:31:8
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: '// Photographed wire, jin and shari raster assets are part of the immutable offline artwork shell.\n' +
+    "const VERSION = 'bonsai-black-pine-state-v9';\n" +
+    'const CACHE = `${VERSION}-shell`;\n' +
+    "const INDEX = '/bonsai-app/index.html';\n" +
+    'const CORE = [\n' +
+    "  '/bonsai-app/', INDEX,\n" +
+    "  '/bonsai-app/manifest.webmanifest', '/bonsai-app/icon.svg',\n" +
+    "  '/bonsai-app/photo-assets.js', '/bonsai-app/IMAGE_LICENSES.md',\n" +
+    "  '/bonsai-app/assets/kuromatsu/manifest.json',\n" +
+    "  '/bonsai-app/assets/kuromatsu/base/black.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/base/starter.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/base/blue.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/base/moon.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/base/old.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v7/apex-light.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v7/apex-strong.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v7/firstLeft-light.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v7/firstLeft-strong.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v7/secondRight-light.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v7/secondRight-strong.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v7/thirdLeft-light.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v7/thirdLeft-strong.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v7/back-light.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v7/back-strong.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v7/front-light.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v7/front-strong.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-left-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-left-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-left-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-right-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-right-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/shari-right-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-apex-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-apex-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-apex-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-firstLeft-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-firstLeft-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-firstLeft-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-secondRight-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-secondRight-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-secondRight-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-thirdLeft-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-thirdLeft-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-thirdLeft-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-back-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-back-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-back-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-front-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-front-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v6/jin-front-l3.webp'\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v9/apex-light.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v9/apex-strong.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v9/firstLeft-light.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v9/firstLeft-strong.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v9/secondRight-light.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v9/secondRight-strong.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v9/thirdLeft-light.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v9/thirdLeft-strong.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v9/back-light.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v9/back-strong.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v9/front-light.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/wire-photo-v9/front-strong.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-apex-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-apex-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-apex-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-back-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-back-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-back-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-firstLeft-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-firstLeft-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-firstLeft-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-front-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-front-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-front-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-secondRight-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-secondRight-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-secondRight-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-thirdLeft-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-thirdLeft-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/jin-thirdLeft-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/shari-left-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/shari-left-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/shari-left-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/shari-right-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/shari-right-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/deadwood-photo-v9/shari-right-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/apex-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/apex-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/apex-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/firstLeft-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/firstLeft-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/firstLeft-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/secondRight-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/secondRight-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/secondRight-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/thirdLeft-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/thirdLeft-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/thirdLeft-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/back-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/back-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/back-l3.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/front-l1.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/front-l2.webp',\n" +
+    "  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/front-l3.webp',\n" +
+    '];\n' +
+    '\n' +
+    'async function fetchAndCache(cache, url, options = {}) {\n' +
+    '  const response = await fetch(url, options);\n' +
+    '  if (response.ok) await cache.put(url, response.clone());\n' +
+    '  return response;\n' +
+    '}\n' +
+    '\n' +
+    'async function cacheBuiltAssets(cache, indexResponse) {\n' +
+    '  if (!indexResponse?.ok) return;\n' +
+    '  const html = await indexResponse.clone().text();\n' +
+    `  const urls = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]\n` +
+    '    .map(match => new URL(match[1], self.location.origin))\n' +
+    "    .filter(url => url.origin === self.location.origin && url.pathname.startsWith('/bonsai-app/assets/'));\n" +
+    '  const unique = [...new Set(urls.map(url => url.href))];\n' +
+    '  await Promise.allSettled(unique.map(async url => {\n' +
+    "    const response = await fetch(url, { cache: 'reload' });\n" +
+    '    if (response.ok) await cache.put(url, response.clone());\n' +
+    '  }));\n' +
+    '}\n' +
+    '\n' +
+    "self.addEventListener('install', event => {\n" +
+    '  event.waitUntil((async () => {\n' +
+    '    const cache = await caches.open(CACHE);\n' +
+    "    const indexResponse = await fetchAndCache(cache, INDEX, { cache: 'reload' });\n" +
+    '    await cacheBuiltAssets(cache, indexResponse);\n' +
+    "    await Promise.allSettled(CORE.filter(url => url !== INDEX).map(url => fetchAndCache(cache, url, { cache: 'reload' })));\n" +
+    '    await self.skipWaiting();\n' +
+    '  })());\n' +
+    '});\n' +
+    '\n' +
+    "self.addEventListener('activate', event => {\n" +
+    '  event.waitUntil((async () => {\n' +
+    '    const keys = await caches.keys();\n' +
+    '    await Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)));\n' +
+    '    await self.clients.claim();\n' +
+    '  })());\n' +
+    '});\n' +
+    '\n' +
+    "self.addEventListener('fetch', event => {\n" +
+    "  if (event.request.method !== 'GET') return;\n" +
+    '  const url = new URL(event.request.url);\n' +
+    '  if (url.origin !== self.location.origin) return;\n' +
+    "  if (event.request.mode === 'navigate') {\n" +
+    '    event.respondWith((async () => {\n' +
+    '      try {\n' +
+    "        const response = await fetch(event.request, { cache: 'no-store' });\n" +
+    '        if (response.ok) {\n' +
+    '          const cache = await caches.open(CACHE);\n' +
+    '          await cache.put(event.request, response.clone());\n' +
+    '          await cacheBuiltAssets(cache, response);\n' +
+    '        }\n' +
+    '        return response;\n' +
+    '      } catch {\n' +
+    '        return (await caches.match(event.request, { ignoreSearch: true })) || (await caches.match(INDEX)) || Response.error();\n' +
+    '      }\n' +
+    '    })());\n' +
+    '    return;\n' +
+    '  }\n' +
+    '  event.respondWith((async () => {\n' +
+    '    const hit = await caches.match(event.request, { ignoreSearch: true });\n' +
+    '    if (hit) return hit;\n' +
+    '    try {\n' +
+    '      const response = await fetch(event.request);\n' +
+    '      if (response.ok) {\n' +
+    '        const cache = await caches.open(CACHE);\n' +
+    '        await cache.put(event.request, response.clone());\n' +
+    '      }\n' +
+    '      return response;\n' +
+    '    } catch {\n' +
+    '      return Response.error();\n' +
+    '    }\n' +
+    '  })());\n' +
+    '});\n',
+  expected: /bonsai-gameplay-v8/,
+  operator: 'match',
+  diff: 'simple'
+}
+
+Node.js v22.23.1
+STATUS=1
+===== npm run build =====
+
+> bonsai-app-rebuild@1.0.0 build
+> tsc --noEmit --pretty false && vite build && node scripts/copy-legacy-assets.mjs
+
+[36mvite v8.1.5 [32mbuilding client environment for production...[36m[39m
+[2Ktransforming...<script src="/bonsai-app/photo-assets.js"> in "/index.html" can't be bundled without type="module" attribute
+✓ 38 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   2.30 kB │ gzip:   1.13 kB
+dist/assets/index-ry7-Tscq.css   59.35 kB │ gzip:  12.66 kB
+dist/assets/index-Bqg5dOAh.js   323.57 kB │ gzip: 102.70 kB │ map: 1,202.81 kB
+
+[32m✓ built in 187ms[39m
+BONSAI build ready: 1240 byte local photo asset bridge
+STATUS=0
