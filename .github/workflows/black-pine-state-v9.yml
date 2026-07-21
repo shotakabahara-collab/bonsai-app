@@ -103,6 +103,8 @@ jobs:
         run: |
           rm -f .github/workflows/black-pine-state-v9.yml
           rm -f next/scripts/apply-black-pine-state-v9.py
+          rm -f .github/workflows/black-pine-v9-typecheck.yml
+          rm -f next/TYPECHECK_BLACK_PINE_V9.txt
           rm -rf next/node_modules next/dist next/test-artifacts next/scripts/__pycache__
           git add -A
           git diff --cached --stat
