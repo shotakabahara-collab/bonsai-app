@@ -28,6 +28,6 @@ assert.match(stage, /\{interactive && \(\s*<svg className="precision-prune-svg"/
 assert.match(stage, /selectPartFromPhoto/, 'direct photograph part selection is missing');
 assert.match(stage, /direct-part-selection/, 'selected-part feedback is missing');
 assert.match(css, /\.photoreal-craft-v7 \.part-hotspot\{[^}]*opacity:\.01/s, 'non-paint hit areas are missing');
-assert.match(sw, /bonsai-gameplay-v8/, 'service worker release id is stale');
+assert.match(sw, /bonsai-black-pine-state-v9/, 'service worker release id is stale');
 
 console.log('BONSAI Gameplay v8 unit contracts: PASS');

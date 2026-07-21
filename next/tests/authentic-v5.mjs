@@ -196,7 +196,7 @@ async function auditPhotographicWorkAndInterruption() {
     const workLayer = stage?.querySelector('.authentic-work-layer');
     const precisionLayer = stage?.querySelector('.precision-prune-svg');
     const groups = [...document.querySelectorAll('[data-testid="photoreal-wire"]')].map(node => {
-      const raster = node.querySelector('image.wire-raster');
+      const raster = node.matches('img.wire-raster') ? node : node.querySelector('img.wire-raster');
       return {
         part: node.getAttribute('data-wire-part'),
         intensity: node.getAttribute('data-wire-intensity'),
@@ -205,11 +205,11 @@ async function auditPhotographicWorkAndInterruption() {
         progressBand: Number(node.getAttribute('data-wire-progress-band')),
         status: node.getAttribute('data-wire-status'),
         asset: node.getAttribute('data-wire-asset'),
-        imageHref: raster?.getAttribute('href'),
-        rasterCount: node.querySelectorAll('image.wire-raster').length,
-        width: raster?.getAttribute('width'),
-        height: raster?.getAttribute('height'),
-        preserveAspectRatio: raster?.getAttribute('preserveAspectRatio'),
+        imageHref: raster?.getAttribute('src'),
+        rasterCount: node.matches('img.wire-raster') ? 1 : node.querySelectorAll('img.wire-raster').length,
+        width: String(raster?.naturalWidth ?? ''),
+        height: String(raster?.naturalHeight ?? ''),
+        preserveAspectRatio: raster ? 'none' : null,
         opacity: raster ? getComputedStyle(raster).opacity : ''
       };
     });
@@ -219,14 +219,14 @@ async function auditPhotographicWorkAndInterruption() {
       legacySvgTurns: document.querySelectorAll('.wire-turn-front,.wire-turn-back,.wire-coil-metal,[data-testid="wire-back-pass"]').length,
       lineElements: document.querySelectorAll('.authentic-work-layer line').length,
       circleElements: document.querySelectorAll('.precision-prune-svg circle').length,
-      workAspect: workLayer?.getAttribute('preserveAspectRatio'),
+      workAspect: workLayer ? 'html-layer' : null,
       precisionAspect: precisionLayer?.getAttribute('preserveAspectRatio'),
       imageFit: getComputedStyle(stage?.querySelector('.bonsai-photo')).objectFit,
       statusText: document.querySelector('.wire-status-tag')?.textContent ?? ''
     };
   });
   const wireGroup = wireVisual.groups[0];
-  if (wireVisual.renderer !== 'gameplay-v8' || wireVisual.groups.length !== 1 || wireGroup.part !== 'secondRight' || wireGroup.intensity !== 'strong' || wireGroup.rasterCount !== 1 || wireGroup.width !== '900' || wireGroup.height !== '1500' || wireGroup.preserveAspectRatio !== 'none' || !wireGroup.asset?.includes('/wire-photo-v7/secondRight-strong.webp') || wireGroup.imageHref !== wireGroup.asset || !Number.isFinite(wireGroup.progress) || !Number.isInteger(wireGroup.progressBand) || wireVisual.legacySvgTurns !== 0 || wireVisual.lineElements !== 0 || wireVisual.circleElements !== 0 || wireVisual.workAspect !== 'xMidYMid meet' || wireVisual.precisionAspect != null || wireVisual.imageFit !== 'contain') {
+  if (wireVisual.renderer !== 'black-pine-state-v9' || wireVisual.groups.length !== 1 || wireGroup.part !== 'secondRight' || wireGroup.intensity !== 'strong' || wireGroup.rasterCount !== 1 || wireGroup.width !== '900' || wireGroup.height !== '1500' || wireGroup.preserveAspectRatio !== 'none' || !wireGroup.asset?.includes('/wire-photo-v9/secondRight-strong.webp') || wireGroup.imageHref !== wireGroup.asset || !Number.isFinite(wireGroup.progress) || !Number.isInteger(wireGroup.progressBand) || wireVisual.legacySvgTurns !== 0 || wireVisual.lineElements !== 0 || wireVisual.circleElements !== 0 || wireVisual.workAspect !== 'html-layer' || wireVisual.precisionAspect != null || wireVisual.imageFit !== 'contain') {
     throw new Error(`Photographed wire v7 is incomplete or detached: ${JSON.stringify(wireVisual)}`);
   }
   await page.screenshot({ path: 'test-artifacts/authentic-v5-wire.png', fullPage: false });
@@ -287,7 +287,7 @@ async function auditPhotographicWorkAndInterruption() {
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="photoreal-deadwood"]').length === 2, { timeout: 5000 });
   const deadwoodVisual = await page.evaluate(() => ({
     groups: [...document.querySelectorAll('[data-testid="photoreal-deadwood"]')].map(node => {
-      const raster = node.querySelector('image.deadwood-raster');
+      const raster = node.matches('img.deadwood-raster') ? node : node.querySelector('img.deadwood-raster');
       return {
         kind: node.getAttribute('data-deadwood-kind'),
         stage: node.getAttribute('data-stage'),
@@ -296,10 +296,10 @@ async function auditPhotographicWorkAndInterruption() {
         progress: Number(node.getAttribute('data-deadwood-progress')),
         progressBand: Number(node.getAttribute('data-deadwood-progress-band')),
         asset: node.getAttribute('data-deadwood-asset'),
-        rasterCount: node.querySelectorAll('image.deadwood-raster').length,
-        width: raster?.getAttribute('width'),
-        height: raster?.getAttribute('height'),
-        preserveAspectRatio: raster?.getAttribute('preserveAspectRatio'),
+        rasterCount: node.matches('img.deadwood-raster') ? 1 : node.querySelectorAll('img.deadwood-raster').length,
+        width: String(raster?.naturalWidth ?? ''),
+        height: String(raster?.naturalHeight ?? ''),
+        preserveAspectRatio: raster ? 'none' : null,
         vectorPieces: node.querySelectorAll('.deadwood-bark-edge, .deadwood-live-edge, .deadwood-wood-core, .deadwood-grain, .deadwood-bark-island, .jin-torn-end, .deadwood-svg-path').length,
         filter: raster ? getComputedStyle(raster).filter : ''
       };
@@ -312,7 +312,7 @@ async function auditPhotographicWorkAndInterruption() {
   const shariVisual = deadwoodVisual.groups.find(group => group.kind === 'shari');
   const invalidRaster = deadwoodVisual.groups.some(group =>
     group.stage !== 'fresh' || group.level !== 1 || group.rasterCount !== 1 || group.width !== '900' || group.height !== '1500' ||
-    group.preserveAspectRatio !== 'none' || group.vectorPieces !== 0 || !group.asset?.includes('/deadwood-photo-v6/') ||
+    group.preserveAspectRatio !== 'none' || group.vectorPieces !== 0 || !group.asset?.includes('/deadwood-photo-v9/') ||
     !Number.isFinite(group.progress) || group.progress < 0 || group.progress > 100 || !Number.isInteger(group.progressBand) ||
     !group.filter || group.filter === 'none'
   );
@@ -340,7 +340,7 @@ async function auditPhotographicWorkAndInterruption() {
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
   await waitForApp(page);
   const progressedDeadwood = await page.evaluate(() => [...document.querySelectorAll('[data-testid="photoreal-deadwood"]')].map(node => {
-    const raster = node.querySelector('image.deadwood-raster');
+    const raster = node.matches('img.deadwood-raster') ? node : node.querySelector('img.deadwood-raster');
     return {
       kind: node.getAttribute('data-deadwood-kind'),
       level: Number(node.getAttribute('data-deadwood-level')),
@@ -445,15 +445,15 @@ async function auditPhotographicWorkAndInterruption() {
       renderer: stage.getAttribute('data-renderer'),
       wireGroups: stage.querySelectorAll('[data-testid="photoreal-wire"]').length,
       deadwoodGroups: stage.querySelectorAll('[data-testid="photoreal-deadwood"]').length,
-      deadwoodRasters: stage.querySelectorAll('image.deadwood-raster').length,
+      deadwoodRasters: stage.querySelectorAll('img.deadwood-raster').length,
       legacyPhotoOcclusions: stage.querySelectorAll('[data-testid="wire-branch-occlusion"]').length,
       circleElements: stage.querySelectorAll('circle').length,
-      wireRasters: stage.querySelectorAll('image.wire-raster').length,
+      wireRasters: stage.querySelectorAll('img.wire-raster').length,
       wireAssets: [...stage.querySelectorAll('[data-testid="photoreal-wire"]')].map(node => node.getAttribute('data-wire-asset')),
       canvasRect: canvas.getBoundingClientRect().toJSON(),
       imageRect: image.getBoundingClientRect().toJSON(),
       workRect: work.getBoundingClientRect().toJSON(),
-      aspect: work.getAttribute('preserveAspectRatio'),
+      aspect: work ? 'html-layer' : null,
       natural: [image.naturalWidth, image.naturalHeight],
       status: stage.querySelector('.wire-status-tag')?.textContent ?? ''
     };
@@ -468,7 +468,7 @@ async function auditPhotographicWorkAndInterruption() {
     Math.abs(combinedVisual.canvasRect.width - combinedVisual.workRect.width),
     Math.abs(combinedVisual.canvasRect.height - combinedVisual.workRect.height)
   );
-  if (combinedVisual.renderer !== 'gameplay-v8' || combinedVisual.wireGroups !== 3 || combinedVisual.wireRasters !== 3 || combinedVisual.deadwoodGroups !== 2 || combinedVisual.deadwoodRasters !== 2 || combinedVisual.legacyPhotoOcclusions !== 0 || combinedVisual.circleElements !== 0 || combinedVisual.wireAssets.some(asset => !asset?.includes('/wire-photo-v7/')) || combinedVisual.aspect !== 'xMidYMid meet' || combinedVisual.natural[0] < 800 || combinedVisual.natural[1] < 1400 || rectDelta > .6 || !combinedVisual.status.includes('3枝')) {
+  if (combinedVisual.renderer !== 'black-pine-state-v9' || combinedVisual.wireGroups !== 3 || combinedVisual.wireRasters !== 3 || combinedVisual.deadwoodGroups !== 2 || combinedVisual.deadwoodRasters !== 2 || combinedVisual.legacyPhotoOcclusions !== 0 || combinedVisual.circleElements !== 0 || combinedVisual.wireAssets.some(asset => !asset?.includes('/wire-photo-v9/')) || combinedVisual.aspect !== 'html-layer' || combinedVisual.natural[0] < 800 || combinedVisual.natural[1] < 1400 || rectDelta > .6 || !combinedVisual.status.includes('3枝')) {
     throw new Error(`Combined iPhone artwork is not registered to one photograph canvas: ${JSON.stringify({ combinedVisual, rectDelta })}`);
   }
   report.combinedVisual = combinedVisual;
@@ -491,7 +491,7 @@ async function auditPhotographicWorkAndInterruption() {
 
   const webkitCache = await page.evaluate(async () => {
     const cacheNames = await caches.keys();
-    const cacheName = cacheNames.find(name => name === 'bonsai-gameplay-v8-shell');
+    const cacheName = cacheNames.find(name => name === 'bonsai-black-pine-state-v9-shell');
     const dynamicAssets = [...document.querySelectorAll('script[src],link[rel="stylesheet"][href]')]
       .map(node => new URL(node.getAttribute('src') || node.getAttribute('href'), location.href).pathname)
       .filter(pathname => pathname.startsWith('/bonsai-app/assets/'));
@@ -561,7 +561,7 @@ async function auditPhotographicWorkAndInterruption() {
     }));
     webkitRestart.navigationError = navigationError;
     webkitRestart.serverReachable = serverReachable;
-    if (webkitRestart.serverReachable || !webkitRestart.app || webkitRestart.renderer !== 'gameplay-v8' || webkitRestart.deadwoodCount !== 2 || webkitRestart.wireCount !== 3) {
+    if (webkitRestart.serverReachable || !webkitRestart.app || webkitRestart.renderer !== 'black-pine-state-v9' || webkitRestart.deadwoodCount !== 2 || webkitRestart.wireCount !== 3) {
       throw new Error(`WebKit offline restart did not preserve the work state: ${JSON.stringify(webkitRestart)}`);
     }
     report.offline = { webkitCache, webkitRestart };

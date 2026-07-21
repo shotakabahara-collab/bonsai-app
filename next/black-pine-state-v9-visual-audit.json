@@ -1,0 +1,34 @@
+{
+  "pruning": {
+    "mean": 0.9661971353935128,
+    "changedRatio": 0.026422247907431633,
+    "severeRatio": 0.013736647572112636,
+    "changedPixels": 8321,
+    "largestComponent": 623,
+    "largestComponentRatio": 0.0019782550710647647
+  },
+  "wire": {
+    "mean": 0.13554275528910678,
+    "changedRatio": 0.004289923918151681,
+    "severeRatio": 0.0019814304403602137,
+    "changedPixels": 1351,
+    "largestComponent": 466,
+    "largestComponentRatio": 0.0014797220916792622
+  },
+  "shari": {
+    "mean": 0.12201514269073967,
+    "changedRatio": 0.003210033725670789,
+    "severeRatio": 0.0017336891007842235,
+    "changedPixels": 948,
+    "largestComponent": 694,
+    "largestComponentRatio": 0.0023499613983286156
+  },
+  "reload": {
+    "mean": 0.0,
+    "changedRatio": 0.0,
+    "severeRatio": 0.0,
+    "changedPixels": 0,
+    "largestComponent": 0,
+    "largestComponentRatio": 0.0
+  }
+}
