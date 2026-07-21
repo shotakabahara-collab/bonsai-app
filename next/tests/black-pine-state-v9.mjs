@@ -64,9 +64,10 @@ try {
 
   report.phase = 'shari';
   await page.getByRole('button', { name: '神・舎利' }).click();
+  page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: /左側・第1強度を始める/ }).click();
+  await page.waitForSelector('.deadwood-lifecycle-sheet', { state: 'detached', timeout: 10000 });
   await page.waitForSelector('[data-testid="photoreal-deadwood"][data-deadwood-kind="shari"]', { timeout: 10000 });
-  await page.getByRole('button', { name: '閉じる' }).click();
   await capture(page, 'shari');
   report.assets.shari = await assetState(page);
 
