@@ -94,16 +94,19 @@ if '.state-photo-stack' not in css_text:
 css.write_text(css_text, encoding='utf-8')
 
 sw = ROOT / 'next/public/sw.js'
-sw_text = sw.read_text(encoding='utf-8').replace("const VERSION = 'bonsai-gameplay-v8';", "const VERSION = 'bonsai-black-pine-state-v9';")
-for directory, names in [
-    ('wire-photo-v9', [f'{part}-{kind}.webp' for part in ('apex','firstLeft','secondRight','thirdLeft','back','front') for kind in ('light','strong')]),
-    ('deadwood-photo-v9', [p.name for p in sorted((ROOT / 'next/public/assets/kuromatsu/deadwood-photo-v6').glob('*.webp'))]),
-    ('pruning-photo-v9', [f'{part}-l{level}.webp' for part in ('apex','firstLeft','secondRight','thirdLeft','back','front') for level in (1,2,3)])
-]:
-    for name in names:
-        url = f"  '/bonsai-app/assets/kuromatsu/{directory}/{name}',"
-        if url not in sw_text:
-            sw_text = sw_text.replace('\n];', f'\n{url}\n];', 1)
+sw_text = sw.read_text(encoding='utf-8')
+sw_text = sw_text.replace("const VERSION = 'bonsai-gameplay-v8';", "const VERSION = 'bonsai-black-pine-state-v9';")
+sw_text = sw_text.replace('/wire-photo-v7/', '/wire-photo-v9/').replace('/deadwood-photo-v6/', '/deadwood-photo-v9/')
+pruning_urls = [f"  '/bonsai-app/assets/kuromatsu/pruning-photo-v9/{part}-l{level}.webp'," for part in ('apex','firstLeft','secondRight','thirdLeft','back','front') for level in (1,2,3)]
+if '/pruning-photo-v9/' not in sw_text:
+    marker = '\n];'
+    pos = sw_text.find(marker)
+    if pos < 0:
+        raise SystemExit('Service worker CORE array terminator missing')
+    prefix = sw_text[:pos].rstrip()
+    if not prefix.endswith(','):
+        prefix += ','
+    sw_text = prefix + '\n' + '\n'.join(pruning_urls) + sw_text[pos:]
 sw.write_text(sw_text, encoding='utf-8')
 
 package = ROOT / 'next/package.json'
@@ -115,5 +118,24 @@ package.write_text(pkg, encoding='utf-8')
 main = ROOT / 'next/src/main.tsx'
 main_text = main.read_text(encoding='utf-8').replace("BonsaiRelease = 'bonsai-gameplay-v8-20260720'", "BonsaiRelease = 'bonsai-black-pine-state-v9-20260721'")
 main.write_text(main_text, encoding='utf-8')
+
+unit = ROOT / 'next/tests/gameplay-v8-unit.mjs'
+unit_text = unit.read_text(encoding='utf-8').replace("assert.match(sw, /bonsai-gameplay-v8/, 'service worker release id is stale');", "assert.match(sw, /bonsai-black-pine-state-v9/, 'service worker release id is stale');")
+unit.write_text(unit_text, encoding='utf-8')
+
+authentic = ROOT / 'next/tests/authentic-v5.mjs'
+auth = authentic.read_text(encoding='utf-8')
+auth = auth.replace("renderer !== 'gameplay-v8'", "renderer !== 'black-pine-state-v9'")
+auth = auth.replace("/wire-photo-v7/", "/wire-photo-v9/").replace("/deadwood-photo-v6/", "/deadwood-photo-v9/")
+auth = auth.replace("querySelector('image.wire-raster')", "querySelector('img.wire-raster')")
+auth = auth.replace("querySelector('image.deadwood-raster')", "querySelector('img.deadwood-raster')")
+auth = auth.replace("raster?.getAttribute('href')", "raster?.getAttribute('src')")
+auth = auth.replace("raster?.getAttribute('width')", "String(raster?.naturalWidth ?? '')")
+auth = auth.replace("raster?.getAttribute('height')", "String(raster?.naturalHeight ?? '')")
+auth = auth.replace("raster?.getAttribute('preserveAspectRatio')", "raster ? 'none' : null")
+auth = auth.replace("workLayer?.getAttribute('preserveAspectRatio')", "workLayer ? 'html-layer' : null")
+auth = auth.replace("wireVisual.workAspect !== 'xMidYMid meet'", "wireVisual.workAspect !== 'html-layer'")
+auth = auth.replace("'bonsai-gameplay-v8-shell'", "'bonsai-black-pine-state-v9-shell'")
+authentic.write_text(auth, encoding='utf-8')
 
 print('Black Pine State Rendering v9 connected')
