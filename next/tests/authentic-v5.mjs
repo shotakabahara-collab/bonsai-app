@@ -491,7 +491,7 @@ async function auditPhotographicWorkAndInterruption() {
 
   const webkitCache = await page.evaluate(async () => {
     const cacheNames = await caches.keys();
-    const cacheName = cacheNames.find(name => name === 'bonsai-black-pine-state-v9-shell');
+    const cacheName = cacheNames.find(name => name === 'bonsai-material-preview-v10-shell');
     const dynamicAssets = [...document.querySelectorAll('script[src],link[rel="stylesheet"][href]')]
       .map(node => new URL(node.getAttribute('src') || node.getAttribute('href'), location.href).pathname)
       .filter(pathname => pathname.startsWith('/bonsai-app/assets/'));

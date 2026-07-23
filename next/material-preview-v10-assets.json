@@ -1,0 +1,92 @@
+{
+  "starter": {
+    "path": "public/assets/kuromatsu/base/starter.webp",
+    "dimensions": [
+      900,
+      1500
+    ],
+    "before": {
+      "count": 119855,
+      "averageSaturation": 0.2066522091627121,
+      "averageRgb": [
+        199.84579467773438,
+        174.0809783935547,
+        160.41033935546875
+      ],
+      "maximumChannelDifference": 39.435455322265625
+    },
+    "after": {
+      "count": 121802,
+      "averageSaturation": 0.009863593615591526,
+      "averageRgb": [
+        207.82955932617188,
+        207.6009979248047,
+        208.60557556152344
+      ],
+      "maximumChannelDifference": 1.00457763671875
+    },
+    "changedPixelRatio": 0.07328,
+    "darkForegroundMeanDelta": 0.013867339119315147,
+    "bytes": 470958
+  },
+  "old": {
+    "path": "public/assets/kuromatsu/base/old.webp",
+    "dimensions": [
+      900,
+      1500
+    ],
+    "before": {
+      "count": 118079,
+      "averageSaturation": 0.1581389307975769,
+      "averageRgb": [
+        188.16741943359375,
+        170.91407775878906,
+        160.90390014648438
+      ],
+      "maximumChannelDifference": 27.263519287109375
+    },
+    "after": {
+      "count": 121508,
+      "averageSaturation": 0.009210502728819847,
+      "averageRgb": [
+        207.820556640625,
+        207.61036682128906,
+        208.55758666992188
+      ],
+      "maximumChannelDifference": 0.9472198486328125
+    },
+    "changedPixelRatio": 0.07301259259259259,
+    "darkForegroundMeanDelta": 0.023327697068452835,
+    "bytes": 469314
+  },
+  "blue": {
+    "path": "public/assets/kuromatsu/base/blue.webp",
+    "dimensions": [
+      900,
+      1500
+    ],
+    "before": {
+      "count": 120353,
+      "averageSaturation": 0.1199323982000351,
+      "averageRgb": [
+        167.10702514648438,
+        184.36587524414062,
+        187.5671844482422
+      ],
+      "maximumChannelDifference": 20.460159301757812
+    },
+    "after": {
+      "count": 121845,
+      "averageSaturation": 0.010459775105118752,
+      "averageRgb": [
+        207.4440460205078,
+        207.74012756347656,
+        208.95529174804688
+      ],
+      "maximumChannelDifference": 1.5112457275390625
+    },
+    "changedPixelRatio": 0.07255925925925925,
+    "darkForegroundMeanDelta": 0.013087745755910873,
+    "bytes": 469832
+  }
+}

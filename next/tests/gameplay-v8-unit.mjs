@@ -6,6 +6,8 @@ const stage = fs.readFileSync(new URL('../src/BonsaiStage.tsx', import.meta.url)
 const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
 const gameplay = fs.readFileSync(new URL('../src/GameplayV8.tsx', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../src/gameplay-v8.css', import.meta.url), 'utf8');
+const main = fs.readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+const photoAssets = fs.readFileSync(new URL('../public/photo-assets.js', import.meta.url), 'utf8');
 const sw = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
 
 assert.match(storage, /bonsai:v2:slot:/, 'slot-specific save prefix is missing');
@@ -28,6 +30,11 @@ assert.match(stage, /\{interactive && \(\s*<svg className="precision-prune-svg"/
 assert.match(stage, /selectPartFromPhoto/, 'direct photograph part selection is missing');
 assert.match(stage, /direct-part-selection/, 'selected-part feedback is missing');
 assert.match(css, /\.photoreal-craft-v7 \.part-hotspot\{[^}]*opacity:\.01/s, 'non-paint hit areas are missing');
-assert.match(sw, /bonsai-black-pine-state-v9/, 'service worker release id is stale');
+assert.doesNotMatch(main, /material-preview-v10\.css/, 'the rejected translucent correction layer must not return');
+assert.match(main, /bonsai-material-preview-v10-20260723/, 'material preview release id is stale');
+assert.match(photoAssets, /starter:\s*'\.\/assets\/kuromatsu\/base\/starter\.webp'/, 'starter photograph mapping changed');
+assert.match(photoAssets, /old:\s*'\.\/assets\/kuromatsu\/base\/old\.webp'/, 'old-pot photograph mapping changed');
+assert.match(photoAssets, /blue:\s*'\.\/assets\/kuromatsu\/base\/blue\.webp'/, 'blue-pot photograph mapping changed');
+assert.match(sw, /bonsai-material-preview-v10/, 'service worker release id is stale');
 
 console.log('BONSAI Gameplay v8 unit contracts: PASS');

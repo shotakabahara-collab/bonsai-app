@@ -1,5 +1,5 @@
 // Photographed wire, jin and shari raster assets are part of the immutable offline artwork shell.
-const VERSION = 'bonsai-black-pine-state-v9';
+const VERSION = 'bonsai-material-preview-v10';
 const CACHE = `${VERSION}-shell`;
 const INDEX = '/bonsai-app/index.html';
 const CORE = [
