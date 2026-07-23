@@ -4,7 +4,7 @@ import fs from 'node:fs';
 fs.mkdirSync('test-artifacts', { recursive: true });
 const baseURL = process.env.BONSAI_BASE_URL || 'http://127.0.0.1:4173/bonsai-app/';
 const browser = await webkit.launch({ headless: true });
-const report = { phase: 'start', baseURL, visual: null, errors: [] };
+const report = { phase: 'start', baseURL, correction: null, visual: null, errors: [] };
 
 try {
   const context = await browser.newContext({
@@ -34,17 +34,19 @@ try {
   const correction = await page.evaluate(() => {
     const node = document.querySelector('.material-preview');
     const style = node ? getComputedStyle(node, '::after') : null;
-    return style ? {
+    if (!style) return null;
+    return {
       content: style.content,
       top: style.top,
       left: style.left,
       width: style.width,
       height: style.height,
-      backdropFilter: style.backdropFilter,
-      webkitBackdropFilter: style.webkitBackdropFilter,
+      backdropFilter: style.getPropertyValue('backdrop-filter'),
+      webkitBackdropFilter: style.getPropertyValue('-webkit-backdrop-filter'),
       backgroundColor: style.backgroundColor
-    } : null;
+    };
   });
+  report.correction = correction;
   if (!correction || correction.content === 'none' || correction.content === 'normal') {
     throw new Error(`Black-pine material correction is not active: ${JSON.stringify(correction)}`);
   }
@@ -53,6 +55,7 @@ try {
     throw new Error(`Texture-preserving backdrop correction is missing: ${JSON.stringify(correction)}`);
   }
 
+  report.phase = 'capture and inspect pixels';
   const imagePath = 'test-artifacts/material-preview-v10-iphone.png';
   const png = await preview.screenshot({ path: imagePath });
   const visual = await page.evaluate(async dataUrl => {
@@ -63,6 +66,7 @@ try {
     canvas.width = image.naturalWidth;
     canvas.height = image.naturalHeight;
     const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) throw new Error('Canvas 2D context is unavailable');
     context.drawImage(image, 0, 0);
     const x0 = Math.floor(canvas.width * .13);
     const x1 = Math.floor(canvas.width * .88);
@@ -89,10 +93,12 @@ try {
     return {
       width: canvas.width,
       height: canvas.height,
+      sample: { x0, x1, y0, y1, count },
       averageSaturation: saturationTotal / count,
       averageRgb: [redTotal / count, greenTotal / count, blueTotal / count]
     };
   }, `data:image/png;base64,${png.toString('base64')}`);
+  report.visual = visual;
 
   if (visual.averageSaturation > .18) {
     throw new Error(`The brown photographed backdrop remains too saturated: ${JSON.stringify(visual)}`);
@@ -103,7 +109,6 @@ try {
   }
 
   report.phase = 'complete';
-  report.visual = { correction, ...visual };
   await context.close();
 } catch (error) {
   report.failure = { name: error.name, message: error.message, stack: error.stack };
