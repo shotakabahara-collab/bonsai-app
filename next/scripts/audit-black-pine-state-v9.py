@@ -6,7 +6,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 ART = ROOT / 'next/test-artifacts'
-NAMES = ['base', 'pruning', 'wire', 'shari', 'reload']
+NAMES = ['base', 'pruning', 'wire', 'jin-shari', 'reload']
 IMAGES = {name: cv2.imread(str(ART / f'black-pine-v9-{name}.png'), cv2.IMREAD_COLOR) for name in NAMES}
 for name, image in IMAGES.items():
     if image is None:
@@ -36,8 +36,8 @@ def delta(a: np.ndarray, b: np.ndarray, roi: tuple[float, float, float, float]) 
 base = IMAGES['base']
 pruning = delta(base, IMAGES['pruning'], (.43, .28, .98, .66))
 wire = delta(IMAGES['pruning'], IMAGES['wire'], (.43, .28, .98, .66))
-shari = delta(IMAGES['wire'], IMAGES['shari'], (.35, .45, .72, .98))
-reload = delta(IMAGES['shari'], IMAGES['reload'], (0, 0, 1, 1))
+shari = delta(IMAGES['wire'], IMAGES['jin-shari'], (.35, .45, .72, .98))
+reload = delta(IMAGES['jin-shari'], IMAGES['reload'], (0, 0, 1, 1))
 report = {'pruning': pruning, 'wire': wire, 'shari': shari, 'reload': reload}
 
 minimums = {
