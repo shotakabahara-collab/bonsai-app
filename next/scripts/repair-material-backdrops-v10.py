@@ -117,6 +117,11 @@ def update_release_markers() -> None:
         "const VERSION = 'bonsai-black-pine-state-v9';",
         f"const VERSION = '{RELEASE}';",
     )
+    replace_required(
+        ROOT / "tests" / "authentic-v5.mjs",
+        "bonsai-black-pine-state-v9-shell",
+        "bonsai-material-preview-v10-shell",
+    )
     deploy = REPOSITORY / ".github" / "workflows" / "deploy-react-v1.yml"
     replace_required(deploy, "BONSAI_RELEASE: bonsai-black-pine-state-v9", f"BONSAI_RELEASE: {RELEASE}")
     replace_required(
@@ -128,6 +133,11 @@ def update_release_markers() -> None:
         deploy,
         "# BONSAI Black Pine State Rendering v9 本番監査",
         "# BONSAI Material Preview v10 本番監査",
+    )
+    replace_required(
+        deploy,
+        "'- deployed release: `bonsai-black-pine-state-v9`'",
+        "'- deployed release: `bonsai-material-preview-v10`'",
     )
 
 
