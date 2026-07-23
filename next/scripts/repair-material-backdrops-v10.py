@@ -8,10 +8,12 @@ import numpy as np
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
+REPOSITORY = ROOT.parent
 BASE = ROOT / "public" / "assets" / "kuromatsu" / "base"
 REFERENCE = BASE / "black.webp"
 TARGETS = ("starter", "old", "blue")
 REPORT = ROOT / "material-preview-v10-assets.json"
+RELEASE = "bonsai-material-preview-v10"
 
 
 def sigmoid(value: np.ndarray) -> np.ndarray:
@@ -102,11 +104,39 @@ def repair(name: str, reference: np.ndarray) -> dict[str, object]:
     }
 
 
+def replace_required(path: Path, old: str, new: str) -> None:
+    content = path.read_text(encoding="utf-8")
+    if old not in content and new not in content:
+        raise RuntimeError(f"Expected release marker was not found in {path}")
+    path.write_text(content.replace(old, new), encoding="utf-8")
+
+
+def update_release_markers() -> None:
+    replace_required(
+        ROOT / "public" / "sw.js",
+        "const VERSION = 'bonsai-black-pine-state-v9';",
+        f"const VERSION = '{RELEASE}';",
+    )
+    deploy = REPOSITORY / ".github" / "workflows" / "deploy-react-v1.yml"
+    replace_required(deploy, "BONSAI_RELEASE: bonsai-black-pine-state-v9", f"BONSAI_RELEASE: {RELEASE}")
+    replace_required(
+        deploy,
+        "BONSAI Black Pine State v9: AUTOMATED PASS / iPhone確認待ち",
+        "BONSAI Material Preview v10: AUTOMATED PASS / iPhone確認待ち",
+    )
+    replace_required(
+        deploy,
+        "# BONSAI Black Pine State Rendering v9 本番監査",
+        "# BONSAI Material Preview v10 本番監査",
+    )
+
+
 def main() -> None:
     reference = np.asarray(Image.open(REFERENCE).convert("RGB")).astype(np.float32)
     if reference.shape != (1500, 900, 3):
         raise RuntimeError(f"Unexpected reference dimensions: {reference.shape}")
     result = {name: repair(name, reference) for name in TARGETS}
+    update_release_markers()
     REPORT.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=2))
     print("BONSAI Material Preview v10 base-backdrop repair: PASS")
