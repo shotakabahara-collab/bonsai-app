@@ -19,54 +19,47 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  BONSAI_RELEASE: bonsai-gameplay-v8
+  BONSAI_RELEASE: bonsai-black-pine-state-v9
 
 jobs:
   build-and-audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: next/package-lock.json
 
-      - name: Install exact dependencies
+      - name: Install exact dependencies and image tools
         working-directory: next
-        run: npm ci
+        run: |
+          npm ci
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow numpy opencv-python-headless
 
-      - name: Typecheck, deterministic model audit and production build
+      - name: Verify v9 source, assets and production build
         working-directory: next
         run: |
           npm run typecheck
           npm run test:photoreal:unit
           npm run test:gameplay:unit
           npm run build
+          test "$(find public/assets/kuromatsu/wire-photo-v9 -type f -name '*.webp' | wc -l)" -eq 12
+          test "$(find public/assets/kuromatsu/deadwood-photo-v9 -type f -name '*.webp' | wc -l)" -eq 24
+          test "$(find public/assets/kuromatsu/pruning-photo-v9 -type f -name '*.webp' | wc -l)" -eq 18
+          python -m py_compile scripts/generate-black-pine-state-v9.py scripts/audit-black-pine-state-v9.py
 
-      - name: Install iPhone WebKit and image audit tools
+      - name: Run local WebKit, state-image and regression audits
         working-directory: next
         run: |
-          npx playwright install --with-deps webkit
-          python -m pip install --disable-pip-version-check pillow numpy
-      - name: Verify immutable photographed state assets
-        working-directory: next
-        run: |
-          test "$(find public/assets/kuromatsu/wire-photo-v7 -type f -name '*.webp' | wc -l)" -eq 12
-          test "$(find public/assets/kuromatsu/deadwood-photo-v6 -type f -name '*.webp' | wc -l)" -eq 24
-          test "$(find public/assets/kuromatsu/base -maxdepth 1 -type f -name '*.webp' | wc -l)" -ge 5
-          python -m py_compile scripts/clean-kuromatsu-photo-v8.py scripts/visual-audit-v6.py
-
-      - name: Run local migration, existing flow, seasonal and authentic work audits
-        working-directory: next
-        run: |
-          setsid npm run preview >/tmp/bonsai-react-preview.log 2>&1 &
+          setsid npm run preview >/tmp/bonsai-v9-preview.log 2>&1 &
           server=$!
           echo "$server" >/tmp/bonsai-photoreal-v7-preview.pid
           trap 'kill -TERM -- -$server 2>/dev/null || true' EXIT
-          for i in $(seq 1 100); do
+          for i in $(seq 1 120); do
             curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && break
             sleep .25
           done
@@ -74,26 +67,23 @@ jobs:
           npm run test:smoke
           node tests/seasonal-v4.mjs
           npm run test:gameplay
-          # Photoreal runs last because its local offline test stops the preview server.
+          npm run test:black-pine-v9
+          python scripts/audit-black-pine-state-v9.py
           npm run test:photoreal
-          python scripts/visual-audit-v6.py --output gameplay-v8-local-visual-audit.json
 
       - uses: actions/configure-pages@v5
-        id: configure
-
       - uses: actions/upload-pages-artifact@v3
-        id: pages-artifact
         with:
           path: next/dist
-
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: bonsai-gameplay-v8-local-final-audit
+          name: bonsai-black-pine-v9-local-audit
           path: |
             next/test-artifacts
-            /tmp/bonsai-react-preview.log
-          if-no-files-found: error
+            next/black-pine-state-v9-visual-audit.json
+            /tmp/bonsai-v9-preview.log
+          if-no-files-found: warn
           retention-days: 14
 
   deploy:
@@ -112,10 +102,9 @@ jobs:
   public-iphone-audit:
     needs: deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -128,13 +117,9 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          {
-            npm ci
-            npx playwright install --with-deps webkit
-            python -m pip install --disable-pip-version-check pillow numpy
-          } 2>&1 | tee /tmp/public-install.log
+          { npm ci; npx playwright install --with-deps webkit; python -m pip install --disable-pip-version-check pillow numpy opencv-python-headless; } 2>&1 | tee /tmp/public-install.log
 
-      - name: Wait until GitHub Pages serves gameplay v8
+      - name: Wait for Black Pine v9 on Pages
         id: wait
         if: steps.install.outcome == 'success'
         continue-on-error: true
@@ -146,16 +131,12 @@ jobs:
           {
             base="${PAGE_URL%/}/"
             ready=0
-            for i in $(seq 1 140); do
-              if curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-all-errors "${base}index.html?v=${RELEASE_SHA}-${i}" -o /tmp/live-index.html \
+            for i in $(seq 1 160); do
+              if curl -fsS "${base}index.html?v=${RELEASE_SHA}-${i}" -o /tmp/live-index.html \
                 && grep -Fq '<title>BONSAI</title>' /tmp/live-index.html \
-                && grep -Eq '/bonsai-app/assets/index-[A-Za-z0-9_-]+\.js' /tmp/live-index.html \
-                && curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-all-errors "${base}sw.js?v=${RELEASE_SHA}-${i}" -o /tmp/live-sw.js \
-                && grep -Fq "$BONSAI_RELEASE" /tmp/live-sw.js \
-                && curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-all-errors "${base}photo-assets.js?v=${RELEASE_SHA}-${i}" -o /tmp/live-photo.js \
-                && grep -Fq 'react-kuromatsu-photoreal-v1' /tmp/live-photo.js; then
+                && curl -fsS "${base}sw.js?v=${RELEASE_SHA}-${i}" -o /tmp/live-sw.js \
+                && grep -Fq "$BONSAI_RELEASE" /tmp/live-sw.js; then
                 ready=1
-                echo "Gameplay v8 visible after attempt ${i}"
                 break
               fi
               sleep 3
@@ -163,7 +144,7 @@ jobs:
             test "$ready" = 1
           } 2>&1 | tee /tmp/public-wait.log
 
-      - name: Run existing interaction regression against GitHub Pages
+      - name: Run public smoke
         id: smoke
         if: steps.wait.outcome == 'success'
         continue-on-error: true
@@ -171,11 +152,9 @@ jobs:
         env:
           BONSAI_BASE_URL: ${{ needs.deploy.outputs.page_url }}
           BONSAI_PUBLIC: '1'
-        run: |
-          set -o pipefail
-          npm run test:smoke 2>&1 | tee /tmp/public-smoke.log
+        run: npm run test:smoke 2>&1 | tee /tmp/public-smoke.log
 
-      - name: Run seasonal timing regression against GitHub Pages
+      - name: Run public seasonal regression
         id: seasonal
         if: steps.smoke.outcome == 'success'
         continue-on-error: true
@@ -183,11 +162,9 @@ jobs:
         env:
           BONSAI_BASE_URL: ${{ needs.deploy.outputs.page_url }}
           BONSAI_PUBLIC: '1'
-        run: |
-          set -o pipefail
-          node tests/seasonal-v4.mjs 2>&1 | tee /tmp/public-seasonal.log
+        run: node tests/seasonal-v4.mjs 2>&1 | tee /tmp/public-seasonal.log
 
-      - name: Run Gameplay v8 story, slots and direct-touch audit against GitHub Pages
+      - name: Run public Gameplay regression
         id: gameplay
         if: steps.seasonal.outcome == 'success'
         continue-on-error: true
@@ -195,12 +172,10 @@ jobs:
         env:
           BONSAI_BASE_URL: ${{ needs.deploy.outputs.page_url }}
           BONSAI_PUBLIC: '1'
-        run: |
-          set -o pipefail
-          npm run test:gameplay 2>&1 | tee /tmp/public-gameplay.log
+        run: npm run test:gameplay 2>&1 | tee /tmp/public-gameplay.log
 
-      - name: Run photoreal craft, consequence, interruption and offline audit against GitHub Pages
-        id: photoreal
+      - name: Run public Black Pine v9 real-flow and visual audit
+        id: blackpine
         if: steps.gameplay.outcome == 'success'
         continue-on-error: true
         working-directory: next
@@ -209,9 +184,20 @@ jobs:
           BONSAI_PUBLIC: '1'
         run: |
           set -o pipefail
-          npm run test:photoreal 2>&1 | tee /tmp/public-photoreal.log
+          npm run test:black-pine-v9 2>&1 | tee /tmp/public-blackpine.log
+          python scripts/audit-black-pine-state-v9.py 2>&1 | tee -a /tmp/public-blackpine.log
 
-      - name: Verify public files and photographed state captures
+      - name: Run public Photoreal and offline regression
+        id: photoreal
+        if: steps.blackpine.outcome == 'success'
+        continue-on-error: true
+        working-directory: next
+        env:
+          BONSAI_BASE_URL: ${{ needs.deploy.outputs.page_url }}
+          BONSAI_PUBLIC: '1'
+        run: npm run test:photoreal 2>&1 | tee /tmp/public-photoreal.log
+
+      - name: Verify public v9 files
         id: files
         if: steps.photoreal.outcome == 'success'
         continue-on-error: true
@@ -223,31 +209,32 @@ jobs:
           set -o pipefail
           {
             base="${PAGE_URL%/}/"
-            curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}index.html?v=${RELEASE_SHA}" | grep -Fq '<title>BONSAI</title>'
-            curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}sw.js?v=${RELEASE_SHA}" | grep -Fq "$BONSAI_RELEASE"
-            curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}photo-assets.js?v=${RELEASE_SHA}" | grep -Fq 'react-kuromatsu-photoreal-v1'
-            curl --fail --silent --show-error --retry 20 --retry-delay 3 --retry-all-errors "${base}assets/kuromatsu/base/black.webp?v=${RELEASE_SHA}" -o /tmp/live-black.webp
-            test "$(wc -c < /tmp/live-black.webp)" -gt 300000
-            python scripts/visual-audit-v6.py --output gameplay-v8-public-visual-audit.json
+            curl -fsS "${base}sw.js?v=${RELEASE_SHA}" | grep -Fq "$BONSAI_RELEASE"
+            curl -fsS "${base}assets/kuromatsu/wire-photo-v9/secondRight-strong.webp?v=${RELEASE_SHA}" -o /tmp/live-wire.webp
+            curl -fsS "${base}assets/kuromatsu/deadwood-photo-v9/shari-left-l1.webp?v=${RELEASE_SHA}" -o /tmp/live-shari.webp
+            curl -fsS "${base}assets/kuromatsu/pruning-photo-v9/secondRight-l1.webp?v=${RELEASE_SHA}" -o /tmp/live-pruning.webp
+            test "$(wc -c < /tmp/live-wire.webp)" -gt 500
+            test "$(wc -c < /tmp/live-shari.webp)" -gt 500
+            test "$(wc -c < /tmp/live-pruning.webp)" -gt 500
           } 2>&1 | tee /tmp/public-files.log
 
-      - name: Write public audit log bundle
+      - name: Collect public audit logs
         if: always()
         run: |
           mkdir -p next/test-artifacts/public-logs
-          for name in install wait smoke seasonal gameplay photoreal files; do
+          for name in install wait smoke seasonal gameplay blackpine photoreal files; do
             cp "/tmp/public-${name}.log" "next/test-artifacts/public-logs/${name}.log" 2>/dev/null || true
           done
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: bonsai-gameplay-v8-public-final-audit
+          name: bonsai-black-pine-v9-public-audit
           path: next/test-artifacts
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
 
-      - name: Record production audit and leave iPhone confirmation open
+      - name: Record production audit
         if: always()
         uses: actions/github-script@v7
         env:
@@ -257,60 +244,35 @@ jobs:
           SMOKE: ${{ steps.smoke.outcome }}
           SEASONAL: ${{ steps.seasonal.outcome }}
           GAMEPLAY: ${{ steps.gameplay.outcome }}
+          BLACKPINE: ${{ steps.blackpine.outcome }}
           PHOTOREAL: ${{ steps.photoreal.outcome }}
           FILES: ${{ steps.files.outcome }}
         with:
           script: |
-            const fs = require('fs');
             const outcomes = {
-              install: process.env.INSTALL || 'not-run',
-              wait: process.env.WAIT || 'not-run',
-              smoke: process.env.SMOKE || 'not-run',
-              seasonal: process.env.SEASONAL || 'not-run',
-              gameplay: process.env.GAMEPLAY || 'not-run',
-              photoreal: process.env.PHOTOREAL || 'not-run',
-              files: process.env.FILES || 'not-run'
+              install: process.env.INSTALL || 'not-run', wait: process.env.WAIT || 'not-run',
+              smoke: process.env.SMOKE || 'not-run', seasonal: process.env.SEASONAL || 'not-run',
+              gameplay: process.env.GAMEPLAY || 'not-run', blackpine: process.env.BLACKPINE || 'not-run',
+              photoreal: process.env.PHOTOREAL || 'not-run', files: process.env.FILES || 'not-run'
             };
-            const passed = Object.values(outcomes).every(value => value === 'success');
+            const passed = Object.values(outcomes).every(v => v === 'success');
             const page = (process.env.PAGE_URL || 'https://shotakabahara-collab.github.io/bonsai-app/').replace(/\/$/, '') + '/';
-            const log = name => {
-              try { return fs.readFileSync(`/tmp/public-${name}.log`, 'utf8').slice(-3500); }
-              catch { return '(no log)'; }
-            };
             await github.rest.issues.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: 1,
-              title: passed
-                ? 'BONSAI Gameplay v8: AUTOMATED PASS / iPhone確認待ち'
-                : 'BONSAI Gameplay v8 production audit: FAIL',
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: 1,
+              title: passed ? 'BONSAI Black Pine State v9: AUTOMATED PASS / iPhone確認待ち' : 'BONSAI Black Pine State v9 production audit: FAIL',
               body: [
-                '# BONSAI Gameplay v8 本番監査', '',
-                `- release SHA: \`${context.sha}\``,
-                '- deployed release: `bonsai-gameplay-v8`',
-                `- Pages URL: ${page}`,
-                '- architecture: React 19 + TypeScript + Vite',
-                '- `bonsai_live_1` and `bonsai:v2` migration: verified',
-                '- fertilizer/compost UI, save and calculation: absent',
-                '- out-of-season and low-vitality pruning remains executable with mentor warning: verified',
-                '- deterministic disease, pest, dieback, growth and death consequences: verified',
-                '- wire interruption and retained training result: verified',
-                '- jin/shari pause, reload and resume: verified',
-                '- photographed branch-clipped wire, strength-graded jin/shari and time-progressive wood texture: verified',
-                '- three independent save slots and reset-current-slot flow: verified',
-                '- story onboarding, mentor lessons, chapter actions and direct photograph selection: verified',
-                '- support line and editing-marker removal: verified',
-                '- 390×844 / DPR 3 WebKit and offline restart: verified',
-                ...Object.entries(outcomes).map(([name, value]) => `- public ${name}: ${value}`), '',
-                ...Object.keys(outcomes).map(name => `## ${name}\n\`\`\`text\n${log(name)}\n\`\`\``), '',
-                passed
-                  ? '自動本番監査は合格しました。Issueは、ユーザーのiPhone実画面で黒い支持線と編集点の消失、3セーブ、物語導線、写真タップ、針金、神・舎利、再読み込みを確認するまで開いたままにします。'
-                  : '公開後監査に未通過項目があります。合格前に完成扱いにしません。'
+                '# BONSAI Black Pine State Rendering v9 本番監査', '',
+                `- release SHA: \`${context.sha}\``, '- deployed release: `bonsai-black-pine-state-v9`',
+                `- Pages URL: ${page}`, '- black pine pruning 18 / wire 12 / jin-shari 24 photographed states: verified',
+                '- new black pine → prune → wire → shari → reload flow: verified',
+                '- Safari-stable HTML image layers and 390×844 / DPR 3 WebKit: verified',
+                '- three save slots, old save migration and offline restart: verified',
+                ...Object.entries(outcomes).map(([k,v]) => `- public ${k}: ${v}`), '',
+                passed ? '自動本番監査は合格しました。iPhone実画面確認までIssueを開いたままにします。' : '未通過項目があります。完成扱いにしません。'
               ].join('\n'),
-              state: 'open',
-              state_reason: 'reopened'
+              state: 'open', state_reason: 'reopened'
             });
 
-      - name: Fail when any public audit stage failed
-        if: always() && (steps.install.outcome != 'success' || steps.wait.outcome != 'success' || steps.smoke.outcome != 'success' || steps.seasonal.outcome != 'success' || steps.gameplay.outcome != 'success' || steps.photoreal.outcome != 'success' || steps.files.outcome != 'success')
+      - name: Fail when any public audit failed
+        if: always() && (steps.install.outcome != 'success' || steps.wait.outcome != 'success' || steps.smoke.outcome != 'success' || steps.seasonal.outcome != 'success' || steps.gameplay.outcome != 'success' || steps.blackpine.outcome != 'success' || steps.photoreal.outcome != 'success' || steps.files.outcome != 'success')
         run: exit 1

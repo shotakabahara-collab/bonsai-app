@@ -17,9 +17,10 @@ import {
   type SiteRole
 } from './craft-v3';
 
-const WIRE_PHOTO_BASE = '/bonsai-app/assets/kuromatsu/wire-photo-v7';
+const WIRE_PHOTO_BASE = '/bonsai-app/assets/kuromatsu/wire-photo-v9';
 const WIRE_PHOTO_PARTS = new Set<PartId>(['apex', 'firstLeft', 'secondRight', 'thirdLeft', 'back', 'front']);
-const DEADWOOD_PHOTO_BASE = '/bonsai-app/assets/kuromatsu/deadwood-photo-v6';
+const DEADWOOD_PHOTO_BASE = '/bonsai-app/assets/kuromatsu/deadwood-photo-v9';
+const PRUNING_PHOTO_BASE = '/bonsai-app/assets/kuromatsu/pruning-photo-v9';
 const DEADWOOD_JIN_PARTS = new Set<PartId>(['apex', 'firstLeft', 'secondRight', 'thirdLeft', 'back', 'front']);
 
 type DeadwoodProjectView = ReturnType<typeof activeDeadwoodProjects>[number];
@@ -37,6 +38,11 @@ function deadwoodPhotoHref(project: DeadwoodProjectView): string | null {
   return DEADWOOD_JIN_PARTS.has(project.targetPartId)
     ? `${DEADWOOD_PHOTO_BASE}/jin-${project.targetPartId}-l${level}.webp`
     : null;
+}
+
+function pruningPhotoHref(partId: PartId, level: number): string | null {
+  if (!WIRE_PHOTO_PARTS.has(partId) || level <= 0) return null;
+  return `${PRUNING_PHOTO_BASE}/${partId}-l${Math.max(1, Math.min(3, Math.round(level)))}.webp`;
 }
 
 function legacyShariPhotoHref(side: 'left' | 'right', level: number): string {
@@ -119,7 +125,7 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
     <figure
       className={`bonsai-stage photoreal-craft-v6 photoreal-craft-v7 gameplay-v8-stage ${dead ? 'bonsai-dead' : ''} ${className}`}
       aria-label={`${bonsai.name}の現在の姿`}
-      data-renderer="gameplay-v8"
+      data-renderer="black-pine-state-v9"
       data-photo-cleaned={bonsai.species === 'pine' && !failed ? 'true' : 'not-applicable'}
     >
       <div className={`bonsai-photo-canvas ${interactive ? 'direct-part-picker' : ''}`} data-testid="bonsai-photo-canvas" onPointerUp={selectPartFromPhoto}>
@@ -136,10 +142,9 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
         {livingParts.map(({ id: partId, x, y }) => {
           const part = bonsai.parts[partId];
           if (!part) return null;
-          const pruneOpacity = part.deadwood ? 0 : part.pruneLevel * .12 + Math.max(0, 62 - part.foliage) / 190;
           return (
             <div key={partId} className="part-visual" style={{ left: `${x}%`, top: `${y}%` }}>
-              {pruneOpacity > .05 && <span className="prune-mask authentic-leaf-loss" style={{ opacity: Math.min(.34, pruneOpacity) }} />}
+              {bonsai.species !== 'pine' && part.pruneLevel > 0 && <span className="prune-mask authentic-leaf-loss" style={{ opacity: Math.min(.34, part.pruneLevel * .12) }} />}
               {part.disease && <span className={`condition condition-${part.disease}`} title={diseaseName(part.disease)} />}
               {part.pest && <span className={`condition pest condition-${part.pest}`} title={pestName(part.pest)} />}
             </div>
@@ -182,43 +187,19 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
         </svg>
         )}
 
-        <svg
-          className={`wire-layer authentic-work-layer ${interactive ? 'wire-layer-editing' : 'wire-layer-viewing'}`}
-          viewBox="0 0 900 1500"
-          preserveAspectRatio="xMidYMid meet"
-          aria-hidden="true"
-        >
-          <defs />
+        <div className={`authentic-work-layer state-photo-stack ${interactive ? 'work-layer-editing' : 'work-layer-viewing'}`} data-testid="black-pine-state-stack" aria-hidden="true">
+          {bonsai.species === 'pine' && livingParts.map(({ id: partId }) => {
+            const part = bonsai.parts[partId];
+            const href = pruningPhotoHref(partId, part?.pruneLevel ?? 0);
+            if (!href || part?.deadwood) return null;
+            return <img key={`prune-${partId}`} className="state-photo-layer pruning-photo-raster" data-testid="photoreal-pruning" data-pruning-part={partId} data-pruning-level={Math.max(1, Math.min(3, Math.round(part.pruneLevel)))} src={href} alt="" draggable={false} />;
+          })}
 
           {deadwoodProjects.map(project => {
             const href = deadwoodPhotoHref(project);
             if (!href) return null;
             const status = deadwoodStatus(project);
-            return (
-              <g
-                key={project.id}
-                className={`deadwood-effect deadwood-${project.kind} stage-${project.stage} deadwood-progress-${status.progressBand} ${project.pausedAt ? 'paused' : ''}`}
-                data-testid="photoreal-deadwood"
-                data-stage={project.stage}
-                data-paused={project.pausedAt ? 'true' : 'false'}
-                data-deadwood-kind={project.kind}
-                data-deadwood-level={project.level}
-                data-deadwood-progress={status.progress.toFixed(2)}
-                data-deadwood-progress-band={status.progressBand}
-                data-deadwood-asset={href}
-              >
-                <image
-                  className="deadwood-raster"
-                  href={href}
-                  x="0"
-                  y="0"
-                  width="900"
-                  height="1500"
-                  preserveAspectRatio="none"
-                  style={{ filter: deadwoodVisualFilter(project.stage, status.progress) }}
-                />
-              </g>
-            );
+            return <img key={project.id} className={`state-photo-layer deadwood-raster deadwood-${project.kind} stage-${project.stage} progress-${status.progressBand}`} data-testid="photoreal-deadwood" data-stage={project.stage} data-paused={project.pausedAt ? 'true' : 'false'} data-deadwood-kind={project.kind} data-deadwood-level={project.level} data-deadwood-progress={status.progress.toFixed(2)} data-deadwood-progress-band={status.progressBand} data-deadwood-asset={href} src={href} alt="" draggable={false} style={{ filter: deadwoodVisualFilter(project.stage, status.progress) }} />;
           })}
 
           {wiredParts.map(({ id: partId }) => {
@@ -228,57 +209,11 @@ export function BonsaiStage({ bonsai, interactive = false, selectedPart, onSelec
             if (!href) return null;
             const lifecycle = wireLifecycle(wire, bonsai.species);
             const progressBand = Math.min(3, Math.floor(Math.min(99.999, lifecycle.progress) / 25));
-            return (
-              <g
-                key={partId}
-                className={`wire-photo-state wire-group-${wire.intensity} wire-status-${lifecycle.status} wire-progress-${progressBand}`}
-                data-testid="photoreal-wire"
-                data-wire-part={partId}
-                data-wire-intensity={wire.intensity}
-                data-wire-direction={wire.direction}
-                data-wire-progress={lifecycle.progress.toFixed(2)}
-                data-wire-progress-band={progressBand}
-                data-wire-status={lifecycle.status}
-                data-wire-asset={href}
-              >
-                <image
-                  className="wire-raster"
-                  href={href}
-                  x="0"
-                  y="0"
-                  width="900"
-                  height="1500"
-                  preserveAspectRatio="none"
-                />
-              </g>
-            );
+            return <img key={partId} className={`state-photo-layer wire-raster wire-group-${wire.intensity} wire-status-${lifecycle.status} wire-progress-${progressBand}`} data-testid="photoreal-wire" data-wire-part={partId} data-wire-intensity={wire.intensity} data-wire-direction={wire.direction} data-wire-progress={lifecycle.progress.toFixed(2)} data-wire-progress-band={progressBand} data-wire-status={lifecycle.status} data-wire-asset={href} src={href} alt="" draggable={false} />;
           })}
 
-          {bonsai.shari && !deadwoodProjects.some(project => project.kind === 'shari') && (
-            <g
-              className="legacy-shari-photoreal deadwood-effect deadwood-shari stage-mature"
-              data-testid="photoreal-deadwood"
-              data-stage="mature"
-              data-paused="false"
-              data-deadwood-kind="shari"
-              data-deadwood-level={bonsai.shari.level}
-              data-deadwood-progress="100.00"
-              data-deadwood-progress-band="3"
-              data-deadwood-asset={legacyShariPhotoHref(bonsai.shari.side, bonsai.shari.level)}
-            >
-              <image
-                className="deadwood-raster"
-                href={legacyShariPhotoHref(bonsai.shari.side, bonsai.shari.level)}
-                x="0"
-                y="0"
-                width="900"
-                height="1500"
-                preserveAspectRatio="none"
-                style={{ filter: deadwoodVisualFilter('mature', 100) }}
-              />
-            </g>
-          )}
-        </svg>
+          {bonsai.shari && !deadwoodProjects.some(project => project.kind === 'shari') && <img className="state-photo-layer deadwood-raster legacy-shari-photoreal" data-testid="photoreal-deadwood" data-stage="mature" data-paused="false" data-deadwood-kind="shari" data-deadwood-level={bonsai.shari.level} data-deadwood-progress="100.00" data-deadwood-progress-band="3" data-deadwood-asset={legacyShariPhotoHref(bonsai.shari.side, bonsai.shari.level)} src={legacyShariPhotoHref(bonsai.shari.side, bonsai.shari.level)} alt="" draggable={false} style={{ filter: deadwoodVisualFilter('mature', 100) }} />}
+        </div>
 
         {interactive && selectedDefinition && (
           <div className="direct-part-selection" style={{ left: `${selectedDefinition.x}%`, top: `${selectedDefinition.y}%` }} aria-hidden="true"><span>{selectedDefinition.name}</span></div>

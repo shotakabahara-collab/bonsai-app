@@ -224,3 +224,14 @@
 .photoreal-craft-v6 .dead-tree-status-tag {
   z-index: 10;
 }
+
+
+/* Black Pine State Rendering v9: Safari-stable HTML image layers. */
+.photoreal-craft-v6 .state-photo-stack{position:absolute;inset:0;z-index:5;overflow:hidden;pointer-events:none}
+.photoreal-craft-v6 .state-photo-layer{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center;display:block;pointer-events:none;image-rendering:auto;transform:translateZ(0)}
+.photoreal-craft-v6 .pruning-photo-raster{z-index:1;opacity:1}
+.photoreal-craft-v6 .deadwood-raster{z-index:2;opacity:1}
+.photoreal-craft-v6 .wire-raster{z-index:3;opacity:.98;filter:saturate(1.08) brightness(1.04) contrast(1.08)}
+.photoreal-craft-v6 .wire-progress-1{opacity:.99;filter:saturate(1.04) brightness(1.01) contrast(1.10)}
+.photoreal-craft-v6 .wire-progress-2{opacity:1;filter:saturate(.96) brightness(.98) contrast(1.12)}
+.photoreal-craft-v6 .wire-progress-3,.photoreal-craft-v6 .wire-status-overdue{opacity:1;filter:saturate(.82) brightness(.92) contrast(1.16)}
