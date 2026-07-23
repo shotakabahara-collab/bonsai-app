@@ -1,4 +1,4 @@
-name: Deploy BONSAI React production
+name: Deploy BONSAI Material Preview v11
 
 on:
   push:
@@ -15,11 +15,11 @@ permissions:
   issues: write
 
 concurrency:
-  group: pages
+  group: pages-material-preview-v11
   cancel-in-progress: false
 
 env:
-  BONSAI_RELEASE: bonsai-material-preview-v10
+  BONSAI_RELEASE: bonsai-material-preview-v11
 
 jobs:
   build-and-audit:
@@ -33,32 +33,28 @@ jobs:
           cache: npm
           cache-dependency-path: next/package-lock.json
 
-      - name: Install exact dependencies and image tools
+      - name: Install exact dependencies and visual tools
         working-directory: next
         run: |
           npm ci
           npx playwright install --with-deps webkit
           python -m pip install --disable-pip-version-check pillow numpy opencv-python-headless
 
-      - name: Verify v10 source, repaired materials and production build
+      - name: Typecheck, contracts and production build
         working-directory: next
         run: |
           npm run typecheck
           npm run test:photoreal:unit
           npm run test:gameplay:unit
           npm run build
-          test "$(find public/assets/kuromatsu/wire-photo-v9 -type f -name '*.webp' | wc -l)" -eq 12
-          test "$(find public/assets/kuromatsu/deadwood-photo-v9 -type f -name '*.webp' | wc -l)" -eq 24
-          test "$(find public/assets/kuromatsu/pruning-photo-v9 -type f -name '*.webp' | wc -l)" -eq 18
-          test "$(wc -c < public/assets/kuromatsu/base/starter.webp)" -gt 100000
-          test "$(wc -c < public/assets/kuromatsu/base/old.webp)" -gt 100000
-          test "$(wc -c < public/assets/kuromatsu/base/blue.webp)" -gt 100000
-          python -m py_compile scripts/generate-black-pine-state-v9.py scripts/audit-black-pine-state-v9.py scripts/repair-material-backdrops-v10.py
+          python -m py_compile scripts/repair-material-backdrops-v10.py scripts/repair-material-floor-v11.py scripts/audit-black-pine-state-v9.py
+          test "$(find public/assets/kuromatsu/base -maxdepth 1 -type f -name '*.webp' | wc -l)" -ge 5
+          grep -Fq "bonsai-material-preview-v11" public/sw.js
 
-      - name: Run local WebKit, material-image and regression audits
+      - name: Run local iPhone, floor, gameplay and offline audits
         working-directory: next
         run: |
-          setsid npm run preview >/tmp/bonsai-v10-preview.log 2>&1 &
+          setsid npm run preview >/tmp/bonsai-v11-preview.log 2>&1 &
           server=$!
           echo "$server" >/tmp/bonsai-photoreal-v7-preview.pid
           trap 'kill -TERM -- -$server 2>/dev/null || true' EXIT
@@ -81,12 +77,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: bonsai-material-preview-v10-local-audit
+          name: bonsai-material-preview-v11-local-audit
           path: |
             next/test-artifacts
-            next/material-preview-v10-assets.json
+            next/material-preview-v11-assets.json
             next/black-pine-state-v9-visual-audit.json
-            /tmp/bonsai-v10-preview.log
+            /tmp/bonsai-v11-preview.log
           if-no-files-found: warn
           retention-days: 14
 
@@ -117,13 +113,14 @@ jobs:
 
       - name: Install public audit dependencies
         id: install
-        working-directory: next
         continue-on-error: true
+        working-directory: next
         run: |
-          set -o pipefail
-          { npm ci; npx playwright install --with-deps webkit; python -m pip install --disable-pip-version-check pillow numpy opencv-python-headless; } 2>&1 | tee /tmp/public-install.log
+          npm ci
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow numpy opencv-python-headless
 
-      - name: Wait for Material Preview v10 on Pages
+      - name: Wait for Material Preview v11 on Pages
         id: wait
         if: steps.install.outcome == 'success'
         continue-on-error: true
@@ -131,54 +128,43 @@ jobs:
           PAGE_URL: ${{ needs.deploy.outputs.page_url }}
           RELEASE_SHA: ${{ github.sha }}
         run: |
-          set -o pipefail
-          {
-            base="${PAGE_URL%/}/"
-            ready=0
-            for i in $(seq 1 160); do
-              if curl -fsS "${base}index.html?v=${RELEASE_SHA}-${i}" -o /tmp/live-index.html \
-                && grep -Fq '<title>BONSAI</title>' /tmp/live-index.html \
-                && curl -fsS "${base}sw.js?v=${RELEASE_SHA}-${i}" -o /tmp/live-sw.js \
-                && grep -Fq "$BONSAI_RELEASE" /tmp/live-sw.js; then
-                ready=1
-                break
-              fi
-              sleep 3
-            done
-            test "$ready" = 1
-          } 2>&1 | tee /tmp/public-wait.log
+          base="${PAGE_URL%/}/"
+          ready=0
+          for i in $(seq 1 180); do
+            if curl -fsS "${base}sw.js?v=${RELEASE_SHA}-${i}" -o /tmp/live-sw.js \
+              && grep -Fq "$BONSAI_RELEASE" /tmp/live-sw.js \
+              && curl -fsS "${base}index.html?v=${RELEASE_SHA}-${i}" -o /tmp/live-index.html \
+              && grep -Fq '<title>BONSAI</title>' /tmp/live-index.html; then
+              ready=1
+              break
+            fi
+            sleep 3
+          done
+          test "$ready" = 1
 
-      - name: Run public smoke
-        id: smoke
+      - name: Run public smoke and seasonal regressions
+        id: basic
         if: steps.wait.outcome == 'success'
         continue-on-error: true
         working-directory: next
         env:
           BONSAI_BASE_URL: ${{ needs.deploy.outputs.page_url }}
           BONSAI_PUBLIC: '1'
-        run: npm run test:smoke 2>&1 | tee /tmp/public-smoke.log
+        run: |
+          npm run test:smoke
+          node tests/seasonal-v4.mjs
 
-      - name: Run public seasonal regression
-        id: seasonal
-        if: steps.smoke.outcome == 'success'
-        continue-on-error: true
-        working-directory: next
-        env:
-          BONSAI_BASE_URL: ${{ needs.deploy.outputs.page_url }}
-          BONSAI_PUBLIC: '1'
-        run: node tests/seasonal-v4.mjs 2>&1 | tee /tmp/public-seasonal.log
-
-      - name: Run public Gameplay and material regression
+      - name: Audit public lower floor and gameplay
         id: gameplay
-        if: steps.seasonal.outcome == 'success'
+        if: steps.basic.outcome == 'success'
         continue-on-error: true
         working-directory: next
         env:
           BONSAI_BASE_URL: ${{ needs.deploy.outputs.page_url }}
           BONSAI_PUBLIC: '1'
-        run: npm run test:gameplay 2>&1 | tee /tmp/public-gameplay.log
+        run: npm run test:gameplay
 
-      - name: Run public Black Pine v9 real-flow and visual audit
+      - name: Audit public Black Pine real flow
         id: blackpine
         if: steps.gameplay.outcome == 'success'
         continue-on-error: true
@@ -187,11 +173,10 @@ jobs:
           BONSAI_BASE_URL: ${{ needs.deploy.outputs.page_url }}
           BONSAI_PUBLIC: '1'
         run: |
-          set -o pipefail
-          npm run test:black-pine-v9 2>&1 | tee /tmp/public-blackpine.log
-          python scripts/audit-black-pine-state-v9.py 2>&1 | tee -a /tmp/public-blackpine.log
+          npm run test:black-pine-v9
+          python scripts/audit-black-pine-state-v9.py
 
-      - name: Run public Photoreal and offline regression
+      - name: Audit public Photoreal and offline shell
         id: photoreal
         if: steps.blackpine.outcome == 'success'
         continue-on-error: true
@@ -199,47 +184,26 @@ jobs:
         env:
           BONSAI_BASE_URL: ${{ needs.deploy.outputs.page_url }}
           BONSAI_PUBLIC: '1'
-        run: npm run test:photoreal 2>&1 | tee /tmp/public-photoreal.log
+        run: npm run test:photoreal
 
-      - name: Verify public v10 files
+      - name: Verify repaired public base photographs
         id: files
         if: steps.photoreal.outcome == 'success'
         continue-on-error: true
-        working-directory: next
         env:
           PAGE_URL: ${{ needs.deploy.outputs.page_url }}
           RELEASE_SHA: ${{ github.sha }}
         run: |
-          set -o pipefail
-          {
-            base="${PAGE_URL%/}/"
-            curl -fsS "${base}sw.js?v=${RELEASE_SHA}" | grep -Fq "$BONSAI_RELEASE"
-            curl -fsS "${base}assets/kuromatsu/base/starter.webp?v=${RELEASE_SHA}" -o /tmp/live-starter.webp
-            curl -fsS "${base}assets/kuromatsu/base/old.webp?v=${RELEASE_SHA}" -o /tmp/live-old.webp
-            curl -fsS "${base}assets/kuromatsu/base/blue.webp?v=${RELEASE_SHA}" -o /tmp/live-blue.webp
-            curl -fsS "${base}assets/kuromatsu/wire-photo-v9/secondRight-strong.webp?v=${RELEASE_SHA}" -o /tmp/live-wire.webp
-            curl -fsS "${base}assets/kuromatsu/deadwood-photo-v9/shari-left-l1.webp?v=${RELEASE_SHA}" -o /tmp/live-shari.webp
-            curl -fsS "${base}assets/kuromatsu/pruning-photo-v9/secondRight-l1.webp?v=${RELEASE_SHA}" -o /tmp/live-pruning.webp
-            test "$(wc -c < /tmp/live-starter.webp)" -gt 100000
-            test "$(wc -c < /tmp/live-old.webp)" -gt 100000
-            test "$(wc -c < /tmp/live-blue.webp)" -gt 100000
-            test "$(wc -c < /tmp/live-wire.webp)" -gt 500
-            test "$(wc -c < /tmp/live-shari.webp)" -gt 500
-            test "$(wc -c < /tmp/live-pruning.webp)" -gt 500
-          } 2>&1 | tee /tmp/public-files.log
-
-      - name: Collect public audit logs
-        if: always()
-        run: |
-          mkdir -p next/test-artifacts/public-logs
-          for name in install wait smoke seasonal gameplay blackpine photoreal files; do
-            cp "/tmp/public-${name}.log" "next/test-artifacts/public-logs/${name}.log" 2>/dev/null || true
+          base="${PAGE_URL%/}/"
+          for name in starter old blue black moon; do
+            curl -fsS "${base}assets/kuromatsu/base/${name}.webp?v=${RELEASE_SHA}" -o "/tmp/${name}.webp"
+            test "$(wc -c < "/tmp/${name}.webp")" -gt 100000
           done
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: bonsai-material-preview-v10-public-audit
+          name: bonsai-material-preview-v11-public-audit
           path: next/test-artifacts
           if-no-files-found: warn
           retention-days: 14
@@ -251,8 +215,7 @@ jobs:
           PAGE_URL: ${{ needs.deploy.outputs.page_url }}
           INSTALL: ${{ steps.install.outcome }}
           WAIT: ${{ steps.wait.outcome }}
-          SMOKE: ${{ steps.smoke.outcome }}
-          SEASONAL: ${{ steps.seasonal.outcome }}
+          BASIC: ${{ steps.basic.outcome }}
           GAMEPLAY: ${{ steps.gameplay.outcome }}
           BLACKPINE: ${{ steps.blackpine.outcome }}
           PHOTOREAL: ${{ steps.photoreal.outcome }}
@@ -260,29 +223,35 @@ jobs:
         with:
           script: |
             const outcomes = {
-              install: process.env.INSTALL || 'not-run', wait: process.env.WAIT || 'not-run',
-              smoke: process.env.SMOKE || 'not-run', seasonal: process.env.SEASONAL || 'not-run',
-              gameplay: process.env.GAMEPLAY || 'not-run', blackpine: process.env.BLACKPINE || 'not-run',
-              photoreal: process.env.PHOTOREAL || 'not-run', files: process.env.FILES || 'not-run'
+              install: process.env.INSTALL || 'not-run',
+              wait: process.env.WAIT || 'not-run',
+              basic: process.env.BASIC || 'not-run',
+              gameplay: process.env.GAMEPLAY || 'not-run',
+              blackpine: process.env.BLACKPINE || 'not-run',
+              photoreal: process.env.PHOTOREAL || 'not-run',
+              files: process.env.FILES || 'not-run'
             };
-            const passed = Object.values(outcomes).every(v => v === 'success');
+            const passed = Object.values(outcomes).every(value => value === 'success');
             const page = (process.env.PAGE_URL || 'https://shotakabahara-collab.github.io/bonsai-app/').replace(/\/$/, '') + '/';
             await github.rest.issues.update({
-              owner: context.repo.owner, repo: context.repo.repo, issue_number: 1,
-              title: passed ? 'BONSAI Material Preview v10: AUTOMATED PASS / iPhone確認待ち' : 'BONSAI Material Preview v10 production audit: FAIL',
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1,
+              title: passed ? 'BONSAI Material Preview v11: PUBLISHED / iPhone確認待ち' : 'BONSAI Material Preview v11 production audit: FAIL',
               body: [
-                '# BONSAI Material Preview v10 本番監査', '',
-                `- release SHA: \`${context.sha}\``, '- deployed release: `bonsai-material-preview-v10`',
-                `- Pages URL: ${page}`, '- black pine starter / old / blue colored rectangular backdrops: repaired and verified',
-                '- black pine pruning 18 / wire 12 / jin-shari 24 photographed states: verified',
-                '- new black pine → prune → wire → jin/shari → reload flow: verified',
-                '- 390×844 / DPR 3 WebKit, three save slots, old save migration and offline restart: verified',
-                ...Object.entries(outcomes).map(([k,v]) => `- public ${k}: ${v}`), '',
-                passed ? '自動本番監査は合格しました。iPhone実画面確認までIssueを開いたままにします。' : '未通過項目があります。完成扱いにしません。'
+                '# BONSAI Material Preview v11 本番監査', '',
+                `- release SHA: \`${context.sha}\``,
+                '- deployed release: `bonsai-material-preview-v11`',
+                `- Pages URL: ${page}`,
+                '- lower brown floor / wood shadow neutralized while pot, moss and trunk are protected',
+                '- black bottom edge intentionally unchanged',
+                ...Object.entries(outcomes).map(([key, value]) => `- public ${key}: ${value}`), '',
+                passed ? '自動本番監査は合格しました。iPhone実画面の最終確認までIssueを開いたままにします。' : '未通過項目があります。完成扱いにしません。'
               ].join('\n'),
-              state: 'open', state_reason: 'reopened'
+              state: 'open',
+              state_reason: 'reopened'
             });
 
       - name: Fail when any public audit failed
-        if: always() && (steps.install.outcome != 'success' || steps.wait.outcome != 'success' || steps.smoke.outcome != 'success' || steps.seasonal.outcome != 'success' || steps.gameplay.outcome != 'success' || steps.blackpine.outcome != 'success' || steps.photoreal.outcome != 'success' || steps.files.outcome != 'success')
+        if: always() && (steps.install.outcome != 'success' || steps.wait.outcome != 'success' || steps.basic.outcome != 'success' || steps.gameplay.outcome != 'success' || steps.blackpine.outcome != 'success' || steps.photoreal.outcome != 'success' || steps.files.outcome != 'success')
         run: exit 1

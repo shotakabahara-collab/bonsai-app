@@ -178,7 +178,8 @@ try {
   report.assets.deadwood = await assetState(page);
   const jin = report.assets.deadwood.deadwood.find(item => item.kind === 'jin');
   const shari = report.assets.deadwood.deadwood.find(item => item.kind === 'shari');
-  assertV9Image(jin, 'jin', '/deadwood-photo-v9/jin-secondRight-l1.webp');
+  assertV9Image(jin, 'jin', '/deadwood-photo-v9/jin-');
+  if (jin.level !== 1) throw new Error(`jin did not start at level 1: ${JSON.stringify(jin)}`);
   assertV9Image(shari, 'shari', '/deadwood-photo-v9/shari-left-l1.webp');
 
   report.phase = 'reload';

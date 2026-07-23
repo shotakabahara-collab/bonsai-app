@@ -1,0 +1,177 @@
+{
+  "starter": {
+    "path": "public/assets/kuromatsu/base/starter.webp",
+    "dimensions": [
+      900,
+      1500
+    ],
+    "before": {
+      "count": 80293,
+      "averageSaturation": 0.027037251740694046,
+      "averageRgb": [
+        77.78018951416016,
+        77.21634674072266,
+        77.46485900878906
+      ],
+      "maximumChannelDifference": 0.5638427734375,
+      "redBlueBias": 0.31533050537109375,
+      "averageLuminance": 77.35416412353516
+    },
+    "after": {
+      "count": 80600,
+      "averageSaturation": 0.0036955818068236113,
+      "averageRgb": [
+        83.84776306152344,
+        83.83180236816406,
+        83.81255340576172
+      ],
+      "maximumChannelDifference": 0.03520965576171875,
+      "redBlueBias": 0.03520965576171875,
+      "averageLuminance": 83.83380889892578
+    },
+    "changedPixelRatio": 0.08374370370370371,
+    "protectedPotRootMeanDelta": 0.17173705995082855,
+    "bottomEdgeMeanDelta": 0.0,
+    "bytes": 475044
+  },
+  "old": {
+    "path": "public/assets/kuromatsu/base/old.webp",
+    "dimensions": [
+      900,
+      1500
+    ],
+    "before": {
+      "count": 79195,
+      "averageSaturation": 0.027652107179164886,
+      "averageRgb": [
+        74.29783630371094,
+        73.750732421875,
+        74.08515930175781
+      ],
+      "maximumChannelDifference": 0.5471038818359375,
+      "redBlueBias": 0.212677001953125,
+      "averageLuminance": 73.89118957519531
+    },
+    "after": {
+      "count": 79621,
+      "averageSaturation": 0.004598032683134079,
+      "averageRgb": [
+        80.04592895507812,
+        80.025634765625,
+        80.00537872314453
+      ],
+      "maximumChannelDifference": 0.04055023193359375,
+      "redBlueBias": 0.04055023193359375,
+      "averageLuminance": 80.02848815917969
+    },
+    "changedPixelRatio": 0.08045259259259259,
+    "protectedPotRootMeanDelta": 0.1259942203760147,
+    "bottomEdgeMeanDelta": 0.0,
+    "bytes": 473894
+  },
+  "blue": {
+    "path": "public/assets/kuromatsu/base/blue.webp",
+    "dimensions": [
+      900,
+      1500
+    ],
+    "before": {
+      "count": 79750,
+      "averageSaturation": 0.02431333437561989,
+      "averageRgb": [
+        77.20240783691406,
+        77.50194549560547,
+        78.11720275878906
+      ],
+      "maximumChannelDifference": 0.914794921875,
+      "redBlueBias": -0.914794921875,
+      "averageLuminance": 77.48268127441406
+    },
+    "after": {
+      "count": 80138,
+      "averageSaturation": 0.0037909287493675947,
+      "averageRgb": [
+        83.8233642578125,
+        83.9124984741211,
+        83.93169403076172
+      ],
+      "maximumChannelDifference": 0.10832977294921875,
+      "redBlueBias": -0.10832977294921875,
+      "averageLuminance": 83.89492797851562
+    },
+    "changedPixelRatio": 0.08218148148148148,
+    "protectedPotRootMeanDelta": 0.1303691864013672,
+    "bottomEdgeMeanDelta": 0.0,
+    "bytes": 474758
+  },
+  "black": {
+    "path": "public/assets/kuromatsu/base/black.webp",
+    "dimensions": [
+      900,
+      1500
+    ],
+    "before": {
+      "count": 78326,
+      "averageSaturation": 0.017318278551101685,
+      "averageRgb": [
+        86.97372436523438,
+        86.9114761352539,
+        87.64848327636719
+      ],
+      "maximumChannelDifference": 0.7370071411132812,
+      "redBlueBias": -0.6747589111328125,
+      "averageLuminance": 86.9779281616211
+    },
+    "after": {
+      "count": 78839,
+      "averageSaturation": 0.0036391341127455235,
+      "averageRgb": [
+        93.82817077636719,
+        93.87265014648438,
+        93.92057037353516
+      ],
+      "maximumChannelDifference": 0.09239959716796875,
+      "redBlueBias": -0.09239959716796875,
+      "averageLuminance": 93.86666107177734
+    },
+    "changedPixelRatio": 0.07887555555555556,
+    "protectedPotRootMeanDelta": 0.12677982449531555,
+    "bottomEdgeMeanDelta": 0.0,
+    "bytes": 481946
+  },
+  "moon": {
+    "path": "public/assets/kuromatsu/base/moon.webp",
+    "dimensions": [
+      900,
+      1500
+    ],
+    "before": {
+      "count": 80970,
+      "averageSaturation": 0.008682305924594402,
+      "averageRgb": [
+        92.03215789794922,
+        92.01075744628906,
+        92.40266418457031
+      ],
+      "maximumChannelDifference": 0.39190673828125,
+      "redBlueBias": -0.37050628662109375,
+      "averageLuminance": 92.0436019897461
+    },
+    "after": {
+      "count": 81260,
+      "averageSaturation": 0.0027140795718878508,
+      "averageRgb": [
+        99.47705078125,
+        99.54351806640625,
+        99.51145935058594
+      ],
+      "maximumChannelDifference": 0.06646728515625,
+      "redBlueBias": -0.0344085693359375,
+      "averageLuminance": 99.52706909179688
+    },
+    "changedPixelRatio": 0.08338222222222222,
+    "protectedPotRootMeanDelta": 0.12532450258731842,
+    "bottomEdgeMeanDelta": 0.0,
+    "bytes": 477608
+  }
+}
