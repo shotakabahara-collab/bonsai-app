@@ -8,7 +8,6 @@ import numpy as np
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-REPOSITORY = ROOT.parent
 BASE = ROOT / "public" / "assets" / "kuromatsu" / "base"
 REFERENCE = BASE / "black.webp"
 TARGETS = ("starter", "old", "blue")
@@ -121,23 +120,6 @@ def update_release_markers() -> None:
         ROOT / "tests" / "authentic-v5.mjs",
         "bonsai-black-pine-state-v9-shell",
         "bonsai-material-preview-v10-shell",
-    )
-    deploy = REPOSITORY / ".github" / "workflows" / "deploy-react-v1.yml"
-    replace_required(deploy, "BONSAI_RELEASE: bonsai-black-pine-state-v9", f"BONSAI_RELEASE: {RELEASE}")
-    replace_required(
-        deploy,
-        "BONSAI Black Pine State v9: AUTOMATED PASS / iPhone確認待ち",
-        "BONSAI Material Preview v10: AUTOMATED PASS / iPhone確認待ち",
-    )
-    replace_required(
-        deploy,
-        "# BONSAI Black Pine State Rendering v9 本番監査",
-        "# BONSAI Material Preview v10 本番監査",
-    )
-    replace_required(
-        deploy,
-        "'- deployed release: `bonsai-black-pine-state-v9`'",
-        "'- deployed release: `bonsai-material-preview-v10`'",
     )
 
 
