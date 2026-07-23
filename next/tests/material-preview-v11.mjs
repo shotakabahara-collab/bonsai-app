@@ -4,7 +4,7 @@ import fs from 'node:fs';
 fs.mkdirSync('test-artifacts', { recursive: true });
 const baseURL = process.env.BONSAI_BASE_URL || 'http://127.0.0.1:4173/bonsai-app/';
 const browser = await webkit.launch({ headless: true });
-const report = { phase: 'start', baseURL, assets: {}, errors: [] };
+const report = { release: 'bonsai-material-preview-v11', phase: 'start', baseURL, assets: {}, errors: [] };
 
 async function inspectAsset(page, name) {
   return page.evaluate(async ({ name, nonce }) => {
