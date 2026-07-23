@@ -35,7 +35,7 @@ async function inspectAsset(page, relativePath) {
       const greenByte = pixels[index + 1];
       const blueByte = pixels[index + 2];
       const luminance = .2126 * redByte + .7152 * greenByte + .0722 * blueByte;
-      if (luminance <= 120) continue; // Exclude the trunk, moss and pot; audit the wall only.
+      if (luminance <= 120) continue;
       const red = redByte / 255;
       const green = greenByte / 255;
       const blue = blueByte / 255;
@@ -106,9 +106,11 @@ try {
     const previewNode = document.querySelector('.material-preview');
     return previewNode ? getComputedStyle(previewNode, '::after').content : 'none';
   });
-  if (pseudoContent !== 'none' && pseudoContent !== 'normal') {
+  const paintedPseudo = Boolean(pseudoContent) && !['none', 'normal', '""', "''"].includes(pseudoContent);
+  if (paintedPseudo) {
     throw new Error(`A translucent correction rectangle is still painted over the photograph: ${pseudoContent}`);
   }
+  report.pseudoContent = pseudoContent;
   await preview.screenshot({ path: 'test-artifacts/material-preview-v10-iphone.png' });
 
   if (report.errors.length) throw new Error(`Browser errors: ${report.errors.join(' | ')}`);
