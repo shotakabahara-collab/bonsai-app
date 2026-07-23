@@ -1,0 +1,52 @@
+name: Probe Material Preview v10 Public Files
+
+on:
+  issues:
+    types: [edited]
+
+permissions:
+  issues: write
+
+jobs:
+  probe:
+    if: github.event.issue.number == 1 && github.event.issue.title == '[PROBE V10] 公開ファイルを確認'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe public release and repaired assets
+        id: probe
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          base="https://shotakabahara-collab.github.io/bonsai-app/"
+          curl -fsS "${base}sw.js?v=${GITHUB_RUN_ID}" -o /tmp/sw.js
+          grep -Fq "bonsai-material-preview-v10" /tmp/sw.js
+          for name in starter old blue; do
+            curl -fsS "${base}assets/kuromatsu/base/${name}.webp?v=${GITHUB_RUN_ID}" -o "/tmp/${name}.webp"
+            test "$(wc -c < /tmp/${name}.webp)" -gt 100000
+          done
+
+      - name: Record probe result
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          RESULT: ${{ steps.probe.outcome }}
+        with:
+          script: |
+            const ready = process.env.RESULT === 'success';
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1,
+              title: ready ? 'BONSAI Material Preview v10: PUBLIC FILES READY / 最終監査中' : 'BONSAI Material Preview v10: PUBLIC FILES NOT READY',
+              body: [
+                '# Material Preview v10 公開ファイル確認', '',
+                `- Service Worker v10: ${ready ? 'verified' : 'not-ready'}`,
+                `- starter / old / blue: ${ready ? 'served' : 'not-ready'}`,
+                '- Pages URL: https://shotakabahara-collab.github.io/bonsai-app/'
+              ].join('\n'),
+              state: 'open'
+            });
+
+      - name: Fail when not ready
+        if: steps.probe.outcome != 'success'
+        run: exit 1
