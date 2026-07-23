@@ -31,10 +31,10 @@ assert.match(stage, /selectPartFromPhoto/, 'direct photograph part selection is 
 assert.match(stage, /direct-part-selection/, 'selected-part feedback is missing');
 assert.match(css, /\.photoreal-craft-v7 \.part-hotspot\{[^}]*opacity:\.01/s, 'non-paint hit areas are missing');
 assert.doesNotMatch(main, /material-preview-v10\.css/, 'the rejected translucent correction layer must not return');
-assert.match(main, /bonsai-material-preview-v10-20260723/, 'material preview release id is stale');
+assert.match(main, /bonsai-material-preview-v11-20260723/, 'material preview v11 release id is stale');
 assert.match(photoAssets, /starter:\s*'\.\/assets\/kuromatsu\/base\/starter\.webp'/, 'starter photograph mapping changed');
 assert.match(photoAssets, /old:\s*'\.\/assets\/kuromatsu\/base\/old\.webp'/, 'old-pot photograph mapping changed');
 assert.match(photoAssets, /blue:\s*'\.\/assets\/kuromatsu\/base\/blue\.webp'/, 'blue-pot photograph mapping changed');
-assert.match(sw, /bonsai-material-preview-v10/, 'service worker release id is stale');
+assert.match(sw, /bonsai-material-preview-v11/, 'service worker v11 release id is stale');
 
 console.log('BONSAI Gameplay v8 unit contracts: PASS');
