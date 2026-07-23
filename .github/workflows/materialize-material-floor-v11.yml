@@ -1,0 +1,150 @@
+name: Materialize Material Preview v11 floor repair
+
+on:
+  issues:
+    types: [edited]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: materialize-material-preview-v11-floor
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: github.event.issue.number == 1 && github.event.issue.title == '[MATERIALIZE V11] 下部の茶色い床面を修復'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/material-preview-floor-neutralization-v11
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Install dependencies
+        id: install
+        working-directory: next
+        run: |
+          npm ci
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow numpy opencv-python-headless
+
+      - name: Repair the photographed lower floor
+        id: repair
+        working-directory: next
+        run: |
+          python scripts/repair-material-floor-v11.py | tee /tmp/material-floor-v11-repair.log
+          grep -Fq "bonsai-material-preview-v11" public/sw.js
+          grep -Fq "bonsai-material-preview-v11-shell" tests/authentic-v5.mjs
+          git diff --check
+
+      - name: Typecheck and build
+        id: build
+        working-directory: next
+        run: |
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run test:gameplay:unit
+          npm run build
+
+      - name: Start verified preview
+        id: preview
+        working-directory: next
+        run: |
+          setsid npm run preview >/tmp/material-floor-v11-preview.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/material-floor-v11.pid
+          echo "$server" >/tmp/bonsai-photoreal-v7-preview.pid
+          for i in $(seq 1 120); do
+            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
+            sleep .25
+          done
+          cat /tmp/material-floor-v11-preview.log
+          exit 1
+
+      - name: Run iPhone, gameplay and offline audits
+        id: audit
+        working-directory: next
+        run: |
+          npm run test:gameplay
+          npm run test:black-pine-v9
+          npm run test:photoreal
+
+      - name: Stop preview
+        if: always()
+        run: |
+          if test -f /tmp/material-floor-v11.pid; then
+            server="$(cat /tmp/material-floor-v11.pid)"
+            kill -TERM -- -"$server" 2>/dev/null || kill "$server" 2>/dev/null || true
+          fi
+
+      - name: Commit audited photographs to PR branch
+        id: commit
+        run: |
+          rm -rf next/node_modules next/dist next/test-artifacts next/scripts/__pycache__
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add next/public/assets/kuromatsu/base/*.webp next/tests/authentic-v5.mjs next/material-preview-v11-assets.json
+          git diff --cached --stat
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'Material Preview v11：下部の茶色い床面を写真内修復'
+          git push origin HEAD:agent/material-preview-floor-neutralization-v11
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: material-preview-v11-floor-audit
+          path: |
+            next/material-preview-v11-assets.json
+            next/test-artifacts/material-preview-v11-result.json
+            next/test-artifacts/material-preview-v11-iphone.png
+            /tmp/material-floor-v11-repair.log
+            /tmp/material-floor-v11-preview.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Record materialization result
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          INSTALL: ${{ steps.install.outcome }}
+          REPAIR: ${{ steps.repair.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          PREVIEW: ${{ steps.preview.outcome }}
+          AUDIT: ${{ steps.audit.outcome }}
+          COMMIT: ${{ steps.commit.outcome }}
+        with:
+          script: |
+            const outcomes = {
+              install: process.env.INSTALL || 'not-run',
+              repair: process.env.REPAIR || 'not-run',
+              build: process.env.BUILD || 'not-run',
+              preview: process.env.PREVIEW || 'not-run',
+              audit: process.env.AUDIT || 'not-run',
+              commit: process.env.COMMIT || 'not-run'
+            };
+            const passed = Object.values(outcomes).every(value => value === 'success');
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1,
+              title: passed ? 'BONSAI Material Preview v11: MATERIALIZED / PR監査中' : 'BONSAI Material Preview v11: MATERIALIZE FAIL',
+              body: [
+                '# Material Preview v11 生成結果', '',
+                ...Object.entries(outcomes).map(([key, value]) => `- ${key}: ${value}`), '',
+                '- target: photographed lower floor / wood shadow',
+                '- pot, moss, root and trunk protection: required',
+                '- black bottom edge: intentionally unchanged'
+              ].join('\n'),
+              state: 'open',
+              state_reason: 'reopened'
+            });
