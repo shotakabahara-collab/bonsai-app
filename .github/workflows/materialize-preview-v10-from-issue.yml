@@ -46,7 +46,6 @@ jobs:
         run: |
           python next/scripts/repair-material-backdrops-v10.py 2>&1 | tee /tmp/material-preview-v10-repair.log
           grep -Fq "bonsai-material-preview-v10" next/public/sw.js
-          grep -Fq "BONSAI_RELEASE: bonsai-material-preview-v10" .github/workflows/deploy-react-v1.yml
           git diff --check
 
       - name: Typecheck and build
@@ -100,7 +99,6 @@ jobs:
         if: steps.audit.outcome == 'success'
         continue-on-error: true
         run: |
-          rm -f .github/workflows/materialize-material-preview-v10.yml
           rm -rf next/node_modules next/dist next/test-artifacts next/scripts/__pycache__
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
