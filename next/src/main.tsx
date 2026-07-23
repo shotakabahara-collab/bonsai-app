@@ -45,7 +45,7 @@ function resetScrollAfterTabChange(event: MouseEvent) {
 }
 
 document.addEventListener('click', resetScrollAfterTabChange, { capture: true });
-(window as Window & { BonsaiRelease?: string }).BonsaiRelease = 'bonsai-black-pine-state-v9-20260721';
+(window as Window & { BonsaiRelease?: string }).BonsaiRelease = 'bonsai-black-pine-state-v9-20260723-public';
 
 createRoot(root).render(
   <ErrorBoundary>
