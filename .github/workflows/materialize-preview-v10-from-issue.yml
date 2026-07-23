@@ -31,6 +31,8 @@ jobs:
           cache-dependency-path: next/package-lock.json
 
       - name: Install dependencies
+        id: install
+        continue-on-error: true
         run: |
           python -m pip install --disable-pip-version-check pillow numpy opencv-python-headless
           cd next
@@ -38,13 +40,19 @@ jobs:
           npx playwright install --with-deps webkit
 
       - name: Repair base photographs and release markers
+        id: repair
+        if: steps.install.outcome == 'success'
+        continue-on-error: true
         run: |
-          python next/scripts/repair-material-backdrops-v10.py
+          python next/scripts/repair-material-backdrops-v10.py 2>&1 | tee /tmp/material-preview-v10-repair.log
           grep -Fq "bonsai-material-preview-v10" next/public/sw.js
           grep -Fq "BONSAI_RELEASE: bonsai-material-preview-v10" .github/workflows/deploy-react-v1.yml
           git diff --check
 
       - name: Typecheck and build
+        id: build
+        if: steps.repair.outcome == 'success'
+        continue-on-error: true
         working-directory: next
         run: |
           npm run typecheck
@@ -53,6 +61,9 @@ jobs:
           npm run build
 
       - name: Start preview
+        id: preview
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
         working-directory: next
         run: |
           setsid npm run preview >/tmp/material-preview-v10.log 2>&1 &
@@ -67,10 +78,14 @@ jobs:
           exit 1
 
       - name: Run iPhone and regression audits
+        id: audit
+        if: steps.preview.outcome == 'success'
+        continue-on-error: true
         working-directory: next
         run: |
-          npm run test:gameplay
-          npm run test:photoreal
+          set -o pipefail
+          npm run test:gameplay 2>&1 | tee /tmp/material-preview-v10-audit.log
+          npm run test:photoreal 2>&1 | tee -a /tmp/material-preview-v10-audit.log
 
       - name: Stop preview
         if: always()
@@ -81,6 +96,9 @@ jobs:
           fi
 
       - name: Commit audited repair to PR branch
+        id: commit
+        if: steps.audit.outcome == 'success'
+        continue-on-error: true
         run: |
           rm -f .github/workflows/materialize-material-preview-v10.yml
           rm -rf next/node_modules next/dist next/test-artifacts next/scripts/__pycache__
@@ -100,20 +118,50 @@ jobs:
             next/material-preview-v10-assets.json
             next/test-artifacts/material-preview-v10-result.json
             next/test-artifacts/material-preview-v10-iphone.png
+            /tmp/material-preview-v10-repair.log
+            /tmp/material-preview-v10-audit.log
             /tmp/material-preview-v10.log
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Record materialization
+      - name: Record materialization diagnostics
         if: always()
         uses: actions/github-script@v7
+        env:
+          INSTALL: ${{ steps.install.outcome }}
+          REPAIR: ${{ steps.repair.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          PREVIEW: ${{ steps.preview.outcome }}
+          AUDIT: ${{ steps.audit.outcome }}
+          COMMIT: ${{ steps.commit.outcome }}
         with:
           script: |
-            const success = '${{ job.status }}' === 'success';
+            const fs = require('fs');
+            const outcomes = {
+              install: process.env.INSTALL || 'not-run',
+              repair: process.env.REPAIR || 'not-run',
+              build: process.env.BUILD || 'not-run',
+              preview: process.env.PREVIEW || 'not-run',
+              audit: process.env.AUDIT || 'not-run',
+              commit: process.env.COMMIT || 'not-run'
+            };
+            const success = Object.values(outcomes).every(value => value === 'success');
+            const read = path => fs.existsSync(path) ? fs.readFileSync(path, 'utf8').slice(-6000) : '(not created)';
             await github.rest.issues.update({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: 1,
               title: success ? 'BONSAI Material Preview v10: MATERIALIZED / PR監査中' : 'BONSAI Material Preview v10: MATERIALIZE FAIL',
+              body: [
+                '# Material Preview v10 生成診断', '',
+                ...Object.entries(outcomes).map(([name, value]) => `- ${name}: ${value}`), '',
+                '## Repair log', '```text', read('/tmp/material-preview-v10-repair.log'), '```', '',
+                '## Material audit result', '```json', read('next/test-artifacts/material-preview-v10-result.json'), '```', '',
+                '## Audit log', '```text', read('/tmp/material-preview-v10-audit.log'), '```'
+              ].join('\n'),
               state: 'open'
             });
+
+      - name: Fail incomplete materialization
+        if: always() && (steps.install.outcome != 'success' || steps.repair.outcome != 'success' || steps.build.outcome != 'success' || steps.preview.outcome != 'success' || steps.audit.outcome != 'success' || steps.commit.outcome != 'success')
+        run: exit 1
