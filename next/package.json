@@ -15,7 +15,7 @@
     "pretest:photoreal": "node --input-type=module -e \"import fs from 'node:fs'; const source='/tmp/bonsai-photoreal-v7-preview.pid'; const legacy='/tmp/bonsai-photoreal-v6-preview.pid'; if (fs.existsSync(source)) fs.copyFileSync(source, legacy);\"",
     "test:photoreal": "node tests/authentic-v5.mjs",
     "test:gameplay:unit": "node tests/gameplay-v8-unit.mjs",
-    "test:gameplay": "node tests/material-preview-v10.mjs && node tests/gameplay-v8.mjs",
+    "test:gameplay": "node tests/material-preview-v10.mjs && node tests/material-preview-v11.mjs && node tests/gameplay-v8.mjs",
     "test:black-pine-v9": "node tests/black-pine-state-v9.mjs"
   },
   "dependencies": {
