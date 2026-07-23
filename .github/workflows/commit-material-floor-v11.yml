@@ -1,0 +1,95 @@
+name: Commit Material Preview v11 repair for PR audit
+
+on:
+  issues:
+    types: [edited]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: commit-material-preview-v11-floor
+  cancel-in-progress: false
+
+jobs:
+  commit-repair:
+    if: github.event.issue.number == 1 && github.event.issue.title == '[COMMIT V11] 修復画像をPR監査へ進める'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/material-preview-floor-neutralization-v11
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+      - name: Install exact dependencies
+        working-directory: next
+        run: |
+          npm ci
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow numpy opencv-python-headless
+      - name: Generate and build
+        working-directory: next
+        run: |
+          python scripts/repair-material-floor-v11.py
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run test:gameplay:unit
+          npm run build
+      - name: Start preview
+        working-directory: next
+        run: |
+          setsid npm run preview >/tmp/v11-commit-preview.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/v11-commit-preview.pid
+          for i in $(seq 1 120); do
+            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
+            sleep .25
+          done
+          exit 1
+      - name: Audit repaired photographs and Gameplay
+        working-directory: next
+        run: |
+          node tests/material-preview-v10.mjs
+          node tests/material-preview-v11.mjs
+          node tests/gameplay-v8.mjs
+      - name: Stop preview
+        if: always()
+        run: |
+          if test -f /tmp/v11-commit-preview.pid; then
+            server="$(cat /tmp/v11-commit-preview.pid)"
+            kill -TERM -- -"$server" 2>/dev/null || kill "$server" 2>/dev/null || true
+          fi
+      - name: Commit repair to development branch
+        id: commit
+        run: |
+          rm -rf next/node_modules next/dist next/test-artifacts next/scripts/__pycache__
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add next/public/assets/kuromatsu/base/*.webp next/tests/authentic-v5.mjs next/material-preview-v11-assets.json
+          git diff --cached --stat
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'Material Preview v11：下部の茶色い床面を写真内修復'
+          git push origin HEAD:agent/material-preview-floor-neutralization-v11
+      - name: Record branch materialization
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          COMMIT: ${{ steps.commit.outcome }}
+        with:
+          script: |
+            const success = process.env.COMMIT === 'success';
+            await github.rest.issues.update({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: 1,
+              title: success ? 'BONSAI Material Preview v11: BRANCH MATERIALIZED / PR監査待ち' : 'BONSAI Material Preview v11: BRANCH MATERIALIZE FAIL',
+              body: success
+                ? '# Material Preview v11\n\n- repaired photographs committed to development branch\n- wall and lower-floor audits: success\n- Gameplay: success\n- full PR regression: pending'
+                : '# Material Preview v11\n\n修復画像のPRブランチ確定に失敗しました。',
+              state: 'open', state_reason: 'reopened'
+            });
