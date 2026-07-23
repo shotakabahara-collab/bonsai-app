@@ -1,0 +1,143 @@
+name: Final audit Material Preview v11
+
+on:
+  issues:
+    types: [edited]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: final-audit-material-preview-v11
+  cancel-in-progress: false
+
+jobs:
+  final-audit:
+    if: github.event.issue.number == 1 && github.event.issue.title == '[FINAL AUDIT V11] 全回帰を検証'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/material-preview-floor-neutralization-v11
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Install exact dependencies
+        id: install
+        working-directory: next
+        run: |
+          npm ci
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow numpy opencv-python-headless
+
+      - name: Typecheck, deterministic contracts and production build
+        id: build
+        working-directory: next
+        run: |
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run test:gameplay:unit
+          npm run build
+          python -m py_compile scripts/repair-material-backdrops-v10.py scripts/repair-material-floor-v11.py scripts/audit-black-pine-state-v9.py
+          grep -Fq 'bonsai-material-preview-v11' public/sw.js
+          grep -Fq 'bonsai-material-preview-v11-shell' tests/authentic-v5.mjs
+
+      - name: Start verified production preview
+        id: preview
+        working-directory: next
+        run: |
+          setsid npm run preview >/tmp/v11-final-preview.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/v11-final-preview.pid
+          echo "$server" >/tmp/bonsai-photoreal-v7-preview.pid
+          for i in $(seq 1 120); do
+            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
+            sleep .25
+          done
+          cat /tmp/v11-final-preview.log
+          exit 1
+
+      - name: Run smoke and seasonal regressions
+        id: basic
+        working-directory: next
+        run: |
+          npm run test:smoke
+          node tests/seasonal-v4.mjs
+
+      - name: Run v10 wall, v11 floor and Gameplay regressions
+        id: gameplay
+        working-directory: next
+        run: npm run test:gameplay
+
+      - name: Run Black Pine photographed-state flow
+        id: blackpine
+        working-directory: next
+        run: |
+          npm run test:black-pine-v9
+          python scripts/audit-black-pine-state-v9.py
+
+      - name: Run Photoreal, save and complete offline restart
+        id: photoreal
+        working-directory: next
+        run: npm run test:photoreal
+
+      - name: Stop preview
+        if: always()
+        run: |
+          if test -f /tmp/v11-final-preview.pid; then
+            server="$(cat /tmp/v11-final-preview.pid)"
+            kill -TERM -- -"$server" 2>/dev/null || kill "$server" 2>/dev/null || true
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: material-preview-v11-final-audit
+          path: |
+            next/material-preview-v11-assets.json
+            next/test-artifacts
+            next/black-pine-state-v9-visual-audit.json
+            /tmp/v11-final-preview.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Record final audit
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          INSTALL: ${{ steps.install.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+          PREVIEW: ${{ steps.preview.outcome }}
+          BASIC: ${{ steps.basic.outcome }}
+          GAMEPLAY: ${{ steps.gameplay.outcome }}
+          BLACKPINE: ${{ steps.blackpine.outcome }}
+          PHOTOREAL: ${{ steps.photoreal.outcome }}
+        with:
+          script: |
+            const outcomes = {
+              install: process.env.INSTALL || 'not-run', build: process.env.BUILD || 'not-run',
+              preview: process.env.PREVIEW || 'not-run', basic: process.env.BASIC || 'not-run',
+              gameplay: process.env.GAMEPLAY || 'not-run', blackpine: process.env.BLACKPINE || 'not-run',
+              photoreal: process.env.PHOTOREAL || 'not-run'
+            };
+            const passed = Object.values(outcomes).every(value => value === 'success');
+            await github.rest.issues.update({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: 1,
+              title: passed ? 'BONSAI Material Preview v11: FINAL AUDIT PASS / 統合可能' : 'BONSAI Material Preview v11: FINAL AUDIT FAIL',
+              body: [
+                '# Material Preview v11 最終監査','',
+                ...Object.entries(outcomes).map(([key,value]) => `- ${key}: ${value}`),'',
+                '- v10 upper wall repair: required',
+                '- v11 lower brown floor repair: required',
+                '- pot, moss, root and trunk: protected',
+                '- bottom black edge: unchanged',
+                '- 390×844 / DPR3 WebKit and complete offline restart: required'
+              ].join('\n'),
+              state: 'open', state_reason: 'reopened'
+            });
