@@ -6,6 +6,8 @@ const stage = fs.readFileSync(new URL('../src/BonsaiStage.tsx', import.meta.url)
 const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
 const gameplay = fs.readFileSync(new URL('../src/GameplayV8.tsx', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../src/gameplay-v8.css', import.meta.url), 'utf8');
+const materialPreviewCss = fs.readFileSync(new URL('../src/material-preview-v10.css', import.meta.url), 'utf8');
+const main = fs.readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const sw = fs.readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
 
 assert.match(storage, /bonsai:v2:slot:/, 'slot-specific save prefix is missing');
@@ -28,6 +30,11 @@ assert.match(stage, /\{interactive && \(\s*<svg className="precision-prune-svg"/
 assert.match(stage, /selectPartFromPhoto/, 'direct photograph part selection is missing');
 assert.match(stage, /direct-part-selection/, 'selected-part feedback is missing');
 assert.match(css, /\.photoreal-craft-v7 \.part-hotspot\{[^}]*opacity:\.01/s, 'non-paint hit areas are missing');
+assert.match(main, /material-preview-v10\.css/, 'material preview correction stylesheet is not loaded');
+assert.match(materialPreviewCss, /:has\(\.bonsai-photo\[src\*="kuromatsu"\]\)::after/, 'brown correction must be limited to the black-pine material preview');
+assert.match(materialPreviewCss, /top:78\.5%/, 'brown correction vertical registration changed');
+assert.match(materialPreviewCss, /height:6\.8%/, 'brown correction height changed');
+assert.match(materialPreviewCss, /backdrop-filter:saturate\(\.2\) brightness\(1\.25\) contrast\(\.85\)/, 'brown correction must preserve source texture');
 assert.match(sw, /bonsai-black-pine-state-v9/, 'service worker release id is stale');
 
 console.log('BONSAI Gameplay v8 unit contracts: PASS');
