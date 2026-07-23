@@ -1,0 +1,125 @@
+name: Manual publish BONSAI Black Pine v9
+
+on:
+  issues:
+    types: [edited]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  issues: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event.issue.number == 1 && contains(github.event.issue.title, '[DEPLOY V9]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+
+      - name: Install exact dependencies
+        working-directory: next
+        run: npm ci
+
+      - name: Verify source, contracts and production bundle
+        working-directory: next
+        run: |
+          npm run typecheck
+          npm run test:photoreal:unit
+          npm run test:gameplay:unit
+          npm run build
+          test "$(find public/assets/kuromatsu/wire-photo-v9 -type f -name '*.webp' | wc -l)" -eq 12
+          test "$(find public/assets/kuromatsu/deadwood-photo-v9 -type f -name '*.webp' | wc -l)" -eq 24
+          test "$(find public/assets/kuromatsu/pruning-photo-v9 -type f -name '*.webp' | wc -l)" -eq 18
+          grep -Fq 'bonsai-black-pine-state-v9' public/sw.js
+          grep -Fq 'bonsai-black-pine-state-v9-20260723-public' src/main.tsx
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: next/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy verified v9 bundle
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  verify-public:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Wait for and verify public v9 files
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          base="${PAGE_URL%/}/"
+          ready=0
+          for i in $(seq 1 120); do
+            if curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-all-errors "${base}sw.js?v=${RELEASE_SHA}-${i}" -o /tmp/live-sw.js \
+              && grep -Fq 'bonsai-black-pine-state-v9' /tmp/live-sw.js \
+              && curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-all-errors "${base}assets/kuromatsu/wire-photo-v9/secondRight-strong.webp?v=${RELEASE_SHA}-${i}" -o /tmp/live-wire.webp \
+              && curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-all-errors "${base}assets/kuromatsu/deadwood-photo-v9/shari-left-l1.webp?v=${RELEASE_SHA}-${i}" -o /tmp/live-shari.webp \
+              && curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-all-errors "${base}assets/kuromatsu/pruning-photo-v9/secondRight-l1.webp?v=${RELEASE_SHA}-${i}" -o /tmp/live-pruning.webp \
+              && test "$(wc -c < /tmp/live-wire.webp)" -gt 500 \
+              && test "$(wc -c < /tmp/live-shari.webp)" -gt 500 \
+              && test "$(wc -c < /tmp/live-pruning.webp)" -gt 500; then
+              ready=1
+              break
+            fi
+            sleep 3
+          done
+          test "$ready" = 1
+
+      - name: Record published release
+        uses: actions/github-script@v7
+        env:
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+        with:
+          script: |
+            const page = (process.env.PAGE_URL || 'https://shotakabahara-collab.github.io/bonsai-app/').replace(/\/$/, '') + '/';
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: 1,
+              title: 'BONSAI Black Pine State v9: PUBLISHED / iPhone確認待ち',
+              body: [
+                '# BONSAI Black Pine State Rendering v9 公開完了', '',
+                `- published SHA: \`${context.sha}\``,
+                '- deployed release: `bonsai-black-pine-state-v9`',
+                `- Pages URL: ${page}`,
+                '- pruning photographed states: 18 verified',
+                '- wire photographed states: 12 verified',
+                '- jin/shari photographed states: 24 verified',
+                '- TypeScript, deterministic contracts and production build: success',
+                '- public Service Worker release identifier: verified',
+                '- public pruning, wire and shari assets: verified', '',
+                '公開は完了しています。最終ゲートはiPhone実画面での見た目確認です。'
+              ].join('\n'),
+              state: 'open',
+              state_reason: 'reopened'
+            });
