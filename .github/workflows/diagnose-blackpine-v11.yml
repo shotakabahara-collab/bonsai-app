@@ -1,0 +1,98 @@
+name: Diagnose Black Pine after Material Preview v11
+
+on:
+  issues:
+    types: [edited]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: diagnose-blackpine-v11
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    if: github.event.issue.number == 1 && github.event.issue.title == '[DIAGNOSE BLACKPINE V11] 操作と画素を分離'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/material-preview-floor-neutralization-v11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: next/package-lock.json
+      - name: Install dependencies
+        working-directory: next
+        run: |
+          npm ci
+          npx playwright install --with-deps webkit
+          python -m pip install --disable-pip-version-check pillow numpy opencv-python-headless
+          npm run build
+      - name: Start preview
+        working-directory: next
+        run: |
+          setsid npm run preview >/tmp/blackpine-v11-preview.log 2>&1 &
+          server=$!
+          echo "$server" >/tmp/blackpine-v11-preview.pid
+          for i in $(seq 1 120); do
+            curl -fsS http://127.0.0.1:4173/bonsai-app/ >/dev/null && exit 0
+            sleep .25
+          done
+          exit 1
+      - name: Run Black Pine WebKit flow
+        id: flow
+        continue-on-error: true
+        working-directory: next
+        run: npm run test:black-pine-v9 2>&1 | tee /tmp/blackpine-v11-flow.log
+      - name: Run Black Pine pixel audit
+        id: pixels
+        continue-on-error: true
+        working-directory: next
+        run: python scripts/audit-black-pine-state-v9.py 2>&1 | tee /tmp/blackpine-v11-pixels.log
+      - name: Stop preview
+        if: always()
+        run: |
+          if test -f /tmp/blackpine-v11-preview.pid; then
+            server="$(cat /tmp/blackpine-v11-preview.pid)"
+            kill -TERM -- -"$server" 2>/dev/null || kill "$server" 2>/dev/null || true
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blackpine-v11-diagnostic
+          path: |
+            next/test-artifacts
+            next/black-pine-state-v9-visual-audit.json
+            /tmp/blackpine-v11-*.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Record diagnosis
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          FLOW: ${{ steps.flow.outcome }}
+          PIXELS: ${{ steps.pixels.outcome }}
+        with:
+          script: |
+            const fs = require('fs');
+            const read = path => fs.existsSync(path) ? fs.readFileSync(path, 'utf8').slice(-6000) : '(not created)';
+            const flow = process.env.FLOW || 'not-run';
+            const pixels = process.env.PIXELS || 'not-run';
+            const passed = flow === 'success' && pixels === 'success';
+            await github.rest.issues.update({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: 1,
+              title: passed ? 'BONSAI Material Preview v11: BLACKPINE PASS' : 'BONSAI Material Preview v11: BLACKPINE DIAGNOSED',
+              body: [
+                '# Black Pine v11 影響診断','',
+                `- WebKit operation flow: ${flow}`,
+                `- pixel audit: ${pixels}`,'',
+                '## Flow log','```text',read('/tmp/blackpine-v11-flow.log'),'```','',
+                '## Pixel log','```text',read('/tmp/blackpine-v11-pixels.log'),'```'
+              ].join('\n'),
+              state: 'open', state_reason: 'reopened'
+            });
