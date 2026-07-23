@@ -25,11 +25,8 @@ def build_masks(height: int, width: int) -> tuple[np.ndarray, np.ndarray]:
     registration = np.zeros((height, width), dtype=np.float32)
     cv2.rectangle(registration, (8, 1278), (width - 9, 1489), 1.0, thickness=-1)
     registration = cv2.GaussianBlur(registration, (0, 0), sigmaX=10, sigmaY=9)
-    # The user explicitly asked to leave the black bottom edge alone.
     registration[-8:, :] = 0.0
 
-    # Protect the pot, moss, roots and the base of the trunk. The floor remains editable
-    # around and in front of the pot, while the bonsai itself keeps its photographed colour.
     protected = np.zeros((height, width), dtype=np.float32)
     cv2.ellipse(protected, (306, 1365), (222, 112), 0, 0, 360, 1.0, thickness=-1)
     cv2.ellipse(protected, (318, 1272), (72, 82), 0, 0, 360, 1.0, thickness=-1)
@@ -70,29 +67,20 @@ def repair(name: str) -> dict[str, object]:
     registration, protected = build_masks(height, width)
     source_luminance = luminance(source)
 
-    # Keep the photographed wood grain and shadow depth, but remove the strong red-brown
-    # colour cast. The target is almost neutral, so it cannot read as another coloured band.
-    neutral_luminance = np.clip(source_luminance * 1.065 + 2.0, 0, 255)
-    neutral = np.stack(
-        (
-            neutral_luminance * 0.995,
-            neutral_luminance,
-            neutral_luminance * 1.005,
-        ),
-        axis=2,
-    )
-    neutral = np.clip(neutral, 0, 255)
+    # Preserve photographed grain and depth while removing hue from the floor itself.
+    neutral_luminance = np.clip(source_luminance * 1.07 + 2.0, 0, 255)
+    neutral = np.repeat(neutral_luminance[:, :, None], 3, axis=2)
 
     black_protection = 0.18 + 0.82 * sigmoid((source_luminance - 19.0) / 6.0)
-    alpha = registration * (1.0 - protected * 0.985) * black_protection * 0.96
+    alpha = registration * (1.0 - protected * 0.985) * black_protection * 0.985
     repaired = source * (1.0 - alpha[:, :, None]) + neutral * alpha[:, :, None]
     repaired_u8 = np.clip(repaired, 0, 255).astype(np.uint8)
 
     before = floor_metrics(source_u8, registration, protected)
     after = floor_metrics(repaired_u8, registration, protected)
-    if after["averageSaturation"] > 0.06:
+    if after["averageSaturation"] > 0.055:
         raise RuntimeError(f"{name} lower floor remains saturated: {after}")
-    if after["maximumChannelDifference"] > 5:
+    if after["maximumChannelDifference"] > 4.5:
         raise RuntimeError(f"{name} lower floor remains colour-biased: {after}")
     if after["redBlueBias"] > 3:
         raise RuntimeError(f"{name} lower floor remains red-brown: {after}")
@@ -110,7 +98,7 @@ def repair(name: str) -> dict[str, object]:
     Image.fromarray(repaired_u8, mode="RGB").save(temporary, "WEBP", quality=95, method=6)
     verified = np.asarray(Image.open(temporary).convert("RGB"))
     verified_metrics = floor_metrics(verified, registration, protected)
-    if verified_metrics["averageSaturation"] > 0.06 or verified_metrics["maximumChannelDifference"] > 5 or verified_metrics["redBlueBias"] > 3:
+    if verified_metrics["averageSaturation"] > 0.055 or verified_metrics["maximumChannelDifference"] > 4.5 or verified_metrics["redBlueBias"] > 3:
         raise RuntimeError(f"{name} encoded floor asset failed audit: {verified_metrics}")
     temporary.replace(path)
 
