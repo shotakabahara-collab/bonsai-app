@@ -125,8 +125,24 @@ def repair(name: str) -> dict[str, object]:
     }
 
 
+def replace_required(path: Path, old: str, new: str) -> None:
+    content = path.read_text(encoding="utf-8")
+    if old not in content and new not in content:
+        raise RuntimeError(f"Expected release marker was not found in {path}")
+    path.write_text(content.replace(old, new), encoding="utf-8")
+
+
+def update_offline_contract() -> None:
+    replace_required(
+        ROOT / "tests" / "authentic-v5.mjs",
+        "bonsai-material-preview-v10-shell",
+        "bonsai-material-preview-v11-shell",
+    )
+
+
 def main() -> None:
     result = {name: repair(name) for name in TARGETS}
+    update_offline_contract()
     REPORT.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=2))
     print("BONSAI Material Preview v11 lower-floor neutralization: PASS")
