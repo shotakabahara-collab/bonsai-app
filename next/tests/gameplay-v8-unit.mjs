@@ -35,6 +35,6 @@ assert.match(main, /bonsai-material-preview-v10-20260723/, 'material preview rel
 assert.match(photoAssets, /starter:\s*'\.\/assets\/kuromatsu\/base\/starter\.webp'/, 'starter photograph mapping changed');
 assert.match(photoAssets, /old:\s*'\.\/assets\/kuromatsu\/base\/old\.webp'/, 'old-pot photograph mapping changed');
 assert.match(photoAssets, /blue:\s*'\.\/assets\/kuromatsu\/base\/blue\.webp'/, 'blue-pot photograph mapping changed');
-assert.match(sw, /bonsai-black-pine-state-v9/, 'service worker release id is stale');
+assert.match(sw, /bonsai-material-preview-v10/, 'service worker release id is stale');
 
 console.log('BONSAI Gameplay v8 unit contracts: PASS');
